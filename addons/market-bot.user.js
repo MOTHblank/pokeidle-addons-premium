@@ -4792,13 +4792,13 @@
     }
 
     function fixedRuleStatus(rule) {
+        if (!rule.buyEnabled || !(rule.buyMax > 0)) return tr('Rule paused');
+        if (!config.enabled) return tr('Moth Watch disabled');
+        if (!config.fixedRulesEnabled) return tr('Enable rule-based buying above');
         if (config.purchasesPaused) return tr('Purchases paused');
         if (unverifiedOrdersExist()) return tr('Unknown purchase outcome');
         if (state.pendingBuy) return tr('Waiting for acknowledgement');
         if (remainingBudget(rule.currency, rule.id).spend < 1) return tr('Budget blocked');
-        if (!rule.buyEnabled || !(rule.buyMax > 0)) return tr('Rule paused');
-        if (!config.enabled) return tr('Moth Watch disabled');
-        if (!config.fixedRulesEnabled) return tr('Enable rule-based buying above');
         if (!state.socket || state.socket.readyState !== 1 || gameIsLoading()) return tr('Waiting for game connection');
         const spendable = Math.max(0, balanceFor(rule.currency) - reserveFor(rule.currency));
         if (spendable < 1) return tr('Insufficient spendable balance');
@@ -4895,13 +4895,13 @@
 
 
     function categoryRuleStatus(rule, type) {
+        if (!rule.buyEnabled || !(rule.buyMax > 0)) return tr('Rule paused');
+        if (!config.enabled) return tr('Moth Watch disabled');
+        if (!config.fixedRulesEnabled) return tr('Enable rule-based buying above');
         if (config.purchasesPaused) return tr('Purchases paused');
         if (unverifiedOrdersExist()) return tr('Unknown purchase outcome');
         if (state.pendingBuy) return tr('Waiting for acknowledgement');
         if (remainingBudget(rule.currency, rule.id).spend < 1) return tr('Budget blocked');
-        if (!rule.buyEnabled || !(rule.buyMax > 0)) return tr('Rule paused');
-        if (!config.enabled) return tr('Moth Watch disabled');
-        if (!config.fixedRulesEnabled) return tr('Enable rule-based buying above');
         if (!state.socket || state.socket.readyState !== 1 || gameIsLoading()) return tr('Waiting for game connection');
         if (balanceFor(rule.currency) - reserveFor(rule.currency) < 1) return tr('Insufficient spendable balance');
         if (type === 'any') {
@@ -4930,6 +4930,7 @@
                 ruleNumber('Buy at or below', 'data-moth-' + type + '-field="buyMax" data-rule-id="' + id + '"', rule.buyMax) +
                 ruleCurrency('data-moth-' + type + '-field="currency" data-rule-id="' + id + '"', rule.currency) +
                 ruleCapsHtml(type, rule) +
+                '<p class="moth-mw-rule-hint">' + escapeHtml(ruleRiskSummary(rule, type)) + '</p>' +
                 '</section></div><div class="moth-mw-rule-card-foot"><span>' +
                 escapeHtml(tr(pokemon ? 'Price per Pokémon' : 'Price per unit')) +
                 '</span><button type="button" class="moth-mw-btn danger" data-moth-remove-' + type + '="' + id + '">' +
@@ -4937,7 +4938,7 @@
         }).join('');
         const label = pokemon ? 'Pokémon purchase rules' : 'Any item rules';
         const help = pokemon
-            ? 'These rules scan the first market page per currency. Shiny requires Gems.'
+            ? 'Purchase rules inspect up to three cheapest-price pages per currency, not the full market. Shiny requires Gems.'
             : 'Any-item rules inspect current offers selectively; large catalogs can take time.';
         const controls = pokemon ? '<label class="moth-mw-rule-field"><span>' +
             escapeHtml(tr('Pokémon category')) + '</span><select id="moth-pokemon-kind">' +
@@ -4953,7 +4954,7 @@
             ruleNumber('Buy at or below', 'id="moth-' + type + '-buy"', 0) +
             '</div><p class="moth-mw-rule-hint">' +
             escapeHtml(tr(pokemon
-                ? 'Buy matching Pokémon at or below the listed price; no valuation reference required.'
+                ? 'Buy matching Pokémon at or below the absolute listing price per Pokémon; grade and value predictions never authorize buying.'
                 : 'Buy any item at or below this price per unit.')) +
             '</p><button type="button" class="moth-mw-btn primary" id="moth-add-' + type + '-rule">' +
             escapeHtml(tr(pokemon ? 'Add Pokémon rule' : 'Add any-item rule')) +
