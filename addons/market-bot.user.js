@@ -2002,29 +2002,28 @@
     }
 
     function addPokemonHistorySample(line, working) {
-        if (!line || line.tipo !== 'pokemon' || !line.ficha) return;
-        const currency = line.moeda === 'orb' ? 'orb' : 'gold';
-        const key = pokemonIdentityKey(line.ficha, currency);
+        if (!line || line.tipo !== 'pokemon' || !line.ficha ||
+            !['gold', 'orb'].includes(line.moeda)) return;
+        const key = pokemonIdentityKey(line.ficha, line.moeda);
         if (!key) return;
         const price = Number(line.bruto != null ? line.bruto : line.preco);
-        if (!Number.isFinite(price) || price <= 0) return;
+        if (!Number.isSafeInteger(price) || price <= 0) return;
+        const soldAt = pokemonSaleTime(line);
+        if (soldAt && Date.now() - soldAt > POKEMON_SALE_WINDOW_MS) return;
         let sales = working.get(key);
         if (!sales) {
-            sales = [];
-            working.set(key, sales);
+            sales = []; working.set(key, sales);
         }
-        // Cap historical storage. No nicknames, sellers, owners or Pokémon IDs.
-        if (sales.length < 200) sales.push({ price, ...pokemonFacts(line.ficha) });
+        if (sales.length < 200) {
+            sales.push({ price, ...pokemonFacts(line.ficha), soldAt,
+                observedAt: Date.now(), source: 'completed-sale packet' });
+        }
     }
 
     function finalizePokemonHistory(working) {
         const values = {};
         for (const [key, sales] of working) if (sales.length) values[key] = sales;
-        state.pokemonReference = {
-            version: 2,
-            capturedAt: Date.now(),
-            values
-        };
+        state.pokemonReference = { version: 3, capturedAt: Date.now(), values };
         savePokemonReference();
         state.pokemonStatus = 'history ready';
         addLog('Pokémon reference refreshed: ' + Object.keys(values).length + ' buckets');
