@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.2.0
+// @version      0.2.1
 // @description  Community Market, evidence-aware Pokémon valuations, and guarded item-buy rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -15,7 +15,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.2.0');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.2.1');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -358,6 +358,7 @@
         "N={grade} · Q={quality} · {confidence} confidence": "N={grade} · Q={quality} · confiança {confidence}",
         "sold-price middle range {low}–{high}": "faixa central das vendas {low}–{high}",
         "IV details unavailable": "IVs individuais indisponíveis",
+        "IV {total}/192 · ATK {atk} · Sp.Atk {spAtk} · Speed {speed}": "IV {total}/192 · ATQ {atk} · At.Esp {spAtk} · Vel {speed}",
         "high": "alta",
         "medium": "média",
         "low": "baixa",
@@ -1487,8 +1488,9 @@
         const speciesId = speciesIdOf(ficha);
         if (!speciesId) return null;
         const potency = Number(ficha?.potencia);
-        const power = Number.isInteger(potency) && potency >= 1 && potency <= 5 ? potency : 1;
-        return currency + '|s:' + speciesId + '|sh:' + (ficha?.shiny ? 1 : 0) + '|p:' + power;
+        // Missing P-tier must never silently join P1 sales.
+        if (!Number.isInteger(potency) || potency < 1 || potency > 5) return null;
+        return currency + '|s:' + speciesId + '|sh:' + (ficha?.shiny ? 1 : 0) + '|p:' + potency;
     }
 
     function pokemonScore(ficha) {
@@ -1533,8 +1535,10 @@
     }
 
     function pokemonFacts(ficha) {
+        const level = Number(ficha?.level);
         return {
-            levelBand: levelBand(ficha?.level),
+            levelBand: ficha?.level != null && Number.isFinite(level) && level > 0
+                ? levelBand(level) : null,
             score: pokemonScore(ficha),
             quality: pokemonQuality(ficha),
             ivs: pokemonIVs(ficha),
@@ -1552,8 +1556,9 @@
     function percentile(values, p) {
         if (!values.length) return 0;
         const sorted = values.slice().sort((a, b) => a - b);
-        const index = Math.min(sorted.length - 1, Math.max(0, Math.floor((sorted.length - 1) * p)));
-        return sorted[index];
+        const position = Math.min(sorted.length - 1, Math.max(0, (sorted.length - 1) * p));
+        const lower = Math.floor(position), upper = Math.ceil(position);
+        return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
     }
 
     function addPokemonHistorySample(line, working) {
@@ -1590,7 +1595,8 @@
         const { level = true, grade = true, quality = false, ivs = false, refinement = false,
             gradeTolerance = 0.125, qualityTolerance = 0.15 } = options;
         return sales.filter(sale => {
-            if (level && sale.levelBand !== listing.levelBand) return false;
+            if (level && (!sale.levelBand || !listing.levelBand ||
+                sale.levelBand !== listing.levelBand)) return false;
             if (grade) {
                 if (listing.score == null || sale.score == null) return false;
                 // Never cross the N=3.5 / 4.0 boundary (or any half-point grade boundary).
@@ -1619,7 +1625,9 @@
         const sales = state.pokemonReference?.version === 2
             ? state.pokemonReference.values?.[key] : null;
         if (!Array.isArray(sales) || !sales.length) return null;
-        const minSamples = Math.max(1, Number(config.minPokemonSamples || 3));
+        const requestedSamples = Number(config.minPokemonSamples);
+        const minSamples = Number.isFinite(requestedSamples) && requestedSamples >= 1
+            ? Math.max(1, Math.floor(requestedSamples)) : 3;
         const listing = pokemonFacts(ficha);
         const stages = [
             { name: 'Grade, level, quality, IVs and refinement', confidence: 'high',
@@ -3197,6 +3205,7 @@
         const recentlyAttempted = attemptedUntil > Date.now();
         const canBuy = !state.pendingBuy && !recentlyAttempted && !retainedSeconds && purchaseQuantity(candidate) > 0;
         const total = candidate.kind === 'item' || candidate.kind === 'diamond' ? candidate.price * candidate.qty : candidate.price;
+        const pokemonIvs = candidate.kind === 'pokemon' ? pokemonIVs(candidate.ficha) : null;
         let referenceLabel;
         if (candidate.kind === 'item') {
             if (candidate.referenceSource === 'active-median') {
@@ -3231,6 +3240,10 @@
                     low: num(Math.round(candidate.pokemonValuation?.low || 0)),
                     high: num(Math.round(candidate.pokemonValuation?.high || 0))
                 })) + (candidate.pokemonValuation?.missingIVs ? ' · ' + escapeHtml(tr('IV details unavailable')) : ''))
+            + (pokemonIvs ? ' · ' + escapeHtml(tr('IV {total}/192 · ATK {atk} · Sp.Atk {spAtk} · Speed {speed}', {
+                total: pokemonIvs.reduce((sum, iv) => sum + iv, 0),
+                atk: pokemonIvs[1], spAtk: pokemonIvs[3], speed: pokemonIvs[5]
+            })) : '')
             + '</span></div>' +
             '<div><div>' + money(candidate.price, candidate.currency) + '</div><div class="moth-mw-meta">' + escapeHtml(tr('listed')) +
             ((candidate.kind === 'item' || candidate.kind === 'diamond') && candidate.qty > 1 ? escapeHtml(tr(' / unit')) : '') + '</div></div>' +
