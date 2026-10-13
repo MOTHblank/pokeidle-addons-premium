@@ -4171,6 +4171,8 @@
                 return;
             }
             if (target.matches('#moth-fixed-search')) { filterAutomationItemSelect(target, q('#moth-fixed-item', panel)); return; }
+            if (target.matches('#moth-pokemon-buy') && Number(target.value) < 0) target.value = '0';
+
             if (target.matches('input[type="range"][data-moth-cfg]')) {
                 const output = q('[data-moth-cfg-value="' + target.dataset.mothCfg + '"]', panel);
                 if (output) output.textContent = target.value + '%';
@@ -4211,6 +4213,16 @@
                     rule.currency = currency;
                 } else return;
                 config[key] = rules; saveConfig(); renderWatch(true); return;
+            }
+            if (target.matches('#moth-pokemon-kind')) {
+                const currency = q('#moth-pokemon-currency', panel);
+                if (currency) {
+                    const shiny = target.value === 'shiny';
+                    if (shiny) currency.value = 'orb';
+                    const coin = currency.querySelector('option[value="gold"]');
+                    if (coin) coin.disabled = shiny;
+                }
+                return;
             }
             if (target.matches('[data-moth-fixed-field]')) {
                 const id = target.dataset.ruleId;
