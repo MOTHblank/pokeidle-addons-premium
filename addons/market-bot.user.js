@@ -117,6 +117,7 @@
         pokemonEvidenceMemo: null,
         economyHoldings: [],
         economyInput: { itemId: 0, quantity: 1, currency: 'gold', feeKind: 'item', feeUnit: 100, feeQuantity: 1, holdingDays: 1 },
+        economyUiCache: null,
         liveDiamondAverages: null,
         diamondStatus: 'waiting',
         diamondPendingCurrency: null,
@@ -4003,6 +4004,14 @@
     }
 
     function renderEconomyDashboard() {
+        const stamp = JSON.stringify({
+            account: state.orderJournal?.accountKey,
+            updated: state.itemSummaryAt, config: state.economyInput,
+            holdings: state.economyHoldings, orders: state.orderJournal?.orders?.length,
+            language: currentLocale(), catalogSize: state.catalog.size
+        });
+        if (state.economyUiCache?.stamp === stamp &&
+            Date.now() - state.economyUiCache.at < 3000) return state.economyUiCache.html;
         const holdings = economyHoldingsSnapshot();
         const orders = acquisitionLedgerSummary();
         const input = state.economyInput;
@@ -4013,8 +4022,10 @@
             '<option value="' + code + '"' + (code === currency ? ' selected' : '') + '>' +
             escapeHtml(tr(code === 'orb' ? 'Gems' : 'Coins')) + '</option>').join('');
         const field = (key,value,min=0) =>
-            '<input type="number" data-moth-economy-field="' + key + '" min="' + min +
-            '" step="1" value="' + escapeHtml(value) + '">';
+            '<label class="moth-mw-economy-field"><span>' + escapeHtml(tr({
+                quantity:'Quantity',feeUnit:'Unit price',feeQuantity:'Sale quantity',holdingDays:'Holding days'
+            }[key] || key)) + '</span><input type="number" data-moth-economy-field="' + key + '" min="' + min +
+            '" step="1" value="' + escapeHtml(value) + '"></label>';
         const live = readEconomyTelemetry();
         const ledgerRow = code => {
             const row = orders[code];
@@ -4052,7 +4063,7 @@
                 count: live.observedRareDrops == null ? '?' : num(live.observedRareDrops),
                 rate: live.rareExpectedPerHour == null ? '?' : live.rareExpectedPerHour.toFixed(2)
             })) + '</p>';
-        return '<section class="moth-mw-economy-card"><h5>' + escapeHtml(tr('Recorded purchase exposure (not sale revenue)')) +
+        const html = '<section class="moth-mw-economy-card"><h5>' + escapeHtml(tr('Recorded purchase exposure (not sale revenue)')) +
             '</h5>' + ledgerRow('gold') + ledgerRow('orb') +
             '<p>' + escapeHtml(tr('Confirmed means an authoritative buy acknowledgement; booked spend is the quoted maximum, not verified settlement.')) + '</p></section>' +
             '<section class="moth-mw-economy-card"><h5>' + escapeHtml(tr('User-entered holdings (optional)')) +
@@ -4091,6 +4102,8 @@
             '<section class="moth-mw-economy-card"><h5>' + escapeHtml(tr('Farming context (optional telemetry)')) +
             '</h5>' + telemetry + '<p>' + escapeHtml(tr('Observed and modeled quantities are separate; no rare-drop EV, inventory value or NPC auto-sale is silently added to realized profit.')) +
             '</p></section>';
+        state.economyUiCache = { stamp, at: Date.now(), html };
+        return html;
     }
 
     function renderItemInventory() {
@@ -5045,6 +5058,45 @@
                 try { localStorage.setItem('moth-pokeidle-market-watch-view-v1', view); } catch {}
                 renderWatch(true);
                 return;
+            }
+            const holdingRemove = target.closest('[data-moth-holding-remove]');
+            if (holdingRemove) {
+                const ok = setEconomyHolding(Number(holdingRemove.dataset.mothHoldingRemove), 0, 'gold');
+                if (!ok) addLog('Could not remove manually recorded holding');
+                renderWatch(true); return;
+            }
+            if (target.closest('#moth-mw-holding-save')) {
+                const itemId = Number(q('#moth-mw-holding-item', panel)?.value);
+                const quantity = Number(q('[data-moth-economy-field="quantity"]', panel)?.value);
+                const currency = q('#moth-mw-holding-currency', panel)?.value;
+                const ok = setEconomyHolding(itemId, quantity, currency);
+                if (!ok) addLog('Cannot record holding: select a catalog item and valid quantity');
+                else {
+                    state.economyInput.itemId = itemId;
+                    state.economyInput.quantity = quantity;
+                    state.economyInput.currency = currency;
+                }
+                renderWatch(true); return;
+            }
+            if (target.closest('#moth-mw-fee-calc')) {
+                const kind = q('#moth-mw-fee-kind', panel)?.value;
+                const currency = q('#moth-mw-fee-currency', panel)?.value;
+                const unit = Number(q('[data-moth-economy-field="feeUnit"]', panel)?.value);
+                const quantity = Number(q('[data-moth-economy-field="feeQuantity"]', panel)?.value);
+                const days = Number(q('[data-moth-economy-field="holdingDays"]', panel)?.value);
+                if (!['item','diamond','pokemon'].includes(kind) ||
+                    !['gold','orb'].includes(currency) ||
+                    !Number.isSafeInteger(unit) || unit <= 0 ||
+                    !Number.isSafeInteger(quantity) || quantity < 1 ||
+                    kind === 'pokemon' && quantity !== 1 ||
+                    !Number.isSafeInteger(unit * quantity) ||
+                    !Number.isSafeInteger(days) || days < 1 || days > 30) {
+                    addLog('Invalid simulated sale: Pokémon are indivisible and prices must be positive integers');
+                    return;
+                }
+                state.economyInput = { ...state.economyInput, feeKind: kind, currency,
+                    feeUnit: unit, feeQuantity: quantity, holdingDays: days };
+                renderWatch(true); return;
             }
             if (target.closest('#moth-mw-scan')) { runScan(true); return; }
             if (target.closest('#moth-mw-refresh-baseline')) {
