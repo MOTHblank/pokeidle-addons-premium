@@ -8659,11 +8659,13 @@
                 1
             );
 
-        // The bonus stack differs per XP stream and catch-up can cross a
-        // threshold mid-session. Never copy historical per-kill multipliers
-        // into an unvisited hunt, even from this same lead.
-        const trainerXpPerKill = baseXp;
-        const pokemonXpPerKill = baseXp;
+        // Game-reported Twitch, event and guild percentages have known
+        // multiplicative semantics in upstream. Unknown shop/catch-up effects
+        // are not silently included; measured receipts always win above.
+        const nativeBonus=nativeXpBonusReading(
+            state.nativeXpContext,state.playerLevel);
+        const trainerXpPerKill = baseXp * nativeBonus.trainer;
+        const pokemonXpPerKill = baseXp * nativeBonus.pokemon;
 
         const forecast = {
             value:
@@ -8682,8 +8684,13 @@
             killMs,
             observed:
                 false,
-            bonusSource: 'unboosted-upstream-shared',
-            bonusCaveat: 'active boosts unverified; model does not include them',
+            bonusSource: nativeBonus.knownFactors
+                ? 'native-game-reported-partial-xp-bonuses'
+                : 'unboosted-upstream-shared',
+            bonusKnownFactors: {trainer:nativeBonus.trainer,
+                pokemon:nativeBonus.pokemon},
+            bonusCaveat: 'only game-reported Twitch/event/guild XP percentages; '+
+                'VIP/shop/catch-up, boost expiry and threshold crossings may differ',
             source:
                 !hasPersonalizedModel
                     ? 'baseline model'
