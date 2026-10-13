@@ -3808,6 +3808,113 @@
             '</div></div></div>';
     }
 
+    // Inspection is pure/read-only: neither a median nor a preview can enable a
+    // rule, change a spending limit, or submit a market.comprar request.
+    function pokemonRulePreview(listing, currency) {
+        const price = Number(listing?.preco);
+        const results = [];
+        for (const rule of sanitizePokemonBuyRules(config.pokemonBuyRules)) {
+            if (rule.currency !== currency || !pokemonRuleMatches(rule, listing?.ficha, currency)) continue;
+            let status = 'Rule paused';
+            if (!rule.buyEnabled || !config.enabled || !config.fixedRulesEnabled ||
+                config.purchasesPaused) status = 'Rule paused';
+            else if (price > rule.buyMax) status = 'Above price ceiling';
+            else if (!Number.isSafeInteger(price) || price <= 0) status = 'Unverified listing price';
+            else if (!state.orderJournal || unverifiedOrdersExist()) status = 'Awaiting reconciliation';
+            else if (remainingBudget(currency, rule.id).spend < price) status = 'Budget blocked';
+            else status = 'Matches absolute-price rule';
+            results.push({ kind: rule.kind, status,
+                buyMax: rule.buyMax, currency, ruleId: rule.id });
+        }
+        return results;
+    }
+
+    function pokemonEvidenceCard(listing, currency, observedAt) {
+        const facts = pokemonFacts(listing?.ficha);
+        const role = pokemonCombatRole(listing?.ficha);
+        const ref = pokemonReferenceFor(listing?.ficha, currency);
+        const price = Number(listing?.preco);
+        const iv = facts.ivs;
+        const flags = Object.entries(facts.traits).filter(([, flag]) => flag === true)
+            .map(([name]) => name);
+        const unverifiedExtras = Object.values(facts.traits).some(value => value === null);
+        const dateLabel = ref?.ageDays == null ? tr('Sale dates unverified')
+            : tr('Newest comparable sale: {days} days ago', { days: ref.ageDays });
+        const sourceLabel = ref
+            ? tr('Completed sales · {count} matched of {total} · {confidence}', {
+                count: num(ref.samples), total: num(ref.bucketSamples),
+                confidence: tr(ref.confidence)
+            }) : tr('Insufficient comparable sales');
+        const priceLabel = ref
+            ? tr('Median {median} · IQR {low}–{high} · P10–P90 {p10}–{p90}', {
+                median: num(Math.round(ref.value)), low: num(Math.round(ref.low)),
+                high: num(Math.round(ref.high)), p10: num(Math.round(ref.p10)),
+                p90: num(Math.round(ref.p90))
+            }) : tr('No defensible completed-sale price range');
+        const roles = role.focus.length && iv
+            ? role.focus.map(name => name.toUpperCase() + ' ' +
+                (iv[{hp:0,atk:1,def:2,spAtk:3,spDef:4,speed:5}[name]] ?? '?')).join(' · ')
+            : tr('Relevant IVs unknown');
+        const preview = pokemonRulePreview(listing, currency);
+        const ruleLabel = preview.length ? preview.map(row =>
+            tr(row.kind === 'shiny' ? 'Shiny Pokémon' : row.kind === 'p5' ? 'P5 Pokémon' : 'Any Pokémon') +
+            ': ' + tr(row.status) + ' (' + num(row.buyMax) + ')').join(' · ')
+            : tr('No matching configured Pokémon rule');
+        const age = Date.now() - observedAt;
+        const status = Number.isFinite(age) && age >= 0 && age <= QUOTE_MAX_AGE_MS
+            ? tr('Recent listing observation') : tr('Stale listing observation');
+        const missing = facts.missing.length ? facts.missing.join(', ') : tr('None');
+        const limitation = ref?.limitations?.length ? ref.limitations.join(', ') :
+            tr('No verified completed-sale reference');
+        const percent = ref && ref.value > 0 && Number.isFinite(price)
+            ? tr('Asking/reference ratio: {percent}%', {
+                percent: (100 * price / ref.value).toFixed(1)
+            }) : tr('Asking/reference ratio unavailable');
+        return '<article class="moth-mw-evidence-card"><h5>' +
+            escapeHtml(pokemonListingName(listing?.ficha)) + '</h5>' +
+            '<div class="moth-mw-evidence-meta"><b>' +
+            (Number.isSafeInteger(price) && price > 0 ? money(price, currency) :
+                escapeHtml(tr('Price unverified'))) + '</b> · ' + escapeHtml(status) + '</div>' +
+            '<p>' + escapeHtml('N=' + (facts.score == null ? '?' : facts.score.toFixed(3)) +
+                ' · P' + (facts.potency ?? '?') + ' · Q=' +
+                (facts.quality == null ? '?' : facts.quality.toFixed(3)) +
+                ' · IV ' + (iv ? iv.reduce((a,b)=>a+b,0) + '/192' : '?') +
+                ' · ' + (facts.form == null ? tr('Form unknown') : 'Form ' + facts.form)) + '</p>' +
+            '<p>' + escapeHtml(tr('Role: {role} ({source})', {
+                role: tr(role.role), source: tr(role.source)
+            })) + ' · ' + roles + '</p>' +
+            '<p>' + escapeHtml(tr('Collectibles: {flags}', {
+                flags: flags.length ? flags.join(', ') : tr('No confirmed flags')
+            })) + (unverifiedExtras ? ' · ' + escapeHtml(tr('Other collectible flags unverified')) : '') + '</p>' +
+            '<p><b>' + escapeHtml(sourceLabel) + '</b> · ' + escapeHtml(dateLabel) + '</p>' +
+            '<p>' + escapeHtml(priceLabel) + ' · ' + escapeHtml(percent) + '</p>' +
+            '<p>' + escapeHtml(tr('Comparison: {stage}', {
+                stage: ref?.comparison ? tr(ref.comparison) : tr('None')
+            })) + ' · ' + escapeHtml(tr('Limits: {details}', { details: limitation })) + '</p>' +
+            '<p>' + escapeHtml(tr('Missing listing fields: {fields}', { fields: missing })) + '</p>' +
+            '<p class="moth-mw-rule-hint">' + escapeHtml(tr('Rule preview (not permission): {preview}', {
+                preview: ruleLabel
+            })) + '</p></article>';
+    }
+
+    function renderPokemonPriceEvidence() {
+        const offers = [];
+        for (const currency of ['gold', 'orb']) {
+            const record = state.pokemonAutoOffers.get(currency);
+            if (!record || !Array.isArray(record.offers)) continue;
+            for (const offer of record.offers.slice(0, 50)) {
+                if (offer?.ficha) offers.push({ currency, offer, updatedAt: record.updatedAt });
+            }
+        }
+        if (!offers.length) return '<div class="moth-mw-empty">' +
+            escapeHtml(tr('No sampled Pokémon listings yet. Activate Pokémon Watch or scan now.')) +
+            '</div>';
+        return '<p class="moth-mw-evidence-intro">' +
+            escapeHtml(tr('This is a bounded market sample, not every listing. Completed-sale evidence cannot authorize a purchase.')) +
+            '</p>' + offers.slice(0, 60).map(({currency, offer, updatedAt}) =>
+            pokemonEvidenceCard(offer, currency, updatedAt)).join('');
+    }
+
     function renderCandidate(candidate) {
         const discount = Math.max(0, 1 - candidate.ratio);
         const retainedSeconds = candidate.retainedUntil > serverNow() ? Math.ceil((candidate.retainedUntil - serverNow()) / 1000) : 0;
