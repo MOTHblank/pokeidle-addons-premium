@@ -15,7 +15,9 @@ test('a real zero, a rare positive rate and unavailable evidence remain distinct
     assert.equal(h.formatRate(0),'0');
     assert.equal(h.formatRate(null),'—');
     assert.equal(h.formatRate(NaN),'—');
-    assert.equal(h.formatRate(-.42),'-.42');
+    assert.equal(h.formatRate(-.42),'-0.42');
+    assert.equal(h.formatRate('0.125'),'0.125');
+    assert.equal(h.formatRate(''),'—');
     assert.equal(h.formatRate(-150),'-150');
     assert.notEqual(h.formatRate(.001),'0');
     assert.notEqual(h.formatEventRate(.0001),'0/h');
