@@ -107,7 +107,7 @@ test('the optional boost calculator communicates what its controls do in both la
     ]) assert.ok(src.includes(label),label);
     assert.match(src,/The game is NOT checked for active bonuses/);
     assert.match(src,/O Atlas NÃO detecta bônus ativos/);
-    assert.match(src,/reference\.captureCompare/);
+    assert.match(src,/reference\.catchCompare/);
     assert.match(src,/reference\.rareCompare/);
     assert.match(src,/reference\.unchanged/);
 });
