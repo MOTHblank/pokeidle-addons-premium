@@ -417,6 +417,8 @@
 
     function closeWatch() {
         state.watchOpen = false;
+        state.itemInventoryMemo = null;
+        state.lastInventoryPaint = null;
 
         /*
          * The native modal reuses #modal-corpo when navigating between RMT
