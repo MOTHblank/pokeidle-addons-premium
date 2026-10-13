@@ -2477,6 +2477,7 @@
         const quotedPrice = Number(candidate.unitPrice || candidate.price);
         if (!manual && !currentRuleMatches(rule, candidate, quotedPrice)) return false;
         if (!candidate || state.pendingBuy || !state.orderJournal?.sessionId ||
+            !state.gameSocket || state.gameSocket.readyState !== 1 ||
             state.orderJournal?.accountKey !== orderAccountKey() ||
             state.orderJournal.orders.length >= 2500) return false;
         if (candidate.kind === 'pokemon' &&
