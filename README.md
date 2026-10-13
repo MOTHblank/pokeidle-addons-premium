@@ -1,6 +1,6 @@
 # PokéIdle Addons Premium
 
-Moth Watch **v0.3.0** lives in this repository. The standard `pokeidle-addons` controller does not install or update it automatically.
+Moth Watch **v0.3.1** lives in this repository. The standard `pokeidle-addons` controller does not install or update it automatically.
 
 ## Development roadmap
 
@@ -12,7 +12,7 @@ Install [Violentmonkey](https://addons.mozilla.org/firefox/addon/violentmonkey/)
 
 The script preserves its existing local settings keys. **Automated buying stays disabled for new profiles**. Each purchase rule can be individually toggled, but no rule will place an order until the master **Enable rule-based buying** switch is turned on.
 
-## Rule-based purchases (v0.3.0)
+## Rule-based purchases (v0.3.1)
 
 Three groups are available in **Moth Watch → Automation**:
 
@@ -20,17 +20,19 @@ Three groups are available in **Moth Watch → Automation**:
 2. **Any item**: choose Coins or Gems and the maximum **unit** price; for example, any item at or below **10,000 Coins per unit**.
 3. **Pokémon**: choose **Any Pokémon**, **Shiny Pokémon**, or **P5 Pokémon**, Coins/Gems (Shiny requires Gems), and the maximum **per-Pokémon** listing price. For example, any Pokémon at or below **1,000,000 Coins**, or any Shiny at or below **5 Gems**.
 
-All modes use the same reserves and per-purchase spending caps. A cap of zero means no additional limit beyond the spendable balance; with zero reserves, an enabled category-wide rule can spend the entire currency balance on multiple purchases. Items are bought in full available quantity, bounded by affordability/caps, while Pokémon are indivisible and bought one at a time. Only **one order can be pending** server confirmation, and the same recently attempted listing is temporarily excluded.
+All modes use the same reserves and per-purchase spending caps, plus optional **per-rule session/day spend and session purchase-count/quantity caps**, **account-wide session/day Coin/Gem ceilings**, global session purchase/quantity caps, and the **Pause all purchases** kill switch. **Zero means unlimited** for a cap, not zero permission. Existing rule authorization is unchanged. Day boundaries are UTC; the session persists through a page refresh in the same browser tab. Without a cumulative cap, an enabled category-wide rule may still exhaust available currency over multiple orders. Items are bought in available quantities bounded by affordability and all configured caps (a partial item lot may be purchased), while Pokémon are indivisible and bought one at a time. Only **one order can be pending** server confirmation. Every submitted order is journaled under a non-identifying account-specific key in the browser profile, with quoted upper-bound spend reserved. A new authenticated account loads its own journal; the raw player nickname is not stored in the key. Run only one active Moth Watch buying tab per game account: concurrent tabs lack server-backed idempotency and cross-tab transaction locks. A purchase without a matching authoritative acknowledgement becomes **unknown**, including across refresh/reconnect, and is never blindly retried for the same listing. Matching late acknowledgements/refusals can resolve it; balance changes and timeouts cannot.
 
 **These are absolute-price rules, not value predictions.** A Pokémon can qualify even without reliable grade, IVs, or completed-sale history. No arbitrary reference discount is required; the user-configured price is the explicit authorization. Moth Watch validates currencies and listing prices, skips your own ads and retained ads, and sends the listed unit price to the server. Server purchase acceptance remains authoritative.
 
-The broad-item scanner uses the market's item summary to shortlist relevant item types, then verifies individual offers at a bounded request cadence. When Pokémon buying rules are active, it scans up to **three cheapest-price pages per currency**. It does not promise to inspect all listings or beat retention lotteries, and monitoring pauses when the player browses the normal market to avoid replacing that view.
+The broad-item scanner uses the market's item summary to shortlist relevant item types, then verifies fresh individual offers at a bounded request cadence. Offers missing explicit quantity, seller, valid price or listing identity are not purchased; previously selected rules are rechecked at submission time. The Controller buy path cannot submit an unobserved, caller-supplied price as a verified quote. When Pokémon buying rules are active, it scans up to **three cheapest-price pages per currency**. It does not promise to inspect all listings or beat retention lotteries. Pokémon and Diamond listing scans are serialized; empty replies lacking the required kind/currency/page are discarded rather than guessed. Background acceptance pauses when the player browses the normal market. A request already sent before opening the native market can still be delivered to the game's own handler.
 
 
 
 ## Pokémon valuation
 
 See [Pokémon valuation reference](docs/POKEMON_VALUATION_REFERENCE.md) for documented game rules and uncertainties. The pricing scanner uses completed sales, separate currencies, species/form, shiny and potency, and narrower comparisons for score/quality/IVs when the game supplies them. A coarse comparator is not an independently validated fair price. No fixed rarity-to-price multiplier is assumed.
+
+Read [Milestone A protocol fixtures and verification status](docs/MOTHWATCH_MILESTONE_A_PROTOCOL_FIXTURES.md) for field-presence requirements, synthetic positive/empty/mismatched examples and what still needs authorized live-server verification. The journal uses quoted **maximum exposure**, not invented actual execution price/quantity or a presumed refund. Orders and server-side inventory/balance reconciliation have **not** been certified in live play.
 
 Run the non-network tests with `node --test tests/moth-watch-automation.test.cjs`.
 

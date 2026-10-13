@@ -7,6 +7,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const script = fs.readFileSync(path.join(__dirname, '..', 'addons', 'market-bot.user.js'), 'utf8');
+const protocolFixtures = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'moth-watch-market-protocol.json'), 'utf8'));
+
 
 function section(start, end) {
     const a = script.indexOf(start), b = script.indexOf(end, a + start.length);
@@ -38,7 +40,7 @@ test('Existing fixed rules retain buying parameters but never restore selling or
         }),
         getItem() { return this.value; }, setItem(_, v) { this.value = v; }
     };
-    const src = section('    function sanitizeFixedItemRules(', '    function emptyBaseline(');
+    const src = section('    function sanitizeRuleCaps(', '    function emptyBaseline(');
     const fn = new Function('localStorage', 'DEFAULTS', 'CONFIG_KEY', src +
         '\nreturn { sanitizeFixedItemRules, loadConfig };')(storage, defaults, 'settings');
     const loaded = fn.loadConfig();
@@ -83,13 +85,15 @@ test('Rule matching directly examines fresh item listings, skips attempted and r
 
 test('Purchase quantity honors the whole available offer, balance, reserves and transaction caps', () => {
     const src = section('    function purchaseQuantity(', '    function tryBuy(');
-    const create = new Function('balanceFor', 'reserveFor', 'maxSpendFor', 'pokemonCurrencyAllowed',
+    const create = new Function('balanceFor', 'reserveFor', 'maxSpendFor', 'pokemonCurrencyAllowed', 'remainingBudget',
         src + '\nreturn purchaseQuantity;');
-    const fn = create(() => 100000, () => 10000, () => 30000, () => true);
+    const fn = create(() => 100000, () => 10000, () => 30000, () => true,
+        () => ({ spend: Infinity, quantity: Infinity }));
     assert.equal(fn({ kind: 'item', currency: 'gold', price: 5000, qty: 20 }), 6);
     assert.equal(fn({ kind: 'item', currency: 'gold', price: 5000, qty: 3 }), 3);
     assert.equal(fn({ kind: 'item', currency: 'gold', price: 35000, qty: 3 }), 0);
-    assert.equal(create(() => 100000, () => 10000, () => 0, () => true)
+    assert.equal(create(() => 100000, () => 10000, () => 0, () => true,
+        () => ({ spend: Infinity, quantity: Infinity }))
         ({ kind: 'item', currency: 'gold', price: 5000, qty: 100 }), 18);
 });
 
@@ -101,12 +105,12 @@ test('Multiple fixed rules are checked fairly, including after an unaffordable r
     ];
     const config = { enabled: true, fixedRulesEnabled: true, fixedItemRules: rules };
     const requested = [], bought = [];
-    const fn = new Function('config', 'state', 'gameIsLoading', 'q', 'sanitizeFixedItemRules',
+    const fn = new Function('config', 'state', 'gameIsLoading', 'q', 'communityMarketIsOpen', 'unverifiedOrdersExist', 'sanitizeFixedItemRules',
         'automationDetail', 'fixedRuleCandidate', 'purchaseQuantity', 'tryBuy',
         'hasAnyBuyingRules', 'activeAnyItemRules', 'activePokemonRules',
         'anyItemRuleTargets', 'anyItemRuleCandidate', 'pokemonRuleCandidate',
         section('    function runMarketAutomation(', '    function runScan(force)') + '\nreturn runMarketAutomation;')(
-        config, state, () => false, () => null, v => v,
+        config, state, () => false, () => null, () => false, () => false, v => v,
         id => { requested.push(id); }, rule => ({ listingId: rule.itemId, name: String(rule.itemId) }),
         candidate => candidate.listingId === 106 ? 0 : 1,
         candidate => { bought.push(candidate.listingId); return true; },
@@ -130,9 +134,9 @@ test('Rule requests get ahead of background scans without displacing manual item
         selectedItemFocus: null, sellRecommendationKey: null,
         lastDetailRequest: new Map()
     };
-    const fn = new Function('state', 'config', 'scheduleItemDetailPump',
+    const fn = new Function('state', 'config', 'scheduleItemDetailPump', 'MAX_DETAIL_QUEUE',
         section('    function queueItemDetail(', '    function scheduleItemDetailPump(') +
-        '\nreturn queueItemDetail;')(state, {scanSeconds:5}, () => {});
+        '\nreturn queueItemDetail;')(state, {scanSeconds:5}, () => {}, 24);
     fn(106,'gold');
     assert.deepEqual(state.detailQueue.map(x => x.key), ['105:gold','106:gold','999:gold']);
     state.selectedItemFocus = { key:'107:orb' };
@@ -353,7 +357,8 @@ test('Category rule defaults and currency constraints', () => {
     assert.deepEqual(defaults.anyItemRules, []);
     assert.deepEqual(defaults.pokemonBuyRules, []);
     assert.equal(defaults.fixedRulesEnabled, false);
-    const helpers = new Function(section('    function sanitizeAnyItemRules(', '    function loadConfig()') +
+    const helpers = new Function(section('    function sanitizeRuleCaps(', '    function sanitizeFixedItemRules(') +
+        section('    function sanitizeAnyItemRules(', '    function loadConfig()') +
         '\nreturn {sanitizeAnyItemRules, sanitizePokemonBuyRules};')();
     const item = helpers.sanitizeAnyItemRules([{buyMax:10000}, {buyMax:0}]);
     assert.equal(item.length, 1);
@@ -461,14 +466,14 @@ test('Automated Pokémon orders require master permission and remain serialized'
     const submitted=[];
     const candidate={key:'rule:pokemon:7',kind:'pokemon',listingId:7,currency:'orb',
         price:5,unitPrice:5,qty:1,ficha:{shiny:true,potencia:5}};
-    const runner=new Function('config','state','gameIsLoading','q',
+    const runner=new Function('config','state','gameIsLoading','q','communityMarketIsOpen','unverifiedOrdersExist',
         'hasAnyBuyingRules','sanitizeFixedItemRules','activeAnyItemRules',
         'activePokemonRules','anyItemRuleTargets','automationDetail',
         'fixedRuleCandidate','anyItemRuleCandidate','pokemonRuleCandidate',
         'purchaseQuantity','tryBuy',
         section('    function runMarketAutomation(', '    function runScan(force)') +
         '\nreturn runMarketAutomation;')(
-        config,state,()=>false,()=>null,
+        config,state,()=>false,()=>null,()=>false,()=>false,
         ()=>config.enabled && config.fixedRulesEnabled,
         ()=>[],()=>[],()=>config.pokemonBuyRules,()=>[],()=>{},
         ()=>null,()=>null,()=>candidate,()=>1,
@@ -480,4 +485,160 @@ test('Automated Pokémon orders require master permission and remain serialized'
     runner();
     runner();
     assert.deepEqual(submitted,[7]);
+});
+
+
+test('Milestone A: all new buying limits opt out by default and do not enable automation', () => {
+    for (const key of ['maxCoinsPerSession', 'maxGemsPerSession', 'maxCoinsPerDay',
+        'maxGemsPerDay', 'maxPurchasesPerSession', 'maxQuantityPerSession']) {
+        assert.equal(defaults[key], 0, key + ' must be unlimited unless configured');
+    }
+    assert.equal(defaults.purchasesPaused, false);
+    assert.equal(defaults.fixedRulesEnabled, false);
+    assert.match(script, /Pause all purchases \(kill switch\)/);
+    assert.match(script, /Rule cumulative limits/);
+    assert.match(script, /purchasesPaused: !!config\.purchasesPaused/);
+});
+
+test('Milestone A: market vitrine responses use explicit currency, kind and page on empty packets', () => {
+    const src = section('    function marketReplyAvailable(', '    function handleDiamondListings(');
+    const state = { marketReply: {kind:'pokemon',currency:'gold',page:1,sentAt:Date.now()} };
+    const { marketReplyMatches, marketReplyAvailable } =
+        new Function('state','communityMarketIsOpen',src +
+            '\nreturn {marketReplyMatches,marketReplyAvailable};')(state,()=>false);
+    assert.equal(marketReplyMatches({aba:'vitrine',linhas:[]},'pokemon'),false);
+    assert.equal(marketReplyMatches({aba:'vitrine',tipo:'pokemon',moeda:'orb',pagina:1,linhas:[]},'pokemon'),false);
+    assert.equal(marketReplyMatches({aba:'vitrine',tipo:'diamante',moeda:'gold',pagina:1,linhas:[]},'pokemon'),false);
+    assert.equal(marketReplyMatches({aba:'vitrine',tipo:'pokemon',moeda:'gold',pagina:0,linhas:[]},'pokemon'),false);
+    assert.equal(marketReplyMatches({aba:'vitrine',tipo:'pokemon',moeda:'gold',pagina:1,linhas:[]},'pokemon'),true);
+    state.marketReply = {kind:'diamante',currency:'orb',page:0,sentAt:Date.now()};
+    assert.equal(marketReplyMatches({aba:'vitrine',linhas:[]},'diamante'),false);
+    assert.equal(marketReplyMatches({aba:'vitrine',tipo:'diamante',moeda:'orb',pagina:0,linhas:[]},'diamante'),true);
+    assert.equal(marketReplyAvailable(),false);
+    state.marketReply.sentAt -= 7000;
+    assert.equal(marketReplyAvailable(),true);
+    assert.equal(state.marketReply,null);
+});
+
+test('Milestone A: stale/missing/held/self/unverified quotes fail closed', () => {
+    const state = { nick:'me' };
+    let unresolved = false;
+    const source = section('    function freshQuote(', '    function loadConfig()');
+    const check = new Function('state','QUOTE_MAX_AGE_MS','isOwnListing','serverNow','unresolvedListing',
+        source + '\nreturn freshQuote;')(
+        state,30000,offer => offer.vendedor === 'me',() => Date.now(),
+        () => unresolved);
+    const valid = {listingId:12, kind:'item', currency:'gold',price:10,qty:2,
+        seller:'someone',seenAt:Date.now(),retainedUntil:0};
+    assert.equal(check(valid,false),true);
+    assert.equal(check({...valid,qty:undefined},false),false);
+    assert.equal(check({...valid,price:0},false),false);
+    assert.equal(check({...valid,seller:'me'},false),false);
+    assert.equal(check({...valid,seenAt:Date.now()-32000},false),false);
+    assert.equal(check({...valid,retainedUntil:Date.now()+5000},false),false);
+    assert.equal(check({...valid,kind:'pokemon',ficha:{shiny:undefined,potencia:5}},false),false);
+    unresolved=true;
+    assert.equal(check(valid,true),false);
+});
+
+test('Milestone A: session/day caps account for outstanding unknown orders across reload', () => {
+    const disk = new Map(), memory = new Map();
+    const storage = {getItem:key => disk.get(key)||null,setItem:(key,val)=>disk.set(key,val)};
+    const session = {getItem:key => memory.get(key)||null,setItem:(key,val)=>memory.set(key,val)};
+    const config = {maxCoinsPerSession:250,maxGemsPerSession:0,
+        maxCoinsPerDay:220,maxGemsPerDay:0,
+        maxPurchasesPerSession:2,maxQuantityPerSession:3,
+        fixedRulesEnabled:false};
+    const state = {nick:'synthetic-alice',attemptedListings:new Map(),pendingBuy:null,lastPurchaseOutcome:'idle'};
+    const source = section('    function orderAccountKey(', '    function loadConfig()');
+    const log = [];
+    const api = new Function('state','config','localStorage','sessionStorage',
+        'ORDER_JOURNAL_KEY','ORDER_SESSION_KEY','normalize','addLog','queueRender',
+        'sanitizeFixedItemRules','sanitizeAnyItemRules','sanitizePokemonBuyRules',
+        source + '\nreturn {orderAccountKey,loadOrderJournal,saveOrderJournal,reserveOrder,settleOrder,'+
+        'resolveOrder,unresolvedListing,remainingBudget,orderExposure};')(
+        state,config,storage,session,'orders','session',text=>text.toLowerCase(),text=>log.push(text),
+        ()=>{},()=>[],()=>[],()=>[]);
+    state.orderJournal=api.loadOrderJournal();
+    const at=Date.now();
+    const order={listingId:77,currency:'gold',sentAt:at,spend:120,qty:2,
+        ruleId:'',kind:'item',sessionId:state.orderJournal.sessionId,
+        day:new Date(at).toISOString().slice(0,10),status:'prepared'};
+    assert.equal(api.reserveOrder(order),true);
+    assert.equal(api.remainingBudget('gold').spend,100);
+    assert.equal(api.remainingBudget('gold').quantity,1);
+    order.status='submitted';api.saveOrderJournal();
+    state.orderJournal=api.loadOrderJournal(); // reload converts in-flight to unknown
+    assert.equal(state.orderJournal.orders[0].status,'unknown');
+    assert.equal(api.unresolvedListing(77),true);
+    assert.equal(api.remainingBudget('gold').spend,100);
+    assert.equal(api.resolveOrder(88,'confirmed'),false);
+    assert.equal(api.resolveOrder(77,'confirmed'),true);
+    assert.equal(api.resolveOrder(77,'confirmed'),false,'duplicate ack is idempotent');
+    assert.equal(api.remainingBudget('gold').spend,100,
+        'confirmed purchases retain quoted upper bound');
+    assert.equal(api.unresolvedListing(77),false);
+    assert.equal(api.remainingBudget('orb').spend,Infinity);
+    state.nick='synthetic-bob';
+    state.orderJournal=api.loadOrderJournal();
+    assert.equal(state.orderJournal.orders.length,0,'different game accounts must not share buys');
+    state.nick='synthetic-alice';
+    state.orderJournal=api.loadOrderJournal();
+    assert.equal(state.orderJournal.orders[0].status,'confirmed');
+    assert.ok([...disk.keys()].every(key=>!key.includes('synthetic-alice')),
+        'raw nickname must never enter the stored journal key');
+});
+
+test('Milestone A: per-rule spend and quantity limits are independent of global caps', () => {
+    const state = {orderJournal:{sessionId:'s',orders:[{
+        listingId:1,currency:'gold',sentAt:Date.now(),qty:2,spend:80,
+        ruleId:'fixed-1',status:'unknown',sessionId:'s',
+        day:new Date().toISOString().slice(0,10)
+    }]}};
+    const config = {enabled:true,fixedRulesEnabled:true,purchasesPaused:false,
+        maxCoinsPerSession:300,maxCoinsPerDay:300,
+        maxPurchasesPerSession:4,maxQuantityPerSession:5,
+        fixedItemRules:[{id:'fixed-1',itemId:106,currency:'gold',buyEnabled:true,buyMax:100,
+            maxSpendSession:100,maxSpendDay:90,maxPurchasesSession:2,maxQuantitySession:3}]};
+    const src = section('    function orderExposure(', '    function currentRuleMatches(');
+    const api = new Function('state','config','sanitizeFixedItemRules','sanitizeAnyItemRules',
+        'sanitizePokemonBuyRules','orderDay',
+        src+'\nreturn {remainingBudget,orderExposure};')(
+        state,config,values => values.map(r=>({...r})),()=>[],()=>[],
+        at=>new Date(at).toISOString().slice(0,10));
+    assert.equal(api.remainingBudget('gold','fixed-1').spend,10);
+    assert.equal(api.remainingBudget('gold','fixed-1').quantity,1);
+    assert.equal(api.remainingBudget('gold').spend,220);
+});
+
+
+test('Milestone A: fixture families cover positive, empty, missing and conflicting packets', () => {
+    const fixtures = protocolFixtures;
+    assert.equal(fixtures.provenance.kind, 'synthetic-only');
+    assert.equal(fixtures.item.positive.linhas[0].preco, 90);
+    assert.equal(fixtures.item.empty.linhas.length, 0);
+    assert.equal(fixtures.item.missingItemId.itemId, undefined);
+    assert.equal(fixtures.pokemonHistory.empty.linhas.length, 0);
+    assert.equal(fixtures.pokemonHistory.ambiguousEmpty.moeda, undefined);
+    assert.equal(fixtures.acknowledgement.missingListingId.ev[0].listingId, undefined);
+    const state = {marketReply:{kind:'pokemon',currency:'gold',page:0,sentAt:Date.now()}};
+    const api = new Function('state','communityMarketIsOpen',
+        section('    function marketReplyAvailable(', '    function handleDiamondListings(') +
+        '\nreturn {marketReplyMatches};')(state,()=>false);
+    assert.equal(api.marketReplyMatches(fixtures.pokemonVitrine.positive,'pokemon'),true);
+    assert.equal(api.marketReplyMatches(fixtures.pokemonVitrine.empty,'pokemon'),true);
+    assert.equal(api.marketReplyMatches(fixtures.pokemonVitrine.ambiguousEmpty,'pokemon'),false);
+    assert.equal(api.marketReplyMatches(fixtures.pokemonVitrine.wrongPage,'pokemon'),false);
+    assert.equal(api.marketReplyMatches(fixtures.diamondVitrine.empty,'pokemon'),false);
+    state.marketReply={kind:'diamante',currency:'orb',page:0,sentAt:Date.now()};
+    assert.equal(api.marketReplyMatches(fixtures.diamondVitrine.positive,'diamante'),true);
+    assert.equal(api.marketReplyMatches(fixtures.diamondVitrine.empty,'diamante'),true);
+    assert.equal(api.marketReplyMatches(fixtures.diamondVitrine.wrongCurrency,'diamante'),false);
+});
+
+test('Milestone A: orders remain blocked after uncertain outcome even across listing IDs', () => {
+    const body = section('    function tryBuy(', '    function controllerResult(');
+    assert.match(body, /unverifiedOrdersExist\(\)/);
+    const runner = section('    function runMarketAutomation(', '    function runScan(force)');
+    assert.match(runner, /unverifiedOrdersExist\(\)/);
 });
