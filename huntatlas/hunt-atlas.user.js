@@ -452,9 +452,7 @@
             'sort.pokemonXp': 'Pokémon XP/hour',
             'sort.npcLoot': 'NPC loot EV/hour (not cash)',
             'sort.rare': 'Selected rare item rate',
-            'rank.heading': 'Hunt recommendations by {metric}',
             'rank.topFive': 'Top 5 by {metric}',
-            'rank.best': 'Best for {metric}: {hunt}',
             'rank.noEvidence': 'No comparable estimate for this metric under the current filters.',
             'rank.rareLabel': 'Rare item for comparison',
             'rank.value': '{value} · {source}',
@@ -798,9 +796,7 @@
             'sort.pokemonXp': 'XP do Pokémon/hora',
             'sort.npcLoot': 'EV de loot NPC/h (não é dinheiro recebido)',
             'sort.rare': 'Frequência do item raro escolhido',
-            'rank.heading': 'Melhores hunts por {metric}',
             'rank.topFive': 'Top 5 por {metric}',
-            'rank.best': 'Melhor para {metric}: {hunt}',
             'rank.noEvidence': 'Nenhuma previsão comparável nesta métrica com os filtros atuais.',
             'rank.rareLabel': 'Item raro para comparar',
             'rank.value': '{value} · {source}',
@@ -1436,6 +1432,12 @@
                         : 'desc';
             }
 
+            // Previously stored efficiency rankings are no longer offered.
+            // Open capture throughput instead of leaving an invalid selection.
+            if(next.sort==='ballEfficiency'){
+                next.sort='capture';
+                next.sortDirection='desc';
+            }
             if (
                 next.sort ===
                     'spawn'
@@ -1795,7 +1797,7 @@
             .replace(/\.$/,'')+'%';
         return percent.toExponential(2)+'%';
     }
-    function formatObjectiveValue(value,objective,portuguese=false) {
+    function formatObjectiveValue(value,objective) {
         if(typeof value!=='number'||!Number.isFinite(value))return '—';
         if(['rare','shinyCatch','capture'].includes(objective))
             return formatEventRate(value);
@@ -10353,27 +10355,6 @@
                 white-space: nowrap;
             }
 
-            .mha-xp-primary {
-                display: grid;
-                grid-template-columns: minmax(0,1fr) auto auto;
-                gap: 6px;
-                align-items: center;
-            }
-
-            .mha-xp-primary-main {
-                min-width: 0;
-            }
-
-            .mha-xp-primary-main strong {
-                display: block;
-                overflow: hidden;
-                color: #e8e1e4;
-                font-size: 10px;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-            }
-
-            .mha-xp-primary-main span,
             .mha-xp-note {
                 color: #9e9398;
                 font-size: 8px;
@@ -10993,11 +10974,7 @@
                 overflow-x: hidden;
                 scrollbar-gutter: stable;
             }
-            .mha-xp-primary-main strong {
-                font-size: 11px;
-            }
-            .mha-xp-primary-main span, .mha-best-name,
-            .mha-xp-value { font-size: 10px; }
+            .mha-best-name, .mha-xp-value { font-size: 10px; }
             /* Keep the Top 5 action visible even with long source strings. */
             .mha-best-row { min-width: 0; }
             .mha-best-row .mha-xp-value {
@@ -11008,11 +10985,6 @@
             }
             .mha-best-row .mha-best-name {
                 min-width: 0;
-                overflow-wrap: anywhere;
-            }
-            .mha-xp-primary-main span {
-                display: block;
-                white-space: normal;
                 overflow-wrap: anywhere;
             }
             .mha-xp-summary [data-mha-more] .mha-xp-note {
@@ -11150,10 +11122,6 @@
 
                 .mha-body {
                     padding: 7px;
-                }
-
-                .mha-xp-primary {
-                    grid-template-columns: minmax(0,1fr) auto;
                 }
 
                 #mha-native-credit {
@@ -12956,7 +12924,7 @@
                                 ].filter(Boolean).join(' · '))}">${escapeHtml(
                                     tr(
                                         'rank.value',{
-                                            value:formatObjectiveValue(row.score,objective,currentLocale()==='pt-BR'),
+                                            value:formatObjectiveValue(row.score,objective),
                                             source:row.source||tr('rank.unknown')
                                         }
                                     )
@@ -13363,10 +13331,10 @@
 
                 <div class="mha-best-list" role="list">
                     ${bestRows}
-                    ${bestRows ? '' :
-                        '<div class="mha-xp-note" role="status">'+
-                        escapeHtml(tr('rank.noEvidence'))+'</div>'}
                 </div>
+                ${bestRows ? '' :
+                    '<div class="mha-xp-note" role="status">'+
+                    escapeHtml(tr('rank.noEvidence'))+'</div>'}
 
             </section>
             <details data-mha-more ${state.filters.detailOpen?'open':''}>
