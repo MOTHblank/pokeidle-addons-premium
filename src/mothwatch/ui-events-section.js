@@ -544,6 +544,7 @@
         }
 
         if (isCommunity && modalBody) {
+            if (!state.watchOpen) snatchEnhanceNativeMarket();
             const communityTop =
                 q('#modal-corpo .cm-topo');
             const watchHost =
