@@ -100,8 +100,10 @@ test('realized vs net never double-counts NPC expected loot or inventory; no fak
     assert.equal(h.farmFinancialSummary(100,400,600,100,5000,
         {coinsH:null}).netH,null);
 });
-test('Coin sorting is a separate requested dimension, not XP in disguise',()=>{
-    assert.match(code,/sort === 'coins' \|\| sort === 'netCoins'/);
-    assert.match(code,/<option value="netCoins">/);
-    assert.match(code,/const key = sort === 'coins' \? 'killCoinsH' : 'netH'/);
+test('kill Coins sort remains independent of XP, while net income stays read-only',()=>{
+    assert.match(code,/sort === 'coins'/);
+    assert.match(code,/const av = economyFor\(a.hunt\)\?\.killCoinsH/);
+    assert.match(code,/const bv = economyFor\(b.hunt\)\?\.killCoinsH/);
+    assert.doesNotMatch(code,/<option value="netCoins">/);
+    assert.match(code,/netCoinsH:econ\.netH/);
 });
