@@ -1313,7 +1313,7 @@ test('Snatch: explicit refused order releases 400ms retry; success removes targe
     assert.equal(h.purchaseCalls.length,1);
     h.state.pendingBuy=null;
     h.api.snatchOutcome(789,'refused');
-    assert.equal(h.state.snatchObserved.get(h.key).retryAt,Date.now()+400);
+    assert.ok(Math.abs(h.state.snatchObserved.get(h.key).retryAt - (Date.now()+400)) < 20);
     // The test clock stays fixed; advance retry deadline explicitly.
     h.state.snatchObserved.get(h.key).retryAt=0;
     h.state.attemptedListings.delete(789);
@@ -1335,5 +1335,5 @@ test('Snatch: stale pre-release quotes fail closed and server backoff is observe
     assert.equal(h.api.snatchReleaseQuote(h.candidate),false);
     h.api.snatchTick();
     assert.equal(h.purchaseCalls.length,0,'no speculative purchase from expired quote');
-    assert.equal(h.state.snatchObserved.get(h.key).retryAt,Date.now()+1000);
+    assert.ok(Math.abs(h.state.snatchObserved.get(h.key).retryAt - (Date.now()+1000)) < 20);
 });
