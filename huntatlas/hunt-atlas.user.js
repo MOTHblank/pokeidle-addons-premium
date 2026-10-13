@@ -12702,6 +12702,14 @@
             '<option value="'+(i+1)+'" '+
                 (selectedTier===i+1?'selected':'')+
                 '>Outland '+(i+1)+' · Lv '+level+'</option>').join('');
+        const rareChoiceHtml=objective==='rare'?'<div class="mha-xp-note"><label>'+
+            escapeHtml(tr('rank.rareLabel'))+' <select data-mha-rare-item>'+
+            [...RARE_OUTLAND_DROPS,RARE_EGG_DROP].map(item=>
+                '<option value="'+item.id+'" '+
+                (state.filters.rareSortItem===item.id?'selected':'')+
+                '>'+escapeHtml(item.name)+'</option>').join('')+
+            '</select></label> · '+escapeHtml(tr('rank.rarePreview',{
+                tier:state.filters.outlandPreviewTier}))+'</div>':'';
         const activateTier=Boolean(tierInfo && state.outlandTierSeen &&
             nativeTier!==null && nativeTier!==selectedTier &&
             !state.pendingOutlandTier && socketReady());
@@ -12853,6 +12861,7 @@
                 )}</span>
             </div>
 
+            ${rareChoiceHtml}
             <div class="mha-xp-primary">
                 <div class="mha-xp-primary-main">
                     <strong>${best
@@ -12973,9 +12982,26 @@
                     )}
                 </div>
             </div>
-            ${captureHtml}
-            ${economyHtml}
-            ${rareHtml}
+            <details data-mha-more ${state.filters.detailOpen?'open':''}>
+                <summary>${escapeHtml(tr('rank.details'))}</summary>
+                ${captureHtml}
+                ${economyHtml}
+                ${rareHtml}
+                <div class="mha-xp-note"><label><input type="checkbox"
+                    data-mha-local-diagnostics
+                    ${state.diagnosticsEnabled?'checked':''}/>
+                    ${escapeHtml(tr('diag.toggle'))}</label></div>
+                ${state.diagnosticsEnabled?'<div class="mha-xp-note">'+
+                    escapeHtml(tr('diag.title'))+' · '+
+                    escapeHtml(tr('diag.source',{
+                        source:currentXp?.source||tr('rank.unknown'),
+                        window:currentXp?.observed?
+                            Math.round(currentXp.windowMs/1000)+' s':
+                            tr('diag.noWindow'),
+                        coverage:currentXp?.coverage??0
+                    }))+' · '+escapeHtml(tr('diag.caveat'))+
+                    '</div>':''}
+            </details>
         `;
 
         // This summary is polled with the drawer, but should only replace its
@@ -12984,6 +13010,21 @@
         if (host.innerHTML === html) return;
         host.innerHTML = html;
 
+        q('[data-mha-rare-item]',host)?.addEventListener('change',event=>{
+            const item=Number(event.target.value);
+            if(!HA_RARE_SORT_IDS.includes(item))return;
+            state.filters.rareSortItem=item;
+            saveFilters();
+            renderDrawer();
+        });
+        q('[data-mha-more]',host)?.addEventListener('toggle',event=>{
+            state.filters.detailOpen=event.target.open;
+            saveFilters();
+        });
+        q('[data-mha-local-diagnostics]',host)?.addEventListener('change',event=>{
+            state.diagnosticsEnabled=event.target.checked;
+            renderXpSummary(drawer,results);
+        });
         q('[data-mha-capture-ball]',host)?.addEventListener('change',event=>{
             if(!['ultra','beast'].includes(event.target.value))return;
             state.filters.captureBall=event.target.value;
