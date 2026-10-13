@@ -9032,6 +9032,31 @@
         // Compute at most one economy estimate per hunt during this sort.
         const economySortCache = new Map();
         const captureSortCache = new Map();
+        const objectiveSortCache = new Map();
+        const objectiveFor=species=>{
+            const metric=state.filters.sort;
+            const key=metric+'|'+species.id+'|'+species.hunt?.slug;
+            if(objectiveSortCache.has(key))return objectiveSortCache.get(key);
+            const xp=huntXpEstimate(species.hunt);
+            let value=null;
+            if(metric==='pokemonXp')value=xp?.pokemonValue??null;
+            if(metric==='npcLoot')value=economyFor(species.hunt)?.npcLootEvH??null;
+            if(metric==='rare'){
+                const rare=haMetricRare(species.hunt,
+                    state.filters.outlandPreviewTier,state.playerLevel,
+                    xp?.killsH??null,state.filters.rareSortItem);
+                value=rare?.unitsH??null;
+            }
+            if(metric==='ballEfficiency'){
+                const chance=capturePlanForSpecies(species,4,xp)?.chance;
+                const price=captureInfoForBall(4)?.coins;
+                if(chance>0&&typeof price==='number'&&Number.isFinite(price))
+                    value=price/chance;
+            }
+            const result=haMetricNumber(value);
+            objectiveSortCache.set(key,result);
+            return result;
+        };
         const economyFor = hunt => {
             if (!hunt?.slug) return null;
             if (!economySortCache.has(hunt.slug))
@@ -9145,6 +9170,12 @@
                             value(b),
                             true
                         );
+                } else if (['pokemonXp','npcLoot','rare','ballEfficiency'].includes(sort)) {
+                    const av=objectiveFor(a),bv=objectiveFor(b);
+                    const ak=av!==null,bk=bv!==null;
+                    comparison=ak&&bk?(av-bv)*direction*
+                        (sort==='ballEfficiency'?-1:1):
+                        ak?-1:bk?1:0;
                 } else if (sort === 'coins' || sort === 'netCoins') {
                     // Null means unsupported, NOT free or equal to zero.
                     const key = sort === 'coins' ? 'killCoinsH' : 'netH';
