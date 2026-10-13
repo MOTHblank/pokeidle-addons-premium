@@ -437,6 +437,30 @@
             'econ.unlinked': 'Net unavailable: {count} throw event(s) could not be reconciled to a unique corpse',
             'econ.stock': 'Stock {count} · runway {hours}h at observed use rate',
             'econ.unknown': '— (insufficient evidence)',
+            'rare.heading': 'Rare farming · tier preview',
+            'rare.outland': 'Outland rare drops',
+            'rare.egg': 'Shiny Egg Fragment',
+            'rare.preview': 'Compare Outland tier',
+            'rare.active': 'Active in-game: Outland {tier}',
+            'rare.activeUnknown': 'Active in-game tier: not available from game state',
+            'rare.select': 'Use this tier in game',
+            'rare.pending': 'Change requested; waiting for the game to confirm',
+            'rare.locked': 'Locked: trainer level {level} required',
+            'rare.previewOnly': 'Preview only; no change to the active hunt or tier',
+            'rare.noCommand': 'In-game activation unavailable until the game reports its current tier',
+            'rare.source': '{source} · {rate} kills/h ({rateSource})',
+            'rare.kills': 'per kill',
+            'rare.units': '{value} items/h',
+            'rare.mean': 'mean {hours}h / item',
+            'rare.craft': 'mean {hours}h / 10 fragments',
+            'rare.chances': '≥1 in 1h: {hour}% · 24h: {day}%',
+            'rare.incubation': 'Shiny Egg incubation: 168h after crafting (126h with verified heating)',
+            'rare.observed': 'Observed in this session: {count}',
+            'rare.marketUnknown': 'Completed-sale valuation: — (no verified sales samples)',
+            'rare.uncertainty': 'Unboosted independent-roll model; expected times are NOT guarantees. Loot Boost, guild/event stacking, item-roll exclusivity and bicycle server hook are unverified.',
+            'rare.notEligible': 'No supported rare drop for this location',
+            'rare.noRate': 'Kills/h unavailable; predictions are warming up',
+            'rare.huntContext': 'Base hunt: {hunt} (same Outland map across tiers)',
             'xp.sourceLabel': 'source: {source}',
             'xp.sourceMeasured': 'server kill rewards (observed)',
             'xp.sourceModel': 'personalized combat projection',
@@ -667,6 +691,30 @@
             'econ.unlinked': 'Líquido indisponível: {count} evento(s) de bola sem associação confiável a um corpo',
             'econ.stock': 'Estoque {count} · duração {hours}h no ritmo observado',
             'econ.unknown': '— (evidência insuficiente)',
+            'rare.heading': 'Farming raro · prévia do tier',
+            'rare.outland': 'Drops raros da Outland',
+            'rare.egg': 'Fragmento de Ovo Shiny',
+            'rare.preview': 'Comparar Outland',
+            'rare.active': 'Ativa no jogo: Outland {tier}',
+            'rare.activeUnknown': 'Tier ativo no jogo: ainda não informado pelo estado',
+            'rare.select': 'Usar este tier no jogo',
+            'rare.pending': 'Troca solicitada; aguardando confirmação do jogo',
+            'rare.locked': 'Bloqueado: requer nível de treinador {level}',
+            'rare.previewOnly': 'Apenas prévia; não altera a hunt nem o tier ativo',
+            'rare.noCommand': 'Troca no jogo indisponível até o estado informar o tier atual',
+            'rare.source': '{source} · {rate} abates/h ({rateSource})',
+            'rare.kills': 'por abate',
+            'rare.units': '{value} itens/h',
+            'rare.mean': 'média {hours}h / item',
+            'rare.craft': 'média {hours}h / 10 fragmentos',
+            'rare.chances': '≥1 em 1h: {hour}% · 24h: {day}%',
+            'rare.incubation': 'Incubação do Ovo Shiny: 168h após fabricar (126h com aquecimento confirmado)',
+            'rare.observed': 'Observado nesta sessão: {count}',
+            'rare.marketUnknown': 'Valoração por vendas concluídas: — (sem amostras verificadas)',
+            'rare.uncertainty': 'Modelo sem bônus e com sorteios independentes; tempos médios NÃO garantem drops. Loot Boost, guilda/eventos, exclusividade dos sorteios e servidor da Bicicleta não estão verificados.',
+            'rare.notEligible': 'Esta hunt não tem o drop raro modelado',
+            'rare.noRate': 'Abates/h indisponíveis; previsão aquecendo',
+            'rare.huntContext': 'Hunt de base: {hunt} (a Outland usa o mesmo mapa em todos os tiers)',
             'xp.sourceLabel': 'fonte: {source}',
             'xp.sourceMeasured': 'recompensas do servidor (medidas)',
             'xp.sourceModel': 'projeção personalizada de combate',
@@ -11979,6 +12027,89 @@
                     {count:economic.unlinkedCosts})) + '</div>' : ''
         ].join('') : '';
 
+
+        const selectedTier=state.filters.outlandPreviewTier;
+        const nativeTier=state.outlandTierSeen
+            ? state.farmingSnapshot.outlandTier : null;
+        const tierInfo=farmingTier(selectedTier,state.playerLevel);
+        const tierGate=FARM_OUTLAND_TIERS[selectedTier-1][0];
+        const previewHunt=rareOutlandHunt();
+        const outlandModel=previewHunt
+            ? rareModelForHunt(previewHunt,selectedTier) : null;
+        const eggHunt=(current && current.area!=='outland' &&
+            Number(current.nivel)>=5000) ? current
+            : ranked.map(row=>row.hunt).find(hunt=>
+                hunt.area!=='outland' && Number(hunt.nivel)>=5000) || null;
+        const eggModel=eggHunt?rareModelForHunt(eggHunt,1):null;
+        const fmtChance=value=>(value*100).toFixed(6)+'%';
+        const fmtHours=value=>value===null?'—':
+            value>=1000?formatRate(value):value.toFixed(value>=10?1:2);
+        const fmtUnits=value=>Number.isFinite(value)?
+            (value>=1?value.toFixed(2):value.toFixed(5)):'—';
+        const modelRows=model=>model?.drops?.length
+            ? model.drops.map(row=>{
+                const observed=model.observedDrops?.[row.id];
+                const descriptions=[
+                    fmtChance(row.probability)+' '+tr('rare.kills'),
+                    tr('rare.units',{value:fmtUnits(row.unitsH)}),
+                    tr('rare.mean',{hours:fmtHours(row.meanHours)}),
+                    row.craft>1 ? tr('rare.craft',{hours:fmtHours(row.craftHours)}) : null,
+                    tr('rare.chances',{hour:(100*row.chance1h).toFixed(4),
+                        day:(100*row.chance24h).toFixed(4)}),
+                    observed===undefined ? null:
+                        tr('rare.observed',{count:observed})
+                ].filter(Boolean).join(' · ');
+                return '<div class="mha-xp-note"><strong>'+
+                    escapeHtml(row.name)+'</strong> · '+escapeHtml(descriptions)+
+                    ' · '+escapeHtml(row.source)+'</div>';
+            }).join('') :
+                '<div class="mha-xp-note">'+escapeHtml(tr(
+                    model?.reason==='unknown-kill-rate'?'rare.noRate':'rare.notEligible'
+                ))+'</div>';
+        const previewOptions=FARM_OUTLAND_TIERS.map(([level],i)=>
+            '<option value="'+(i+1)+'" '+
+                (selectedTier===i+1?'selected':'')+
+                '>Outland '+(i+1)+' · Lv '+level+'</option>').join('');
+        const activateTier=Boolean(tierInfo && state.outlandTierSeen &&
+            nativeTier!==null && nativeTier!==selectedTier &&
+            !state.pendingOutlandTier && socketReady());
+        const rareHtml=[
+            '<div class="mha-xp-list-title">'+escapeHtml(tr('rare.heading'))+'</div>',
+            '<div class="mha-xp-note"><label>'+escapeHtml(tr('rare.preview'))+
+                ' <select data-mha-outland-preview aria-label="'+
+                escapeHtml(tr('rare.preview'))+'">'+previewOptions+
+                '</select></label></div>',
+            '<div class="mha-xp-note">'+escapeHtml(nativeTier!==null
+                ? tr('rare.active',{tier:nativeTier}):
+                tr('rare.activeUnknown'))+' · '+escapeHtml(tr('rare.previewOnly'))+'</div>',
+            !tierInfo ? '<div class="mha-xp-note">'+escapeHtml(
+                tr('rare.locked',{level:tierGate}))+'</div>' : '',
+            '<div class="mha-xp-note">'+
+                (activateTier ? '<button type="button" data-mha-activate-tier>'+
+                    escapeHtml(tr('rare.select'))+'</button>' :
+                escapeHtml(state.pendingOutlandTier?tr('rare.pending'):
+                    !state.outlandTierSeen?tr('rare.noCommand'):
+                    nativeTier===selectedTier?'':tr('rare.previewOnly'))))+'</div>',
+            '<div class="mha-xp-note"><strong>'+
+                escapeHtml(tr('rare.outland'))+'</strong> · '+
+                escapeHtml(previewHunt?
+                    tr('rare.huntContext',{hunt:previewHunt.nome||previewHunt.slug}):
+                    tr('rare.notEligible'))+'</div>',
+            previewHunt && tierInfo && outlandModel?
+                '<div class="mha-xp-note">'+escapeHtml(tr('rare.source',{
+                    source:outlandModel.source,
+                    rate:Math.round(outlandModel.killsH??0),
+                    rateSource:outlandModel.rateSource
+                }))+'</div>' + modelRows(outlandModel):'',
+            '<div class="mha-xp-note"><strong>'+escapeHtml(tr('rare.egg'))+
+                '</strong> · '+escapeHtml(eggHunt?.nome||tr('rare.notEligible'))+'</div>',
+            eggHunt?modelRows(eggModel):'',
+            eggModel?.drops?.length?
+                '<div class="mha-xp-note">'+escapeHtml(tr('rare.incubation'))+'</div>':'',
+            '<div class="mha-xp-note">'+escapeHtml(tr('rare.marketUnknown'))+'</div>',
+            '<div class="mha-xp-note">'+escapeHtml(tr('rare.uncertainty'))+'</div>'
+        ].join('');
+
         const html = `
             <div class="mha-xp-heading">
                 <strong>${escapeHtml(
@@ -12123,6 +12254,7 @@
                 </div>
             </div>
             ${economyHtml}
+            ${rareHtml}
         `;
 
         // This summary is polled with the drawer, but should only replace its
@@ -12130,6 +12262,19 @@
         // prevents needless repaint/focus churn and avoids re-binding handlers.
         if (host.innerHTML === html) return;
         host.innerHTML = html;
+
+        q('[data-mha-outland-preview]',host)?.addEventListener('change',event=>{
+            const tier=Number(event.target.value);
+            if(Number.isInteger(tier)&&tier>=1&&tier<=8){
+                state.filters.outlandPreviewTier=tier;
+                saveFilters();
+                renderXpSummary(drawer,results);
+            }
+        });
+        q('[data-mha-activate-tier]',host)?.addEventListener('click',()=>{
+            requestOutlandTier(state.filters.outlandPreviewTier);
+            renderXpSummary(drawer,results);
+        });
 
         const detailsToggle =
             q(
