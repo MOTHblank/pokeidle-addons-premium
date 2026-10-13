@@ -1498,6 +1498,17 @@
         'search','region','minLevel','maxLevel','type',
         'weakness','weaknessMatchAll','availability','captured'
     ]);
+    function resetSearchFilters() {
+        if(state.searchRenderTimer!==null){
+            clearTimeout(state.searchRenderTimer);
+            state.searchRenderTimer=null;
+        }
+        const defaults=defaultFilters();
+        for(const key of SEARCH_FILTER_KEYS)
+            state.filters[key]=key==='weakness'?[]:defaults[key];
+        state.resultLimit=120;
+        saveFilters();
+    }
     function activeFilterCount() {
         const defaults=defaultFilters();
         return SEARCH_FILTER_KEYS.filter(key=>{
@@ -11649,14 +11660,8 @@
         ).addEventListener(
             'click',
             () => {
-                // Clearing the list filters must not change the selected
-                // Outland tier, capture ball, sorting or manual scenarios.
-                const defaults=defaultFilters();
-                for(const key of SEARCH_FILTER_KEYS)
-                    state.filters[key]=key==='weakness'?[]:defaults[key];
-                state.resultLimit =
-                    120;
-                saveFilters();
+                // Keep the sort, Outland preview, ball and scenarios.
+                resetSearchFilters();
                 renderDrawer();
 
                 q(
@@ -11828,6 +11833,21 @@
                     }
 
                     state.resultLimit = 120;
+                    if(key==='search'){
+                        // Type without a full 120-card rebuild per keystroke.
+                        if(state.searchRenderTimer!==null)
+                            clearTimeout(state.searchRenderTimer);
+                        state.searchRenderTimer=setTimeout(()=>{
+                            state.searchRenderTimer=null;
+                            saveFilters();
+                            renderDrawer();
+                        },160);
+                        return;
+                    }
+                    if(state.searchRenderTimer!==null){
+                        clearTimeout(state.searchRenderTimer);
+                        state.searchRenderTimer=null;
+                    }
                     saveFilters();
                     renderDrawer();
                 }
@@ -11985,11 +12005,19 @@
                 })
                 .join('');
 
-        if (weaknessOptions && weaknessOptions.innerHTML !== weaknessHtml) {
-            weaknessOptions.innerHTML = weaknessHtml;
-        }
-
         if (weaknessOptions) {
+            // Retain button nodes across selection changes so keyboard focus
+            // is not destroyed by the next refresh.
+            if(weaknessOptions.children.length!==STANDARD_TYPES.length)
+                weaknessOptions.innerHTML=weaknessHtml;
+            for(const button of qa('[data-mha-weakness-option]',weaknessOptions)){
+                const type=button.dataset.mhaWeaknessOption;
+                const selected=selectedWeaknessSet.has(type);
+                button.classList.toggle('active',selected);
+                button.setAttribute('aria-pressed',String(selected));
+                const label=typeLabel(type);
+                if(button.textContent!==label)button.textContent=label;
+            }
             weaknessOptions.title =
                 weaknessSelected.length
                     ? tr('filter.weaknessSelected').replace('{count}', String(weaknessSelected.length))
@@ -13319,6 +13347,10 @@
         // DOM when the rendered content changed. Preserving existing nodes
         // prevents needless repaint/focus churn and avoids re-binding handlers.
         if (host.innerHTML === html) return;
+        const active=document.activeElement;
+        const focusAttr=host.contains(active)?
+            active.getAttributeNames().find(name=>name.startsWith('data-mha-')):null;
+        const focusValue=focusAttr?active.getAttribute(focusAttr):null;
         host.innerHTML = html;
 
         q('[data-mha-reference]',host)?.addEventListener('toggle',event=>{
@@ -13454,6 +13486,12 @@
                 }
             );
         }
+        if(focusAttr){
+            const match=qa('['+focusAttr+']',host).find(node=>
+                node.getAttribute(focusAttr)===focusValue);
+            // Server updates should not steal keyboard focus.
+            match?.focus({preventScroll:true});
+        }
     }
 
     function renderDrawer() {
@@ -13552,14 +13590,18 @@
                           : ''
                   )
                 : `
-                    <div class="mha-empty">
-                        ${escapeHtml(
+                    <div class="mha-empty" role="status">
+                        <p>${escapeHtml(
                             tr(
                                 state.hunts.length
                                     ? 'results.noMatch'
                                     : 'results.waiting'
                             )
-                        )}
+                        )}</p>
+                        ${state.hunts.length && activeFilterCount() ?
+                            '<button type="button" data-mha-empty-reset>'+
+                                escapeHtml(tr('filter.emptyReset'))+
+                            '</button>':''}
                     </div>
                 `;
 
@@ -13570,6 +13612,10 @@
             body.innerHTML =
                 html;
 
+            q('[data-mha-empty-reset]',body)?.addEventListener('click',()=>{
+                resetSearchFilters();
+                renderDrawer();
+            });
             for(const detail of qa('[data-mha-hunt-detail]',body)){
                 detail.addEventListener('toggle',()=>{
                     const id=detail.dataset.mhaHuntDetail;
