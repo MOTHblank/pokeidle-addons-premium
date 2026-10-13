@@ -367,6 +367,25 @@
         "medium": "média",
         "low": "baixa",
         "context": "contextual",
+        "Any item rules": "Regras para qualquer item",
+        "Pokémon purchase rules": "Regras de compra de Pokémon",
+        "Any item": "Qualquer item",
+        "Any Pokémon": "Qualquer Pokémon",
+        "Shiny Pokémon": "Pokémon Shiny",
+        "P5 Pokémon": "Pokémon P5",
+        "Pokémon category": "Categoria de Pokémon",
+        "Add any-item rule": "Adicionar regra para qualquer item",
+        "Add Pokémon rule": "Adicionar regra de Pokémon",
+        "No any-item rules configured.": "Nenhuma regra de qualquer item cadastrada.",
+        "No Pokémon rules configured.": "Nenhuma regra de Pokémon cadastrada.",
+        "Buy any item at or below this price per unit.": "Comprar qualquer item por este preço máximo por unidade.",
+        "Buy matching Pokémon at or below the listed price; no valuation reference required.": "Comprar Pokémon da categoria pelo preço máximo do anúncio, sem exigir avaliação histórica.",
+        "These rules scan the first market page per currency. Shiny requires Gems.": "Estas regras consultam a primeira página do mercado por moeda. Shiny exige Gemas.",
+        "Any-item rules inspect current offers selectively; large catalogs can take time.": "Regras gerais de itens consultam anúncios seletivamente; catálogos grandes podem demorar.",
+        "Rule configured — buying remains off until master switch is enabled.": "Regra cadastrada — a compra fica desligada até ativar a chave geral.",
+        "An equivalent rule already exists for this currency.": "Já existe uma regra equivalente nesta moeda.",
+        "Shiny purchases require Gems.": "Shiny exige Gemas.",
+        "Price per Pokémon": "Preço por Pokémon",
         "Fixed item rules": "Regras fixas por item",
         "Buy at or below": "Comprar por até",
         "Add fixed rule": "Adicionar regra fixa",
@@ -3579,7 +3598,8 @@
     function fixedAutomationActiveCount() {
         if (!config.enabled || !config.fixedRulesEnabled) return 0;
         return sanitizeFixedItemRules(config.fixedItemRules)
-            .filter(rule => rule.buyEnabled && rule.buyMax > 0).length;
+            .filter(rule => rule.buyEnabled && rule.buyMax > 0).length +
+            activeAnyItemRules().length + activePokemonRules().length;
     }
 
     function automationOverviewSummary() {
@@ -3606,11 +3626,14 @@
             const fresh = tpl.content.firstElementChild;
             if (fresh && statusHost.innerHTML !== fresh.innerHTML) statusHost.innerHTML = fresh.innerHTML;
         }
-        const rules = new Map(sanitizeFixedItemRules(config.fixedItemRules).map(r => [r.id, r]));
+        const fixed = new Map(sanitizeFixedItemRules(config.fixedItemRules).map(r => [r.id, r]));
+        const broad = new Map(sanitizeAnyItemRules(config.anyItemRules).map(r => [r.id, r]));
+        const pokemon = new Map(sanitizePokemonBuyRules(config.pokemonBuyRules).map(r => [r.id, r]));
         for (const node of qa('[data-moth-rule-status]', content)) {
-            const rule = rules.get(node.dataset.ruleId);
+            const type = node.dataset.ruleType, id = node.dataset.ruleId;
+            const rule = type === 'fixed' ? fixed.get(id) : type === 'any' ? broad.get(id) : pokemon.get(id);
             if (!rule) continue;
-            const next = fixedRuleStatus(rule);
+            const next = type === 'fixed' ? fixedRuleStatus(rule) : categoryRuleStatus(rule, type);
             if (node.textContent !== next) node.textContent = next;
         }
         const host = q('#moth-mw-rule-notice', content), n = state.automationNotice;
@@ -4063,7 +4086,7 @@
                 saveConfig();
                 if (key === 'fixedRulesEnabled') {
                     if (!config.fixedRulesEnabled) state.ruleItemKeys.clear();
-                    else if (!sanitizeFixedItemRules(config.fixedItemRules).some(rule => rule.buyEnabled && rule.buyMax > 0)) {
+                    else if (!hasAnyBuyingRules()) {
                         setAutomationNotice(tr('Rule-based buying is on, but no Buy rules are active. Create or enable a rule first.'), 'warn');
                     } else {
                         setAutomationNotice(tr('Rule-based buying is on. No other purchase switches are required. Spending safeguards still apply.'), 'ok');
@@ -4368,6 +4391,8 @@
             maxGemsPerBuy: Math.max(0, Number(config.maxGemsPerBuy) || 0),
             fixedRulesEnabled: !!config.fixedRulesEnabled,
             fixedItemRules: sanitizeFixedItemRules(config.fixedItemRules),
+            anyItemRules: sanitizeAnyItemRules(config.anyItemRules),
+            pokemonBuyRules: sanitizePokemonBuyRules(config.pokemonBuyRules),
             minItemUnits: Math.max(1, Number(config.minItemUnits) || 1),
             minPokemonSamples: Math.max(1, Number(config.minPokemonSamples) || 1),
             pokemonHistoryPages: Math.max(1, Number(config.pokemonHistoryPages) || 12),
