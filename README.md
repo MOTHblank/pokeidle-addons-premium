@@ -27,6 +27,7 @@ See [experimental Hunt Atlas instructions](huntatlas/README.md). To run its test
 Research formerly held in `pokeidle-addons/docs` has moved to [`docs/`](docs/):
 
 - [Auto Catch capture economics](docs/AUTOCATCH_CAPTURE_ECONOMICS.md)
+- [Combat, moves, cooldowns and type effectiveness](docs/COMBAT_MODEL_CONTRACT.md)
 - [Hunt rewards and rare loot](docs/HUNT_REWARDS_AND_RARE_LOOT.md)
 - [Community Market protocol, fees and transaction safeguards](docs/MARKET_PROTOCOL_REFERENCE.md)
 - [PokéIdle wiki/upstream mechanics map](docs/POKEIDLE_WIKI_UPSTREAM_MECHANICS_MAP.md)
