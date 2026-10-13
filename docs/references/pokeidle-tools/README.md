@@ -5,7 +5,7 @@ Observed: 2026-10-13 (UTC).
 Public application bundle: https://pokeidle-tools.vercel.app/assets/index-CW1XaDka.js
 Public stylesheet: /assets/index-DfP7Ay0J.css
 
-This folder records the useful mathematical behavior and numeric configuration of the deployed third-party site. These are **site assumptions, not verified server mechanics**. No Hunt Atlas or Moth Watch runtime behavior is changed. The companion [calculator-data.json](calculator-data.json) preserves constants, defaults, item IDs, and tool availability in machine-readable form.
+This folder records the useful mathematical behavior and numeric configuration of the deployed third-party site. These are **site assumptions, not verified server mechanics**. This extraction initially changed no runtime behavior; premium HuntAtlas v1.9.10 later adopted **opt-in, read-only what-if previews** of the documented boost coefficients. It does not automatically apply them to live forecasts. See [the feature-by-feature comparison](HUNTATLAS_COMPARISON.md). The companion [calculator-data.json](calculator-data.json) preserves constants, defaults, item IDs, and tool availability in machine-readable form.
 
 ## Extraction scope
 
