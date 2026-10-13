@@ -56,7 +56,7 @@ test('ranking units match selected objective, not a universal /h',()=>{
     assert.equal(h.formatObjectiveValue(.05,'shinyCatch'),'1.2/d');
     assert.equal(h.formatObjectiveValue(.05,'capture'),'1.2/d');
     assert.equal(h.formatObjectiveValue(2,'capture'),'2/h');
-    assert.equal(h.formatObjectiveValue(2,'ballEfficiency'),'2/h'); // Legacy key has no special UI units.
+    assert.equal(h.formatObjectiveValue(0,'capture'),'0/h');
     assert.equal(h.formatObjectiveValue(-3,'netCoins'),'-3/h');
     assert.equal(h.formatObjectiveValue(null,'xp'),'—');
 });
