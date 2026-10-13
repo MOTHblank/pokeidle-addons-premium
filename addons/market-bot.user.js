@@ -2686,7 +2686,7 @@
         if (!force && now - state.lastScanAt < interval) return;
         state.lastScanAt = now;
 
-        if (config.scanItems || activeAnyItemRules().length) requestItemSummary();
+        if (config.scanItems || activeAnyItemRules().length) requestItemSummary(activeAnyItemRules().length > 0);
         if (config.scanPokemon) ensurePokemonHistory(false);
         if (config.scanPokemon || activePokemonRules().length) startPokemonScan();
         if (config.scanDiamonds) requestDiamondListings();
