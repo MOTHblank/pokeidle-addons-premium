@@ -118,6 +118,7 @@
         economyHoldings: [],
         economyInput: { itemId: 0, quantity: 1, currency: 'gold', feeKind: 'item', feeUnit: 100, feeQuantity: 1, holdingDays: 1 },
         economyUiCache: null,
+        economyNotice: '',
         liveDiamondAverages: null,
         diamondStatus: 'waiting',
         diamondPendingCurrency: null,
@@ -3302,6 +3303,7 @@
             mergePlayer(message.estado, true);
             state.orderJournal = loadOrderJournal();
             state.economyHoldings = loadEconomyHoldings();
+            state.economyNotice = '';
             state.exposureCache.clear();
             if (previousAccount !== state.orderJournal?.accountKey) {
                 state.attemptedListings.clear();
@@ -3895,7 +3897,7 @@
         // Integer basis points, with ONE upward rounding of the entire fee.
         // BigInt prevents float-off-by-one errors at 500 / 5,000 Gem borders.
         const amount = BigInt(gross);
-        const fee = (base, bp) => (base * BigInt(bp) + 9999n) / 10000n;
+        const ceilBasisPoints = weightedBp => (weightedBp + 9999n) / 10000n;
         const exact = currency === 'orb';
         let cost = null;
         if (currency === 'orb') {
@@ -3904,8 +3906,8 @@
                 const second = amount > 500n
                     ? (amount - 500n < 4500n ? amount - 500n : 4500n) : 0n;
                 const third = amount > 5000n ? amount - 5000n : 0n;
-                cost = fee(first * 1300n + second * 1000n + third * 750n, 1);
-            } else cost = fee(amount, 1500);
+                cost = ceilBasisPoints(first * 1300n + second * 1000n + third * 750n);
+            } else cost = ceilBasisPoints(amount * 1500n);
         }
         // Coin fee is 15% but exact server rounding remains unverified.
         const lowFee = exact ? Number(cost) : Number(amount * 1500n / 10000n);
@@ -4054,7 +4056,8 @@
             account: state.orderJournal?.accountKey,
             updated: state.itemSummaryAt, config: state.economyInput,
             holdings: state.economyHoldings, orders: state.orderJournal?.orders?.length,
-            language: currentLocale(), catalogSize: state.catalog.size
+            language: currentLocale(), catalogSize: state.catalog.size,
+            notice: state.economyNotice
         });
         if (state.economyUiCache?.stamp === stamp &&
             Date.now() - state.economyUiCache.at < 3000) return state.economyUiCache.html;
@@ -4087,6 +4090,12 @@
                 : num(row.estimated) + ' ' + escapeHtml(tr('estimated asking-independent gross'))) +
             ' · ' + escapeHtml(tr('Catalog: {category}', {
                 category: row.provenance.category || tr('unknown')
+            })) + ' · ' + escapeHtml(tr('RMT sale eligibility: {status}', {
+                status: tr(row.provenance.marketEligible === true ? 'verified from catalog' :
+                    row.provenance.marketEligible === false ? 'excluded by catalog' : 'unverified')
+            })) + ' · ' + escapeHtml(tr('NPC resale: {status}', {
+                status: tr(row.provenance.npcSellable === true ? 'verified from catalog' :
+                    row.provenance.npcSellable === false ? 'excluded by catalog' : 'unverified')
             })) + '<button class="moth-mw-btn" type="button" data-moth-holding-remove="' +
             row.itemId + '">' + escapeHtml(tr('Remove')) + '</button></div>'
         ).join('');
@@ -5108,7 +5117,7 @@
             const holdingRemove = target.closest('[data-moth-holding-remove]');
             if (holdingRemove) {
                 const ok = setEconomyHolding(Number(holdingRemove.dataset.mothHoldingRemove), 0, 'gold');
-                if (!ok) addLog('Could not remove manually recorded holding');
+                state.economyNotice = ok ? tr('Holding removed.') : tr('Could not remove holding.');
                 renderWatch(true); return;
             }
             if (target.closest('#moth-mw-holding-save')) {
@@ -5116,8 +5125,8 @@
                 const quantity = Number(q('[data-moth-economy-field="quantity"]', panel)?.value);
                 const currency = q('#moth-mw-holding-currency', panel)?.value;
                 const ok = setEconomyHolding(itemId, quantity, currency);
-                if (!ok) addLog('Cannot record holding: select a catalog item and valid quantity');
-                else {
+                state.economyNotice = ok ? tr('Holding quantity recorded.') : tr('Select a catalog item and a valid quantity.');
+                if (ok) {
                     state.economyInput.itemId = itemId;
                     state.economyInput.quantity = quantity;
                     state.economyInput.currency = currency;
@@ -5137,11 +5146,13 @@
                     kind === 'pokemon' && quantity !== 1 ||
                     !Number.isSafeInteger(unit * quantity) ||
                     !Number.isSafeInteger(days) || days < 1 || days > 30) {
-                    addLog('Invalid simulated sale: Pokémon are indivisible and prices must be positive integers');
+                    state.economyNotice = tr('Enter a valid positive price and quantity; Pokémon are indivisible.');
+                    renderWatch(true);
                     return;
                 }
                 state.economyInput = { ...state.economyInput, feeKind: kind, currency,
                     feeUnit: unit, feeQuantity: quantity, holdingDays: days };
+                state.economyNotice = tr('Seller fee estimate updated.');
                 renderWatch(true); return;
             }
             if (target.closest('#moth-mw-scan')) { runScan(true); return; }
