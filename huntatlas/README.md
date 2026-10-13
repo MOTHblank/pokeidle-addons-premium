@@ -1,6 +1,6 @@
 # PokéIdle Hunt Atlas
 
-> **Versão experimental 1.9.12.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
+> **Versão experimental 1.9.13.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
 >
 > Não há mapa visual novo. O Atlas continua sendo uma lista pesquisável; o índice `map-markers.json` só adiciona contexto textual de localização para hunts com slug correspondente. O índice `moves-index.json` oferece golpes possíveis por espécie/nível, não uma lista de golpes equipados. Agora o Atlas compara os golpes dos índices com o catálogo mais recente de Pokémon e mostra divergências. Quando o jogo fornece nomes de golpes, o modelo usa **amostras por execução**, sem contar várias vítimas de um ataque em área como vários golpes. Quando o nome não chega, mantém o modelo por tipo. XP/h **medido** continua acima de qualquer projeção. Os índices são opcionais e podem estar desatualizados.
 >
@@ -49,11 +49,17 @@ No painel **Planejador de capturas e shinies**, a escolha Ultra/Beast e a simula
 
 Veja [contrato técnico, cenários de teste e limitações](../docs/HUNTATLAS_MILESTONE_E.md). O addon não compra bolas automaticamente nem altera o Auto Catch+.
 
+### Top 5 sempre visível e menos ordenações (v1.9.13)
+
+O **Top 5 é mostrado diretamente** no resumo principal: não existe mais botão “Ver top 5 / Ocultar top 5”, nem um destaque repetido para a primeira hunt. As cinco opções e seus botões **Ir** aparecem sem precisar abrir um painel; quando não há resultados comparáveis, o aviso de falta de evidência substitui a lista vazia. A calibração detalhada continua acessível em **Detalhes da hunt**, sem dominar a área principal.
+
+A ordenação **“Menor custo Moedas/captura (Ultra)”** foi removida da lista de Pokémon, do Top 5 e dos cálculos de ranking. **Capturas e shinies capturados** continuam sendo métricas selecionáveis; os custos de bola no planejador de captura também permanecem disponíveis. As preferências salvas que usavam essa ordenação passam automaticamente para **capturas (decrescente)**. Nenhum dado do jogo nem automação foi alterado.
+
 ### Taxas de raros/shinies legíveis (v1.9.12)
 
 **Uma frequência positiva pequena não deve aparecer como 0/h.** A lista, o Top 5, as estimativas individuais de captura/shiny, as taxas de fragmentos da Outland/Ovo Shiny e as simulações opcionais agora alternam entre **eventos por hora, por dia ou tempo médio para um evento** (dias/anos) de acordo com a grandeza. Exemplo: `0,05 evento/h` aparece como `1,2/d`; `0,0001 evento/h` como **~1 por 1,14 ano** (tempo médio, não garantia). Números exatos de zero permanecem distintos de taxas desconhecidas. Probabilidades extremamente baixas ganham casas decimais ou notação científica quando necessário.
 
-Os **tempos médios de espera e fabricação** também usam dias/anos quando ficariam enormes em horas. O ranking agora indica corretamente **Moedas/captura** na métrica de eficiência, não um falso valor `/h`, e mantém taxas ordenadas com precisão completa, sem alterar o modelo. Moedas líquidas negativas são apresentadas com sinal, não como dados ausentes.
+Os **tempos médios de espera e fabricação** também usam dias/anos quando ficariam enormes em horas. O ranking mantém taxas ordenadas com precisão completa, sem alterar o modelo. A antiga ordenação por Moedas/captura foi removida na v1.9.13. Moedas líquidas negativas são apresentadas com sinal, não como dados ausentes.
 
 Na revisão visual, os cartões do Top 5 e os campos numéricos dos cenários ganharam limites de largura, quebra de texto e organização responsiva para que descrições longas não escondam os botões **Ir**. Todas as mudanças são de interface: nenhuma nova consulta periódica, WebSocket, compra automática ou alteração dos odds do jogo. Veja [auditoria de taxas e UI](../docs/HUNTATLAS_RATE_UI_AUDIT.md) e `tests/rare-rate-ui.test.cjs`.
 
@@ -77,7 +83,7 @@ O cenário usa o modelo de espécie/Ultra/Beast e a taxa de bolas aceitas do pr�
 
 ### Rankings, detalhes compactos e desempenho (v1.9.9 · Marco F)
 
-O **Top 5 agora acompanha a métrica selecionada** — XP do treinador, XP do Pokémon, Moedas por abate, valor esperado de loot NPC, Moedas líquidas, item raro/h (escolha o item e a prévia do tier Outland), capturas/h, shinies capturados/h ou eficiência da Ultra em Moedas por captura. Uma hunt excelente em XP não lidera automaticamente uma pesquisa de raros. Valores indisponíveis ficam no fim e **não viram zero**. A ordenação também respeita os filtros de busca, fraqueza, tipo e desbloqueio. Em capturas, é o resultado do **Pokémon alvo correspondente ao filtro**, com Ultra como padrão e Beast opcional, não uma porcentagem genérica da região.
+O **Top 5 agora acompanha a métrica selecionada** — XP do treinador, XP do Pokémon, Moedas por abate, valor esperado de loot NPC, Moedas líquidas, item raro/h (escolha o item e a prévia do tier Outland), capturas/h ou shinies capturados/h. Uma hunt excelente em XP não lidera automaticamente uma pesquisa de raros. Valores indisponíveis ficam no fim e **não viram zero**. A ordenação também respeita os filtros de busca, fraqueza, tipo e desbloqueio. Em capturas, é o resultado do **Pokémon alvo correspondente ao filtro**, com Ultra como padrão e Beast opcional, não uma porcentagem genérica da região.
 
 A lista de hunts está mais compacta. **Clique em “Detalhes da hunt”** para ver K/h, XP/h dos dois canais, economia, chance de captura, previsão de shiny, item raro escolhido, fonte e confiança. O painel geral de economia/captura/raros também fica recolhido por padrão, com um diagnóstico **opcional e somente local**, sem mensagens brutas ou tokens. O botão **Top 5** continua independente.
 
