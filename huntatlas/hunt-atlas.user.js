@@ -2595,7 +2595,8 @@
         if (outland || !Number.isFinite(Number(level))) return 0;
         const n = Number(level);
         const steps = FARM_SHINY_LEVELS.filter(value => n >= value).length;
-        return steps ? 0.0000375 + (steps - 1) * 0.0000015 : 0;
+        // Integer decimal steps prevent cumulative binary rounding drift.
+        return steps ? (375 + (steps - 1) * 15) / 10000000 : 0;
     }
 
     function farmingChanceAtLeastOne(probability, rolls) {
