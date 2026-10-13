@@ -116,7 +116,7 @@
         pokemonAutoOffers: new Map(),
         pokemonEvidenceMemo: null,
         economyHoldings: [],
-        economyInput: { itemId: 0, quantity: 1, currency: 'gold', feeKind: 'item', feeUnit: 100, feeQuantity: 1, holdingDays: 1 },
+        economyInput: { itemId: 0, quantity: 1, holdingCurrency: 'gold', feeCurrency: 'gold', feeKind: 'item', feeUnit: 100, feeQuantity: 1, holdingDays: 1 },
         economyUiCache: null,
         economyNotice: '',
         liveDiamondAverages: null,
@@ -3964,7 +3964,7 @@
 
     function setEconomyHolding(itemId, quantity, currency) {
         const id = Number(itemId), qty = Number(quantity);
-        if (!state.orderJournal?.accountKey ||
+        if (!state.nick || !state.orderJournal?.accountKey ||
             !Number.isSafeInteger(id) || id <= 0 ||
             !Number.isSafeInteger(qty) || qty < 0 || qty > 1000000000 ||
             !['gold', 'orb'].includes(currency)) return false;
@@ -4079,7 +4079,7 @@
         const input = state.economyInput;
         const feeGross = Number(input.feeUnit) * Number(input.feeQuantity);
         const fee = Number.isSafeInteger(feeGross) ? marketplaceFee(
-            feeGross, input.currency, input.feeKind, input.holdingDays) : null;
+            feeGross, input.feeCurrency, input.feeKind, input.holdingDays) : null;
         const currencyChoice = currency => ['gold','orb'].map(code =>
             '<option value="' + code + '"' + (code === currency ? ' selected' : '') + '>' +
             escapeHtml(tr(code === 'orb' ? 'Gems' : 'Coins')) + '</option>').join('');
@@ -4142,7 +4142,7 @@
             '</p><div class="moth-mw-economy-fields"><select id="moth-mw-holding-item">' +
             '<option value="0">' + escapeHtml(tr('Choose an item in the game market catalog')) + '</option>' +
             options + '</select>' + field('quantity',input.quantity,1) +
-            '<select id="moth-mw-holding-currency">' + currencyChoice(input.currency) + '</select>' +
+            '<select id="moth-mw-holding-currency">' + currencyChoice(input.holdingCurrency) + '</select>' +
             '<button type="button" class="moth-mw-btn" id="moth-mw-holding-save">' + escapeHtml(tr('Record quantity')) +
             '</button></div>' + (entries || '<p>' + escapeHtml(tr('No holdings entered.')) + '</p>') +
             '<p><b>' + num(holdings.gold) + '</b> ' + escapeHtml(tr('Coins')) + ' · <b>' +
@@ -4157,7 +4157,7 @@
                 (kind === input.feeKind ? ' selected' : '') + '>' +
                 escapeHtml(tr(kind === 'pokemon' ? 'Pokémon' : kind === 'diamond' ? 'Diamonds' : 'Items')) +
                 '</option>').join('') + '</select><select id="moth-mw-fee-currency">' +
-            currencyChoice(input.currency) + '</select>' + field('feeUnit',input.feeUnit,1) +
+            currencyChoice(input.feeCurrency) + '</select>' + field('feeUnit',input.feeUnit,1) +
             field('feeQuantity',input.feeQuantity,1) + field('holdingDays',input.holdingDays,1) +
             '<button type="button" class="moth-mw-btn" id="moth-mw-fee-calc">' +
             escapeHtml(tr('Calculate fee')) + '</button></div><p>' +
@@ -5146,7 +5146,7 @@
                 if (ok) {
                     state.economyInput.itemId = itemId;
                     state.economyInput.quantity = quantity;
-                    state.economyInput.currency = currency;
+                    state.economyInput.holdingCurrency = currency;
                 }
                 renderWatch(true); return;
             }
@@ -5167,7 +5167,7 @@
                     renderWatch(true);
                     return;
                 }
-                state.economyInput = { ...state.economyInput, feeKind: kind, currency,
+                state.economyInput = { ...state.economyInput, feeKind: kind, feeCurrency:currency,
                     feeUnit: unit, feeQuantity: quantity, holdingDays: days };
                 state.economyNotice = tr('Seller fee estimate updated.');
                 renderWatch(true); return;
