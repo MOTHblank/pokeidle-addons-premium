@@ -452,6 +452,30 @@
         "Rule saved: {name}. Turn on rule-based buying to start.": "Regra salva: {name}. Ative a compra por regras para começar.",
         "Rule-based buying is on, but no Buy rules are active. Create or enable a rule first.": "A compra por regras está ativada, mas não há regras de compra ativas. Crie ou ative uma regra primeiro.",
         "Rule-based buying is on. No other purchase switches are required. Spending safeguards still apply.": "Compra por regras ativada. Nenhuma outra chave de compra é necessária. Os limites de segurança continuam valendo.",
+        "Pause all purchases (kill switch)": "Pausar todas as compras (interruptor de emergência)",
+        "Maximum Coins per session": "Máximo de moedas por sessão",
+        "Maximum Gems per session": "Máximo de gemas por sessão",
+        "Maximum Coins per UTC day": "Máximo de moedas por dia UTC",
+        "Maximum Gems per UTC day": "Máximo de gemas por dia UTC",
+        "Maximum purchases per session": "Máximo de compras por sessão",
+        "Maximum units per session": "Máximo de unidades por sessão",
+        "Session spend cap": "Gasto máximo da regra por sessão",
+        "Daily spend cap (UTC)": "Gasto máximo da regra por dia UTC",
+        "Purchases per session": "Compras da regra por sessão",
+        "Units per session": "Unidades da regra por sessão",
+        "Rule cumulative limits": "Limites acumulados da regra",
+        "0 = unlimited cumulative limit": "0 = sem limite acumulado",
+        "Spend cap is for the selected rule currency. 0 means unlimited.": "O limite de gasto usa a moeda da regra. Zero significa ilimitado.",
+        "Budget blocked": "Bloqueado pelo orçamento",
+        "Waiting for acknowledgement": "Aguardando confirmação",
+        "Unknown purchase outcome": "Resultado da compra não verificado",
+        "Purchases paused": "Compras pausadas",
+        "Unverified orders: {count}": "Ordens não verificadas: {count}",
+        "Session exposure: {gold} Coins · {orb} Gems": "Exposição nesta sessão: {gold} moedas · {orb} gemas",
+        "Daily exposure: {gold} Coins · {orb} Gems": "Exposição no dia: {gold} moedas · {orb} gemas",
+        "Includes reserved unverified orders. 0 means unlimited; per-purchase caps are separate.": "Inclui reservas de ordens não verificadas. Zero significa ilimitado; limites por compra são separados.",
+        "A purchase may remain unverified after timeout or restart. Never retry that listing until authoritative reconciliation.": "Uma compra pode continuar não verificada após timeout ou reinício. Nunca repetir a mesma oferta sem confirmação do servidor.",
+        "Stale or unverified quote · refresh listing": "Cotação desatualizada ou não verificada · atualize a oferta",
     });
 
     function tr(key, params = null) {
@@ -2560,7 +2584,8 @@
             'scanItems',
             'scanPokemon',
             'scanDiamonds',
-            'fixedRulesEnabled'
+            'fixedRulesEnabled',
+            'purchasesPaused'
         ];
         const numberKeys = [
             'scanSeconds',
@@ -2569,6 +2594,9 @@
             'gemReserve',
             'maxCoinsPerBuy',
             'maxGemsPerBuy',
+            'maxCoinsPerSession', 'maxGemsPerSession',
+            'maxCoinsPerDay', 'maxGemsPerDay',
+            'maxPurchasesPerSession', 'maxQuantityPerSession',
             'minItemUnits',
             'minPokemonSamples',
             'pokemonHistoryPages',
@@ -3831,18 +3859,29 @@
     }
 
     function automationOverviewSummary() {
-        return tr('Rule-based buying: {status}', { status: tr(fixedAutomationActiveCount() ? 'ON' : 'OFF') });
+        const status = config.purchasesPaused ? 'Purchases paused'
+            : fixedAutomationActiveCount() ? 'ON' : 'OFF';
+        return tr('Rule-based buying: {status}', { status: tr(status) });
     }
 
     function automationStatusPanelHtml() {
         const active = fixedAutomationActiveCount();
+        const unknown = (state.orderJournal?.orders || []).filter(o => o.status === 'unknown').length;
+        const sessCoins = orderExposure('session', 'gold').spent;
+        const sessGems = orderExposure('session', 'orb').spent;
+        const dayCoins = orderExposure('day', 'gold').spent;
+        const dayGems = orderExposure('day', 'orb').spent;
         return '<section class="moth-mw-automation-status" id="moth-mw-automation-status">' +
             '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Rule-based buying')) + '</h4><span>' +
             escapeHtml(active ? tr(active === 1 ? '{count} active rule' : '{count} active rules', { count: num(active) }) :
                 tr('No automatic purchases enabled.')) + '</span></div>' +
             '<p class="moth-mw-rule-hint">' +
             escapeHtml(tr('Enable rule-based buying and at least one Buy rule with a maximum unit price. No other buying switches are required. Coin/Gem reserves and per-purchase caps still apply.')) +
-            '</p></section>';
+            '</p><p class="moth-mw-rule-hint">' + escapeHtml(tr('Session exposure: {gold} Coins · {orb} Gems', { gold: num(sessCoins), orb: num(sessGems) })) +
+            ' · ' + escapeHtml(tr('Daily exposure: {gold} Coins · {orb} Gems', { gold: num(dayCoins), orb: num(dayGems) })) +
+            '</p>' + (unknown ? '<p class="moth-mw-budget-warning">' + escapeHtml(tr('Unverified orders: {count}', { count: num(unknown) })) +
+            ' · ' + escapeHtml(tr('A purchase may remain unverified after timeout or restart. Never retry that listing until authoritative reconciliation.')) + '</p>' : '') +
+            '</section>';
     }
 
     function refreshAutomationLive(content) {
@@ -3907,6 +3946,9 @@
     }
 
     function fixedRuleStatus(rule) {
+        if (config.purchasesPaused) return tr('Purchases paused');
+        if (state.pendingBuy) return tr('Waiting for acknowledgement');
+        if (remainingBudget(rule.currency, rule.id).spend < 1) return tr('Budget blocked');
         if (!rule.buyEnabled || !(rule.buyMax > 0)) return tr('Rule paused');
         if (!config.enabled) return tr('Moth Watch disabled');
         if (!config.fixedRulesEnabled) return tr('Enable rule-based buying above');
@@ -3932,6 +3974,18 @@
         </select></label>`;
     }
 
+    function ruleCapsHtml(type, rule) {
+        const id = escapeHtml(rule.id);
+        const field = name => 'data-moth-' + type + '-field="' + name + '" data-rule-id="' + id + '"';
+        return '<details class="moth-mw-rule-caps"><summary>' + escapeHtml(tr('Rule cumulative limits')) + '</summary>' +
+            '<p class="moth-mw-rule-hint">' + escapeHtml(tr('Spend cap is for the selected rule currency. 0 means unlimited.')) + '</p>' +
+            ruleNumber('Session spend cap', field('maxSpendSession'), rule.maxSpendSession || 0) +
+            ruleNumber('Daily spend cap (UTC)', field('maxSpendDay'), rule.maxSpendDay || 0) +
+            ruleNumber('Purchases per session', field('maxPurchasesSession'), rule.maxPurchasesSession || 0) +
+            ruleNumber('Units per session', field('maxQuantitySession'), rule.maxQuantitySession || 0) +
+            '</details>';
+    }
+
     function ruleSwitch(label, attrs, checked) {
         return `<label class="moth-mw-switch moth-mw-rule-toggle"><input type="checkbox" ${attrs}${checked ? ' checked' : ''}><span>${escapeHtml(tr(label))}</span></label>`;
     }
@@ -3951,6 +4005,7 @@
                     <section class="moth-mw-rule-side buy">
                         <div class="moth-mw-rule-side-head">${ruleSwitch('Buy', `data-moth-fixed-field="buyEnabled" data-rule-id="${id}"`, rule.buyEnabled)}</div>
                         ${ruleNumber('Buy at or below', `data-moth-fixed-field="buyMax" data-rule-id="${id}"`, rule.buyMax)}
+                        ${ruleCapsHtml('fixed', rule)}
                         <p class="moth-mw-rule-hint">${escapeHtml(tr('Buy every available unit affordable within reserves and purchase limits.'))}</p>
                     </section>
                 </div>
@@ -3993,6 +4048,9 @@
 
 
     function categoryRuleStatus(rule, type) {
+        if (config.purchasesPaused) return tr('Purchases paused');
+        if (state.pendingBuy) return tr('Waiting for acknowledgement');
+        if (remainingBudget(rule.currency, rule.id).spend < 1) return tr('Budget blocked');
         if (!rule.buyEnabled || !(rule.buyMax > 0)) return tr('Rule paused');
         if (!config.enabled) return tr('Moth Watch disabled');
         if (!config.fixedRulesEnabled) return tr('Enable rule-based buying above');
@@ -4023,6 +4081,7 @@
                 ruleSwitch('Buy', 'data-moth-' + type + '-field="buyEnabled" data-rule-id="' + id + '"', rule.buyEnabled) +
                 ruleNumber('Buy at or below', 'data-moth-' + type + '-field="buyMax" data-rule-id="' + id + '"', rule.buyMax) +
                 ruleCurrency('data-moth-' + type + '-field="currency" data-rule-id="' + id + '"', rule.currency) +
+                ruleCapsHtml(type, rule) +
                 '</section></div><div class="moth-mw-rule-card-foot"><span>' +
                 escapeHtml(tr(pokemon ? 'Price per Pokémon' : 'Price per unit')) +
                 '</span><button type="button" class="moth-mw-btn danger" data-moth-remove-' + type + '="' + id + '">' +
@@ -4158,7 +4217,16 @@
                     configField('Keep Coins in reserve', 'goldReserve', 'number', '') +
                     configField('Keep Gems in reserve', 'gemReserve', 'number', '') +
                     configField('Maximum Coins per purchase', 'maxCoinsPerBuy', 'number', '0 = no extra cap') +
-                    configField('Maximum Gems per purchase', 'maxGemsPerBuy', 'number', '0 = no extra cap') + '</div></section>' +
+                    configField('Maximum Gems per purchase', 'maxGemsPerBuy', 'number', '0 = no extra cap') +
+                    configField('Maximum Coins per session', 'maxCoinsPerSession', 'number', '0 = unlimited cumulative limit') +
+                    configField('Maximum Gems per session', 'maxGemsPerSession', 'number', '0 = unlimited cumulative limit') +
+                    configField('Maximum Coins per UTC day', 'maxCoinsPerDay', 'number', '0 = unlimited cumulative limit') +
+                    configField('Maximum Gems per UTC day', 'maxGemsPerDay', 'number', '0 = unlimited cumulative limit') +
+                    configField('Maximum purchases per session', 'maxPurchasesPerSession', 'number', '0 = unlimited cumulative limit') +
+                    configField('Maximum units per session', 'maxQuantityPerSession', 'number', '0 = unlimited cumulative limit') +
+                    configField('Pause all purchases (kill switch)', 'purchasesPaused', 'checkbox') +
+                    '</div><p class="moth-mw-rule-hint">' + escapeHtml(tr('Includes reserved unverified orders. 0 means unlimited; per-purchase caps are separate.')) +
+                    '</p></section>' +
                     fixedRulesHtml() + categoryRulesHtml('any') + categoryRulesHtml('pokemon') +
                     '<details class="moth-mw-advanced"><summary>' + escapeHtml(tr('Advanced monitoring & references')) +
                     '</summary><div class="moth-mw-advanced-body"><p class="moth-mw-advanced-note">' +
@@ -4403,7 +4471,11 @@
                 const rules = sanitize(config[key]), rule = rules.find(r => r.id === target.dataset.ruleId);
                 if (!rule) return;
                 const field = target.getAttribute(attr);
-                if (field === 'buyMax') {
+                if (['maxSpendSession', 'maxSpendDay', 'maxPurchasesSession', 'maxQuantitySession'].includes(field)) {
+                    const cap = Number(target.value);
+                    if (!Number.isSafeInteger(cap) || cap < 0) { renderWatch(true); return; }
+                    rule[field] = cap;
+                } else if (field === 'buyMax') {
                     const max = Number(target.value);
                     if (!Number.isSafeInteger(max) || max <= 0) {
                         setAutomationNotice(tr('Set a positive maximum buy price.'), 'warn');
@@ -4445,6 +4517,11 @@
                 if (field === 'currency') rule.currency = target.value === 'orb' ? 'orb' : 'gold';
                 else if (field === 'buyEnabled') rule.buyEnabled = target.checked;
                 else if (field === 'buyMax') rule.buyMax = Math.max(0, Math.floor(Number(target.value) || 0));
+                else if (['maxSpendSession', 'maxSpendDay', 'maxPurchasesSession', 'maxQuantitySession'].includes(field)) {
+                    const cap = Number(target.value);
+                    if (!Number.isSafeInteger(cap) || cap < 0) { renderWatch(true); return; }
+                    rule[field] = cap;
+                }
                 else return;
                 config.fixedItemRules = rules;
                 saveConfig();
@@ -4766,6 +4843,13 @@
             maxCoinsPerBuy: Math.max(0, Number(config.maxCoinsPerBuy) || 0),
             maxGemsPerBuy: Math.max(0, Number(config.maxGemsPerBuy) || 0),
             fixedRulesEnabled: !!config.fixedRulesEnabled,
+            purchasesPaused: !!config.purchasesPaused,
+            maxCoinsPerSession: Number(config.maxCoinsPerSession) || 0,
+            maxGemsPerSession: Number(config.maxGemsPerSession) || 0,
+            maxCoinsPerDay: Number(config.maxCoinsPerDay) || 0,
+            maxGemsPerDay: Number(config.maxGemsPerDay) || 0,
+            maxPurchasesPerSession: Number(config.maxPurchasesPerSession) || 0,
+            maxQuantityPerSession: Number(config.maxQuantityPerSession) || 0,
             fixedItemRules: sanitizeFixedItemRules(config.fixedItemRules),
             anyItemRules: sanitizeAnyItemRules(config.anyItemRules),
             pokemonBuyRules: sanitizePokemonBuyRules(config.pokemonBuyRules),
@@ -4839,6 +4923,12 @@
             lastScanAt: Number(state.lastScanAt) || 0,
             serverClockOffset: Number(state.serverClockOffset) || 0,
             pendingBuy: pending,
+            lastPurchaseOutcome: String(state.lastPurchaseOutcome || 'idle'),
+            unknownOrders: (state.orderJournal?.orders || []).filter(o => o.status === 'unknown').length,
+            exposure: { sessionGold: orderExposure('session', 'gold').spent,
+                sessionGems: orderExposure('session', 'orb').spent,
+                dayGold: orderExposure('day', 'gold').spent,
+                dayGems: orderExposure('day', 'orb').spent },
             candidates: visibleCandidates,
             allCandidates: candidates.length,
             baseline: baselineStats(),
