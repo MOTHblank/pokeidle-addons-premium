@@ -10676,6 +10676,23 @@
                 white-space: normal;
                 overflow-wrap: anywhere;
             }
+            .mha-native-bonuses {
+                margin: 8px 0;
+                padding: 9px;
+                border: 1px solid rgba(121,180,240,.2);
+                border-radius: 7px;
+                background: rgba(121,180,240,.045);
+            }
+            .mha-native-bonuses > strong {
+                display: block;
+                font-size: 11px;
+                color: #dcecff;
+                margin-bottom: 5px;
+            }
+            .mha-native-bonuses .mha-xp-note {
+                margin: 3px 0;
+                overflow-wrap: anywhere;
+            }
             .mha-xp-summary [data-mha-reference] label {
                 display: inline-flex;
                 align-items: center;
