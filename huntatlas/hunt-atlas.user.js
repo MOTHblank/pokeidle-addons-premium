@@ -2733,7 +2733,9 @@
         const drops = [];
         if (Array.isArray(event.drops)) {
             for (const drop of event.drops.slice(0, 32)) {
-                const id = farmingFinite(drop?.itemId ?? drop?.id);
+                const id = farmingFinite(drop?.itemId ?? drop?.id) ??
+                    RARE_OUTLAND_DROPS.concat([RARE_EGG_DROP])
+                        .find(row=>row.name===drop?.nome)?.id ?? null;
                 const quantity = farmingFinite(drop?.qtd ?? drop?.quantity ?? 1);
                 if (id !== null && quantity !== null && quantity > 0)
                     drops.push({itemId: id, quantity});
@@ -5794,6 +5796,59 @@
         const record = performanceRecord(state.currentHuntSlug,true);
         if (!record) return;
         record.rateUseWindow = farmAppendUse(record.rateUseWindow,receipt,at);
+    }
+
+    function rareObservedFor(id, eligible=true) {
+        return eligible ? (state.farmingLedger.items.get(id) ?? 0) : null;
+    }
+    function rareOutlandHunt() {
+        return state.hunts.find(hunt=>String(hunt?.area).toLowerCase()==='outland'
+            && isUnlocked(hunt)) || null;
+    }
+    function rareModelForHunt(hunt, tier) {
+        const xp=hunt ? huntXpEstimate(hunt):null;
+        const rate=Number.isFinite(xp?.killsH)?xp.killsH:null;
+        const model=rareForHunt(hunt,tier,state.playerLevel,rate);
+        const actualHere=isHuntHere(hunt?.slug);
+        const tierActive=state.outlandTierSeen &&
+            state.farmingSnapshot.outlandTier===tier;
+        return {...model,killsH:rate,
+            rateSource:xp?.observed?'observed-wall-clock':
+                xp?.source??'unknown',
+            observedAvailable:actualHere && (String(hunt?.area).toLowerCase()!=='outland'
+                || tierActive),
+            observedDrops:actualHere && (String(hunt?.area).toLowerCase()!=='outland'
+                || tierActive) ? Object.fromEntries(model.drops.map(row=>[
+                    row.id,rareObservedFor(row.id)
+                ])):null};
+    }
+
+    function requestOutlandTier(tier) {
+        // shared/outland-tiers.mjs confirms "outland.tier" exists. This
+        // message is not evidence of SUCCESS; only an authoritative estate
+        // snapshot with the selected tier may confirm it.
+        const requested=Number(tier);
+        if(!state.outlandTierSeen ||
+            !farmingTier(requested,state.playerLevel) ||
+            state.pendingOutlandTier || !socketReady() ||
+            state.farmingSnapshot.outlandTier===requested)
+            return false;
+        try{
+            state.activeSocket.send(JSON.stringify({t:'outland.tier',tier:requested}));
+            const sentAt=Date.now();
+            state.pendingOutlandTier={tier:requested,sentAt};
+            setTimeout(()=>{
+                if(state.pendingOutlandTier?.sentAt===sentAt){
+                    state.pendingOutlandTier=null;
+                    queueRender();
+                }
+            },6000);
+            queueRender();
+            return true;
+        }catch{
+            state.pendingOutlandTier=null;
+            return false;
+        }
     }
 
     function huntEconomyEstimate(hunt, xp = huntXpEstimate(hunt)) {
@@ -12658,6 +12713,30 @@
                             neutralDamage: Math.round(row.neutralDamage || 0)
                         }))
                 },
+                rareDropEvidence: (() => {
+                    const outland=rareOutlandHunt();
+                    const tier=state.filters.outlandPreviewTier;
+                    const plan=outland?rareModelForHunt(outland,tier):null;
+                    return {
+                        previewTier:tier,
+                        activeTier:state.outlandTierSeen
+                            ? state.farmingSnapshot.outlandTier : null,
+                        tierSource:state.outlandTierSeen
+                            ? 'observed-client':'unknown',
+                        publishedTierCatalog:state.outlandCatalogTiers?.length===8,
+                        pending:state.pendingOutlandTier?.tier??null,
+                        rates:plan?.drops.map(row=>({
+                            itemId:row.id,unitsH:row.unitsH,
+                            probability:row.probability,
+                            source:row.source
+                        }))??[],
+                        observedItemCounts:Object.fromEntries(
+                            [...state.farmingLedger.items].filter(([id])=>
+                                RARE_OUTLAND_DROPS.some(row=>row.id===id)
+                                || id===RARE_EGG_DROP.id)
+                        )
+                    };
+                })(),
                 farmingEvidence: {
                     schema: state.farmingLedger.schema,
                     // Only allowlisted field names and counters; no event bodies.
