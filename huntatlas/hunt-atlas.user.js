@@ -418,6 +418,8 @@
             'xp.recommendationNote': '{lead} · recommendations respect the current Atlas filters.',
             'xp.currentMeasured': ' · current measured {value} trainer XP/h',
             'xp.currentModeled': ' · current modeled {value} trainer XP/h',
+            'xp.warmingSession': 'warming up: sustained observations still insufficient',
+            'xp.sessionEvidence': '{samples} kills / {minutes} min, wall-clock',
             'xp.modelNote': ' · exact upstream XP curve; real combat samples take priority over experimental move-index estimates.',
             'xp.possibleMoves': '{count} level-eligible indexed moves (not confirmed equipped)',
             'xp.knownMoves': '{count} named moves confirmed by battle events',
@@ -618,6 +620,8 @@
             'xp.recommendationNote': '{lead} · recomendações respeitam os filtros atuais do Atlas.',
             'xp.currentMeasured': ' · atual medido {value} XP de treinador/h',
             'xp.currentModeled': ' · atual modelado {value} XP de treinador/h',
+            'xp.warmingSession': 'aquecendo: ainda faltam medições sustentadas',
+            'xp.sessionEvidence': '{samples} abates / {minutes} min, tempo corrido',
             'xp.modelNote': ' · curva oficial de XP; amostras reais de combate têm prioridade sobre estimativas experimentais do índice de golpes.',
             'xp.possibleMoves': '{count} golpes possíveis neste nível (não confirmados como equipados)',
             'xp.knownMoves': '{count} golpes identificados nos eventos de combate',
@@ -11206,6 +11210,11 @@
                         total: currentXp.totalPoints,
                         percentage: currentXp.coverage
                     })) : ''}
+                    ${currentXp?.warmingUp ? ' · ' + escapeHtml(tr('xp.warmingSession')) : ''}
+                    ${currentXp?.observed ? ' · ' + escapeHtml(tr('xp.sessionEvidence', {
+                        samples: currentXp.samples,
+                        minutes: Math.max(1, Math.round(currentXp.windowMs / 60000))
+                    })) : ''}
                     ${currentXp?.value
                         ? escapeHtml(
                             tr(
@@ -11780,7 +11789,7 @@
             const here = currentHunt();
             const xp = here ? huntXpEstimate(here) : null;
             return {
-                version: '1.9.2',
+                version: '1.9.4',
                 indexes: {
                     locations: state.locationIndexStatus,
                     markerCount: state.locationsBySlug.size,
@@ -11807,6 +11816,18 @@
                             neutralDamage: Math.round(row.neutralDamage || 0)
                         }))
                 },
+                farmingEvidence: {
+                    schema: state.farmingLedger.schema,
+                    // Only allowlisted field names and counters; no event bodies.
+                    events: Object.fromEntries(state.farmingLedger.fieldPresence),
+                    counts: {...state.farmingLedger.totals},
+                    diagnostics: {...state.farmingLedger.diagnostics},
+                    tier: state.farmingSnapshot.outlandTier ?? null,
+                    tierSource: state.farmingSnapshot.outlandTier === undefined
+                        ? 'unknown' : 'observed-client',
+                    catalogRevision: state.farmingSnapshot.catalogRevision ?? null,
+                    bonusSemantics: 'unverified'
+                },
                 prediction: {
                     hunt: here?.slug || null,
                     source: xp?.source || 'none',
@@ -11814,6 +11835,10 @@
                     trainerXpH: Math.round(xp?.value || 0),
                     killsH: Math.round(xp?.killsH || 0),
                     measured: Boolean(xp?.observed),
+                    warmingUp: Boolean(xp?.warmingUp),
+                    samples: xp?.samples ?? 0,
+                    windowMs: xp?.windowMs ?? null,
+                    denominator: xp?.observed ? 'wall' : null,
                     coverage: xp?.coverage ?? null,
                     incomplete: Boolean(xp?.incomplete),
                     coveredPoints: xp?.coveredPoints ?? null,
@@ -11860,7 +11885,7 @@
         );
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.0 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.4 experimental loaded'
         );
     }
 
