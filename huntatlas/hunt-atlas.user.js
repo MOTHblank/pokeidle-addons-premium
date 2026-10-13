@@ -3207,6 +3207,9 @@
             }
             corpse.thrown = true;
             corpse.ballId=receipt.itemId;
+            // This still counts as an accepted throw, but an unidentified ball
+            // cannot be priced as free in net farming economics.
+            if (receipt.itemId === null) ledger.diagnostics.uncertainCosts++;
             ledger.totals.acceptedThrows++;
             if (receipt.shinySeen) ledger.totals.shinySeen++;
         } else if (kind === 'capturado') {
@@ -3220,6 +3223,7 @@
         } else if (kind === 'cura' || kind === 'revive') {
             if (receipt.itemId === null) {
                 ledger.diagnostics.malformed++;
+                ledger.diagnostics.uncertainCosts++;
                 return false;
             }
             ledger.totals[kind === 'cura' ? 'potions' : 'revives']++;
