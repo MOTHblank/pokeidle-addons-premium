@@ -25,21 +25,26 @@
                     if (!offer || !Number.isFinite(price) || price <= 0) return '';
                     const listingId = Number(offer.id);
                     const own = isOwnListing(offer);
-                    const candidateKey = 'item:' + entry.itemId + ':' + currency + ':' + offer.id;
-                    const candidate = Number.isFinite(listingId) && listingId > 0 ? state.candidates.get(candidateKey) : null;
+                    // Direct Buy uses the quoted offer itself; a market
+                    // opportunity is NOT required to buy available stock.
                     const qty = Math.max(1, Number(offer.qtd || 1));
                     const heldUntil = retentionUntil(offer);
-                    const snatch = !own && Number.isSafeInteger(listingId) && listingId > 0
+                    const held = heldUntil > serverNow();
+                    const snatch = !own && held && Number.isSafeInteger(listingId) && listingId > 0
                         ? snatchButton('item',currency,listingId,entry.itemId) : '';
                     const timerLabel = heldUntil > serverNow()
                         ? '<span class="moth-mw-offer-meta">' +
                             escapeHtml(tr('Held · {seconds}s', { seconds: Math.ceil((heldUntil-serverNow())/1000) })) +
                             '</span>' : '';
-                    const action = !own && candidate
-                        ? '<button type="button" class="moth-mw-btn primary" data-moth-buy="' + escapeHtml(candidate.key) + '">' + escapeHtml(tr('Buy')) + '</button>'
-                        : own
-                            ? '<span class="moth-mw-offer-meta">' + escapeHtml(tr('Own listing')) + '</span>'
-                            : '<span class="moth-mw-offer-meta">—</span>';
+                    const action = own
+                        ? '<span class="moth-mw-offer-meta">' + escapeHtml(tr('Own listing')) + '</span>'
+                        : held ? ''
+                        : Number.isSafeInteger(listingId) && listingId > 0
+                            ? '<button type="button" class="moth-mw-btn primary" data-moth-offer-buy="' +
+                                listingId + '" data-moth-offer-item="' + entry.itemId +
+                                '" data-moth-offer-currency="' + currency + '">' +
+                                escapeHtml(tr('Buy')) + '</button>'
+                            : '';
                     return '<div class="moth-mw-offer-row">' +
                         '<span class="moth-mw-offer-seller" title="' + escapeHtml(String(offer.vendedor || '—')) + '">' + escapeHtml(String(offer.vendedor || '—')) + '</span>' +
                         '<span class="moth-mw-offer-meta">' + num(qty) + ' ' + escapeHtml(tr('units')) + '</span>' +
@@ -200,7 +205,9 @@
             '<p>' + escapeHtml(tr('Missing listing fields: {fields}', { fields: missing })) + '</p>' +
             '<p class="moth-mw-rule-hint">' + escapeHtml(tr('Rule preview (not permission): {preview}', {
                 preview: ruleLabel
-            })) + '</p>' + snatchButton('pokemon',currency,Number(listing?.id)) + '</article>';
+            })) + '</p>' +
+            (retentionUntil(listing) > serverNow()
+                ? snatchButton('pokemon',currency,Number(listing?.id)) : '') + '</article>';
     }
 
     function renderPokemonPriceEvidence() {
@@ -238,7 +245,7 @@
         const retainedSeconds = candidate.retainedUntil > serverNow() ? Math.ceil((candidate.retainedUntil - serverNow()) / 1000) : 0;
         const attemptedUntil = Number(state.attemptedListings.get(candidate.listingId) || 0);
         const recentlyAttempted = attemptedUntil > Date.now();
-        const canBuy = !state.pendingBuy && !config.purchasesPaused &&
+        const canBuy = !state.pendingBuys?.has(candidate.listingId) && !config.purchasesPaused &&
             !unresolvedListing(candidate.listingId) && !recentlyAttempted && !retainedSeconds &&
             purchaseQuantity(candidate) > 0;
         const total = candidate.kind === 'item' || candidate.kind === 'diamond' ? candidate.price * candidate.qty : candidate.price;
@@ -289,7 +296,7 @@
             '<div class="moth-mw-ref"><div>' + money(Math.round(candidate.average), candidate.currency) + '</div><div class="moth-mw-meta">' + escapeHtml(referenceLabel) + '</div></div>' +
             '<div><div class="moth-mw-discount">−' + pct(discount) + '</div><div class="moth-mw-meta">' + escapeHtml(tr('watch range')) + '</div></div>' +
             '<div class="moth-mw-seller"><b>' + escapeHtml(tr('Seller: {seller}', { seller: candidate.seller })) + '</b><div class="moth-mw-meta">' + escapeHtml(availableLabel) + '</div></div>' +
-            (candidate.kind === 'item' || candidate.kind === 'pokemon'
+            ((candidate.kind === 'item' || candidate.kind === 'pokemon') && retainedSeconds
                 ? snatchButton(candidate.kind,candidate.currency,candidate.listingId,Number(candidate.itemId||0))
                 : '') +
             '<button type="button" class="moth-mw-btn primary" data-moth-buy="' + escapeHtml(candidate.key) + '"' + (canBuy ? '' : ' disabled') + '>' +

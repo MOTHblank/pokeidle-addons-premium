@@ -6,7 +6,8 @@
     const SNATCH_RETRY_MS = 400;
     const SNATCH_MAX_QUOTE_AGE_MS = 3 * 60000;
     const SNATCH_PREPARE_MS = 45000;
-    // Retry only after explicit server refusal; avoid a fixed 120-attempt cutoff.
+    // Continue attempting while the listing remains freshly observed, even when
+    // an earlier attempt has no acknowledgement.
     function snatchRetryDelay(attempts) {
         return attempts < 30 ? SNATCH_RETRY_MS : attempts < 90 ? 1500 : 5000;
     }
@@ -48,15 +49,13 @@
         try {
             const data = JSON.parse(localStorage.getItem(SNATCH_KEY + ':' + account) || 'null');
             if (data?.version !== 1 || !Array.isArray(data.targets)) return;
-            const now = Date.now();
             for (const entry of data.targets.slice(-SNATCH_LIMIT)) {
                 if (!['item', 'pokemon'].includes(entry.kind) ||
                     !['gold', 'orb'].includes(entry.currency) ||
                     !Number.isSafeInteger(entry.id) || entry.id <= 0 ||
                     !Number.isSafeInteger(entry.maxPrice) || entry.maxPrice <= 0 ||
                     !Number.isSafeInteger(entry.itemId || 0) ||
-                    !Number.isSafeInteger(entry.expiresAt) || entry.expiresAt <= now ||
-                    entry.expiresAt > now + 2 * SNATCH_ACTIVE_MS) continue;
+                    !Number.isSafeInteger(entry.expiresAt) || entry.expiresAt <= 0) continue;
                 state.snatchManual.set(snatchKey(entry.kind, entry.currency, entry.id), {
                     kind:entry.kind, currency:entry.currency, id:entry.id, itemId:entry.itemId || 0,
                     maxPrice:entry.maxPrice, expiresAt:entry.expiresAt
@@ -128,6 +127,9 @@
             candidate, ruleId:rule?.id || old?.ruleId || '',
             releaseAt:held ? until : old?.releaseAt || 0,
             attempts:old?.attempts || 0, retryAt:old?.retryAt || 0,
+            // Every returned listing quote resets the quantity estimate.
+            // Only a new authenticated quote can revive an exhausted lot.
+            confirmedUnits:0, awaitingRefresh:false, missing:0,
             observedAt:Date.now(), refreshedAt:old?.refreshedAt || 0
         });
         if (manual && price > manual.maxPrice) {
@@ -190,7 +192,7 @@
         if (!state.snatchManual.has(key) || !snatchSave()) {
             state.snatchManual.delete(key); return false;
         }
-        snatchSchedule(); queueRender(); return true;
+        snatchSchedule(25); queueRender(); return true;
     }
 
     function snatchStop(key, reason) {
@@ -221,7 +223,6 @@
         state.snatchWake = null;
         const now = Date.now();
         for (const [key, target] of [...state.snatchManual]) {
-            if (target.expiresAt <= now) { snatchStop(key, 'expired'); continue; }
             if (state.snatchObserved.has(key) || now - Number(state.snatchRecoverAt?.get(key)||0)<10000) continue;
             state.snatchRecoverAt.set(key,now);
             if (target.kind === 'item' && target.itemId > 0 && !communityMarketIsOpen()) {
@@ -243,7 +244,6 @@
             const manual = state.snatchManual.get(key);
             const rule = entry.ruleId ? activeRuleById(entry.ruleId) : null;
             if (!manual && !rule) { state.snatchObserved.delete(key); continue; }
-            if (manual?.expiresAt <= now) { snatchStop(key, 'expired'); continue; }
             const c = entry.candidate;
             if (manual && (c.price > manual.maxPrice || c.itemId !== manual.itemId && c.kind==='item')) {
                 snatchStop(key,'quote changed'); continue;
@@ -256,7 +256,19 @@
                     snatchRefresh(entry,now);
                 continue;
             }
-            if (!freshQuote(c,!!manual) && !snatchReleaseQuote(c)) {
+            if (entry.awaitingRefresh) {
+                // Prefer a new quantity quote after a reported full fill.
+                // If the market stalls, resume attempting with the last
+                // server-observed listing rather than deadlocking the queue.
+                snatchRefresh(entry,now);
+                if (now - Number(entry.waitingSince || now) < 5000) {
+                    entry.retryAt = now + 1000;
+                    continue;
+                }
+                entry.awaitingRefresh = false;
+                entry.confirmedUnits = 0;
+            }
+            if (!freshQuote(c,!!manual,true) && !snatchReleaseQuote(c)) {
                 // Missing a current quote must not create a 35ms busy loop.
                 entry.retryAt = now + 1000;
                 snatchRefresh(entry,now);
@@ -267,10 +279,8 @@
                 entry.retryAt = Number(state.rateLimitedUntil);
                 continue;
             }
-            if (!manual && entry.releaseAt > 0 &&
-                server - entry.releaseAt > SNATCH_ACTIVE_MS) {
-                snatchStop(key,'rule target expired'); continue;
-            }
+            // A still-available, rule-authorized item does not expire merely
+            // because its original hold ended 30 minutes ago.
             if (entry.ruleId && !manual && (!rule || !currentRuleMatches(rule,c,c.price))) {
                 state.snatchObserved.delete(key); continue;
             }
@@ -279,9 +289,12 @@
                 entry.retryAt = now + 1000;
                 continue;
             }
-            // No refresh request is made before the scheduled first buy.
-            entry.retryAt = now + SNATCH_RETRY_MS;
-            if (tryBuy(c,!!manual,1,activeRule || false,true)) {
+            // Buy as many units as permitted by this listing, available
+            // balance and configured caps. A one-unit Snatch used to leave
+            // nearly all of a multi-unit listing behind.
+            entry.retryAt = now + snatchRetryDelay(entry.attempts);
+            if (tryBuy(c,!!manual,Math.max(1,c.qty-Number(entry.confirmedUnits||0)),
+                activeRule || false,true)) {
                 entry.attempts++;
                 queueRender();
                 break;
@@ -320,7 +333,7 @@
                     // Match the timer to the actual listing cooldown instead
                     // of waking every 35 ms for a temporarily blocked offer.
                     const attempted = Number(state.attemptedListings.get(entry.candidate.listingId) || 0);
-                    wait = Math.min(wait, Math.max(35,
+                    wait = Math.min(wait, entry.awaitingRefresh ? 1000 : Math.max(35,
                         Math.max(entry.retryAt || 0, attempted) - Date.now()));
                 }
             }
@@ -329,31 +342,42 @@
         state.snatchWake = setTimeout(snatchTick,Math.max(25,Math.min(30000,wait)));
     }
 
-    function snatchOutcome(listingId,status) {
+    function snatchOutcome(listingId,status,order=null) {
         for (const [key,entry] of [...state.snatchObserved]) {
             if (entry.candidate.listingId !== listingId) continue;
             if (status === 'confirmed') {
-                snatchStop(key,status); continue;
+                if (entry.candidate.kind === 'pokemon') {
+                    // Pokémon listings contain exactly one specimen.
+                    snatchStop(key,'confirmed'); continue;
+                }
+                const filled = Math.max(1,Number(order?.fillQty || order?.qty || 1));
+                entry.confirmedUnits = (entry.confirmedUnits || 0) + filled;
+                if (entry.confirmedUnits >= entry.candidate.qty) {
+                    entry.awaitingRefresh = true;
+                    entry.waitingSince = Date.now();
+                    entry.refreshedAt = 0;
+                    snatchRefresh(entry,Date.now());
+                }
             }
-            // Unknown means the acknowledgement did not arrive, not that a
-            // competitor won. Keep retrying while the release quote is valid.
+            // A success, a refusal or an unknown outcome does not prove an
+            // item listing is gone. Retry until the newly observed stock is
+            // exhausted, then recheck whether the seller still has any.
             entry.retryAt = Date.now() + snatchRetryDelay(entry.attempts);
             state.attemptedListings.set(listingId,entry.retryAt);
-            // Retry on the next release timer, not on a bulk market scan.
-            // Targeted listing reconciliation happens separately, when idle.
         }
         snatchSchedule();
     }
 
     function snatchConfirmItemListingSet(itemId,currency,offers) {
-        if (!Array.isArray(offers) || offers.length >= 120) return;
+        if (!Array.isArray(offers)) return;
         const present = new Set(offers.map(o=>Number(o?.id)));
-        for (const [key,entry] of [...state.snatchObserved]) {
+        for (const entry of state.snatchObserved.values()) {
             if (entry.candidate.kind !== 'item' ||
                 entry.candidate.itemId !== itemId || entry.candidate.currency !== currency) continue;
-            entry.missing = present.has(entry.candidate.listingId) ? 0 : (entry.missing||0)+1;
-            if (entry.missing >= 2 && serverNow() >= entry.releaseAt)
-                snatchStop(key,'listing no longer available');
+            // A response can be truncated or cover another page. Absence from
+            // two sampled pages is not proof that the listing was sold.
+            entry.missing = present.has(entry.candidate.listingId)
+                ? 0 : (entry.missing || 0) + 1;
         }
     }
 
@@ -374,7 +398,8 @@
             const [kind,currency]=key.split(':');
             const marker=row.querySelector('.cm-tempo,.cm-retencao,.cm-contagem,[data-compravel-em]') ||
                 row.querySelector('button');
-            if (!marker || !offer || !['item','pokemon'].includes(kind)) continue;
+            if (!marker || !offer || !['item','pokemon'].includes(kind) ||
+                !(Number(offer.compravelEm) > serverNow())) continue;
             const button=document.createElement('button');
             button.type='button';
             button.dataset.mothNativeSnatch=key;
@@ -420,7 +445,8 @@
     function snatchDisplayStatus(target, observation) {
         if (!config.enabled) return {tone:'muted', text:tr('Moth Watch is disabled')};
         if (config.purchasesPaused) return {tone:'muted', text:tr('Purchases are paused')};
-        if (unresolvedListing(target.id)) return {tone:'warning', text:tr('Blocked by an unverified purchase')};
+        // Snatch is explicitly allowed to retry after an ambiguous result.
+        // Ordinary Buy remains protected from repeated unverified orders.
         if (!state.gameSocket || state.gameSocket.readyState !== 1)
             return {tone:'warning', text:tr('Waiting for game connection')};
         if (state.pendingBuy?.listingId === target.id)
@@ -432,7 +458,9 @@
         }
         const retry = Math.ceil((Number(observation.retryAt||0)-Date.now())/1000);
         if (retry>0) return {tone:'pending',text:tr('Next attempt in {seconds}s',{seconds:retry})};
-        if (!freshQuote(observation.candidate,true) && !snatchReleaseQuote(observation.candidate))
+        if (observation.awaitingRefresh)
+            return {tone:'pending',text:tr('Refreshing listing evidence')};
+        if (!freshQuote(observation.candidate,true,true) && !snatchReleaseQuote(observation.candidate))
             return {tone:'warning',text:tr('Refreshing listing evidence')};
         return {tone:'ready',text:tr('Competing for purchase')};
     }

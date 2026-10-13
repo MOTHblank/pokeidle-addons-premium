@@ -179,7 +179,7 @@
             state.attemptedListings.set(order.listingId, Number.MAX_SAFE_INTEGER);
             addLog('Purchase outcome unverified · listing #' + order.listingId);
         }
-        snatchOutcome(order.listingId,status);
+        snatchOutcome(order.listingId, status, order);
         queueRender();
         return true;
     }
@@ -213,7 +213,7 @@
             pokemonRuleMatches(rule, candidate.ficha, candidate.currency);
     }
 
-    function freshQuote(candidate, manual) {
+    function freshQuote(candidate, manual, allowSnatchRetry = false) {
         const id = Number(candidate?.listingId), price = Number(candidate?.unitPrice || candidate?.price);
         const qty = Number(candidate?.qty), age = Date.now() - Number(candidate?.seenAt);
         return Number.isSafeInteger(id) && id > 0 &&
@@ -224,7 +224,8 @@
             !!state.nick && typeof candidate.seller === 'string' &&
             !!candidate.seller.trim() && candidate.seller !== '—' &&
             !isOwnListing({ vendedor: candidate.seller }) &&
-            !(candidate.retainedUntil > serverNow()) && !unresolvedListing(id) &&
+            !(candidate.retainedUntil > serverNow()) &&
+            (allowSnatchRetry || !unresolvedListing(id)) &&
             (manual || candidate.kind !== 'pokemon' ||
                 candidate.ficha && typeof candidate.ficha.shiny === 'boolean' &&
                 Number.isSafeInteger(Number(candidate.ficha.potencia)) &&

@@ -220,10 +220,42 @@
                 renderWatch();
                 return;
             }
+            const direct = target.closest('[data-moth-offer-buy]');
+            if (direct) {
+                const listingId = Number(direct.dataset.mothOfferBuy);
+                const itemId = Number(direct.dataset.mothOfferItem);
+                const currency = direct.dataset.mothOfferCurrency;
+                const key = itemId + ':' + currency;
+                const detail = state.itemOfferDetails.get(key);
+                const offer = detail?.offers?.find(o => Number(o.id) === listingId);
+                // The button is tied to an authenticated offer, not a bargain
+                // candidate. Buy the available quantity immediately.
+                if (!offer || !Number.isSafeInteger(listingId) || listingId <= 0 ||
+                    Date.now() - Number(detail.updatedAt || 0) > QUOTE_MAX_AGE_MS ||
+                    isOwnListing(offer) || retentionUntil(offer) > serverNow()) {
+                    state.lastDetailRequest.delete(key);
+                    queueItemDetail(itemId,currency);
+                    addLog('Purchase quote expired · refreshing item offers');
+                } else {
+                    const price = Number(offer.preco), qty = Number(offer.qtd);
+                    const candidate = {
+                        key:'direct:item:' + key + ':' + listingId, kind:'item',
+                        listingId,itemId,name:catalogName(itemId),currency,
+                        price,unitPrice:price,qty,seller:String(offer.vendedor || ''),
+                        retainedUntil:retentionUntil(offer),seenAt:detail.updatedAt,
+                        average:0,ratio:1
+                    };
+                    if (!tryBuy(candidate,true))
+                        addLog('Direct Buy not sent · check funds, price, listing, or active request');
+                }
+                queueRender();
+                return;
+            }
             const buy = target.closest('[data-moth-buy]');
             if (buy) {
                 const candidate = state.candidates.get(buy.dataset.mothBuy);
-                if (candidate && !tryBuy(candidate, true)) addLog('Purchase not sent; check balance, reserve, listing availability, and pending purchase status');
+                if (candidate && !tryBuy(candidate, true))
+                    addLog('Purchase not sent; check balance, reserve, listing availability, and pending purchase status');
                 queueRender();
             }
         });
