@@ -422,7 +422,11 @@
     }
 
     function snatchQueueHtml() {
-        const own=[...state.snatchManual.entries()].slice(0,SNATCH_LIMIT);
+        const own=[...state.snatchManual.entries()]
+            .sort(([keyA],[keyB])=>
+                Number(state.snatchObserved.get(keyA)?.releaseAt || Infinity) -
+                Number(state.snatchObserved.get(keyB)?.releaseAt || Infinity))
+            .slice(0,SNATCH_LIMIT);
         const automatic=[...state.snatchObserved.entries()]
             .filter(([key,entry])=>!state.snatchManual.has(key) && activeRuleById(entry.ruleId))
             .slice(0,SNATCH_LIMIT);
