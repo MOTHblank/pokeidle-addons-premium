@@ -20,6 +20,11 @@
 
         if (message.t === 'welcome') {
             // Never let two authenticated accounts share a spending journal.
+            for (const queue of [...(state.pendingBuys?.values() || [])]) {
+                for (const pending of [...queue]) {
+                    finishPendingBuy('account-refresh', pending.listingId, pending);
+                }
+            }
             if (state.pendingBuy) finishPendingBuy('account-refresh');
             const previousAccount = state.orderJournal?.accountKey;
             state.nick = String(message.estado?.nick || '');
@@ -165,6 +170,11 @@
             if (!state.socket) {
                 state.itemStatus = 'disconnected';
                 state.pokemonStatus = 'disconnected';
+                for (const queue of [...(state.pendingBuys?.values() || [])]) {
+                    for (const pending of [...queue]) {
+                        finishPendingBuy('disconnect', pending.listingId, pending);
+                    }
+                }
                 if (state.pendingBuy) finishPendingBuy('disconnect');
                 state.marketReply = null;
                 state.pokemonScan = null;
