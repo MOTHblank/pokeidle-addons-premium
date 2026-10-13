@@ -3,9 +3,33 @@
     const SNATCH_KEY = 'moth-pokeidle-snatch-v1';
     const SNATCH_LIMIT = 40;
     const SNATCH_ACTIVE_MS = 30 * 60000;
-    const SNATCH_RETRY_MS = 1200;
+    const SNATCH_RETRY_MS = 400;
+    const SNATCH_MAX_QUOTE_AGE_MS = 3 * 60000;
+    const SNATCH_ATTEMPT_LIMIT = 120;
     function snatchKey(kind, currency, id) {
         return kind + ':' + currency + ':' + id;
+    }
+
+    // Previously observed *held* quotes remain usable at release even when
+    // ordinary 30-second fresh quote checks expire. ID, price and hold time
+    // are server-derived; a purchase is still authoritatively validated.
+    function snatchReleaseQuote(candidate) {
+        if (!candidate || !['item','pokemon'].includes(candidate.kind)) return false;
+        const id = Number(candidate.listingId), price = Number(candidate.price);
+        const age = Date.now() - Number(candidate.seenAt);
+        const retained = Number(candidate.retainedUntil);
+        return Number.isSafeInteger(id) && id > 0 &&
+            ['gold','orb'].includes(candidate.currency) &&
+            Number.isSafeInteger(price) && price > 0 &&
+            Number.isSafeInteger(candidate.qty) && candidate.qty > 0 &&
+            Number.isFinite(age) && age >= 0 && age <= SNATCH_MAX_QUOTE_AGE_MS &&
+            Number.isFinite(retained) && retained > 0 && retained <= serverNow() &&
+            !!state.nick && !!candidate.seller && candidate.seller !== '—' &&
+            !isOwnListing({vendedor:candidate.seller}) && !unresolvedListing(id) &&
+            (candidate.kind !== 'pokemon' || candidate.qty === 1 &&
+                typeof candidate.ficha?.shiny === 'boolean' &&
+                Number.isSafeInteger(Number(candidate.ficha?.potencia)) &&
+                Number(candidate.ficha.potencia) >= 1 && Number(candidate.ficha.potencia) <= 5);
     }
 
     function snatchRestore() {
@@ -13,6 +37,8 @@
         if (state.snatchWake) clearTimeout(state.snatchWake);
         state.snatchManual = new Map();
         state.snatchObserved = new Map();
+        state.snatchRecoverAt = new Map();
+        state.snatchNativeOffers = new Map();
         state.snatchWake = null;
         if (!account) return;
         try {
@@ -215,21 +241,25 @@
                 snatchStop(key,'quote changed'); continue;
             }
             if (entry.releaseAt > server + 18000) continue;
-            if (entry.releaseAt > server - 50 || !freshQuote(c,!!manual)) {
+            if (entry.releaseAt > server) {
+                if (entry.releaseAt - server > 1500) snatchRefresh(entry,now);
+                continue;
+            }
+            if (!freshQuote(c,!!manual) && !snatchReleaseQuote(c)) {
                 snatchRefresh(entry,now);
                 continue;
             }
             if (now < entry.retryAt || Number(state.attemptedListings.get(c.listingId)||0)>now) continue;
-            if (entry.attempts >= 30) { snatchStop(key,'attempt limit'); continue; }
+            if (entry.attempts >= SNATCH_ATTEMPT_LIMIT) { snatchStop(key,'attempt limit'); continue; }
             if (entry.ruleId && !manual && (!rule || !currentRuleMatches(rule,c,c.price))) {
                 state.snatchObserved.delete(key); continue;
             }
             const activeRule = manual ? null : rule;
             if (purchaseQuantity(c,activeRule?.id || '') < 1) continue;
-            if (backgroundDelayMs()>0) continue;
+            // No refresh request is made before the scheduled first buy.
             entry.retryAt = now + SNATCH_RETRY_MS;
-            entry.attempts++;
-            if (tryBuy(c,!!manual,1,activeRule || false)) {
+            if (tryBuy(c,!!manual,1,activeRule || false,true)) {
+                entry.attempts++;
                 queueRender();
                 break;
             }
@@ -247,8 +277,8 @@
             for (const entry of state.snatchObserved.values()) {
                 const until = entry.releaseAt || 0;
                 if (until > server + 18000) wait = Math.min(wait,Math.max(50,until-server-18000));
-                else if (until > server) wait = Math.min(wait,until-server < 2000 ? Math.max(25,until-server+30) : 2000);
-                else wait = Math.min(wait,Math.max(200,entry.retryAt-Date.now()));
+                else if (until > server) wait = Math.min(wait,until-server);
+                else wait = Math.min(wait,Math.max(35,entry.retryAt-Date.now()));
             }
         }
         // A single timer for all snatches. No permanently fast interval.
