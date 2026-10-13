@@ -25,3 +25,7 @@ No new polling intervals, WebSockets or document observers were introduced by th
 5. Confirm that long-session CPU/RAM remains acceptable.
 
 **Pending:** live browser placement checks and real contested purchase success; the tests in source control are synthetic and do not guarantee those outcomes.
+
+## Purchase-throughput follow-up (v0.6.8)
+
+The Snatch socket quiet window now affects only background requests for about 1.2 seconds before through 1.5 seconds after a release, **not ordinary available-listing purchases**. When a different purchase is still awaiting a server result at unlock, Snatch checks again after 250 ms and is also revisited immediately after the other transaction settles. Multiple buys may follow in rapid succession, with the next distinct matching listing sent immediately after an authoritative acknowledgement rather than waiting for the scan tick. Unset budgets are unlimited. Listing-price authorization, account scoping and no blind resubmission of an unverified purchase are retained. Only a server purchase receipt proves a win.

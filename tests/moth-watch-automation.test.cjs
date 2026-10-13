@@ -674,7 +674,7 @@ test('Unverified orders quarantine only their exact listing, not every unrelated
     assert.doesNotMatch(runner, /unverifiedOrdersExist\(\)/);
     assert.doesNotMatch(runner, /q\('#modal \.cm-folha'\)/);
     assert.doesNotMatch(runner, /if \(communityMarketIsOpen\(\) \|\| state\.pendingBuy/);
-    assert.match(runner, /snatchCriticalWindow\(\)/);
+    assert.doesNotMatch(runner, /snatchCriticalWindow\(\)/);
     assert.match(script, /!unresolvedListing\(id\)/);
     assert.match(script, /unresolvedListing\(candidate\.listingId\)/);
 });
@@ -944,7 +944,7 @@ test('Milestone C: optional session telemetry avoids duplicate NPC sales', () =>
 test('Milestone C: independent economy UI cannot start selling automation', () => {
     assert.match(script,/data-moth-view="economy"/);
     assert.match(script,/Read-only fees, market eligibility, and recorded purchase exposure/);
-    assert.match(script,/@version\s+0\.6\.7/);
+    assert.match(script,/@version\s+0\.6\.8/);
     assert.doesNotMatch(script,/market\.criar|autoSellRules|sendItemSale/);
 });
 
@@ -1024,7 +1024,7 @@ test('Milestone D: diagnostics source is synchronized with standalone userscript
     assert.equal(embedded,source,'module must exactly match generated userscript section');
     const tool=fs.readFileSync(path.join(__dirname,'..','tools','build-mothwatch.cjs'),'utf8');
     assert.match(tool,/--check/);
-    assert.match(script,/@version\s+0\.6\.7/);
+    assert.match(script,/@version\s+0\.6\.8/);
     assert.doesNotMatch(script,/^\s*\/\/\s*@(?:downloadURL|updateURL)/m,
         'private repo must not advertise inaccessible raw auto-update endpoints');
 });
@@ -1155,7 +1155,7 @@ test('MothWatch v0.6.1: source sections match the single distributable userscrip
         const moduleSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'mothwatch', name), 'utf8').trimEnd();
         assert.equal(script.slice(a + begin.length, b), moduleSource, 'generated parity: ' + id);
     }
-    assert.match(script, /@version\s+0\.6\.7/);
+    assert.match(script, /@version\s+0\.6\.8/);
     assert.doesNotMatch(script, /\bimport\s*\(|\brequire\s*\(/,
         'one Violentmonkey userscript must not require runtime module loading');
 });
@@ -1453,7 +1453,7 @@ test('Snatch hardening: progressive acknowledged-refusal retries and protected r
     const retry=new Function('SNATCH_RETRY_MS',body+'\nreturn snatchRetryDelay;')(400);
     assert.deepEqual([0,29,30,89,90,250].map(retry),[400,400,1500,1500,5000,5000]);
     assert.doesNotMatch(source,/SNATCH_ATTEMPT_LIMIT/);
-    assert.match(source,/releaseAt-now < 3200/);
+    assert.match(source,/releaseAt-now < 1200/);
     assert.match(source,/snatchRetryDelay\(entry\.attempts\)/);
     assert.match(source,/rule target expired/);
 });
