@@ -1262,7 +1262,8 @@ function heldSnatchHarness() {
         'tryBuy','snatchRefresh','currentRuleMatches',
         // Shadowing source functions is not needed; fetch availability via stub.
         src+'\nreturn {snatchKey,snatchReleaseQuote,snatchTick,snatchSchedule,'+
-        'snatchOutcome,snatchStop,snatchObserve,snatchMark};')(
+        'snatchOutcome,snatchStop,snatchObserve,snatchMark,snatchQueueHtml,'+
+        'snatchDisplayStatus,snatchQueueCounts,snatchButton};')(
         state,config,DateClock,(fn,ms)=>{const t={fn,ms};timers.push(t);return t;},
         ()=>{},()=> 'acct',()=>server,
         ()=>false,()=>false,()=>null,()=>[],()=>[],()=>[],()=>[],()=>[],
@@ -1338,4 +1339,78 @@ test('Snatch: stale pre-release quotes fail closed and server backoff is observe
     assert.equal(h.purchaseCalls.length,0,'no speculative purchase from expired quote');
     const retryDelay=h.state.snatchObserved.get(h.key).retryAt-Date.now();
     assert.ok(retryDelay>0 && retryDelay<=1000,'stale quote retry is bounded without a spin');
+});
+
+
+test('Snatch UX: held, pending, paused, unknown and disconnected are distinct', () => {
+    const h=heldSnatchHarness();
+    const target=h.state.snatchManual.get(h.key);
+    const observed=h.state.snatchObserved.get(h.key);
+    let status=h.api.snatchDisplayStatus(target,observed);
+    assert.equal(status.tone,'held');
+    assert.match(status.text,/Unlocks in/);
+    h.state.pendingBuy={listingId:789};
+    status=h.api.snatchDisplayStatus(target,observed);
+    assert.match(status.text,/awaiting server confirmation/);
+    h.state.pendingBuy=null;
+    h.setUnknown(true);
+    status=h.api.snatchDisplayStatus(target,observed);
+    assert.equal(status.tone,'warning');
+    assert.match(status.text,/unverified purchase/);
+    h.setUnknown(false);
+    h.config.purchasesPaused=true;
+    assert.match(h.api.snatchDisplayStatus(target,observed).text,/paused/);
+    h.config.purchasesPaused=false;
+    h.state.gameSocket=null;
+    assert.match(h.api.snatchDisplayStatus(target,observed).text,/connection/);
+    h.config.enabled=false;
+    assert.match(h.api.snatchDisplayStatus(target,observed).text,/disabled/);
+});
+
+test('Snatch UX: queue displays exact listing, ceiling, origin and immediate cancellation', () => {
+    const h=heldSnatchHarness();
+    const html=h.api.snatchQueueHtml();
+    assert.match(html, /moth-mw-snatch-entry/);
+    assert.match(html, /Player-marked targets/);
+    assert.match(html, /Maximum price:/);
+    assert.match(html, /#789/);
+    assert.match(html, /Cancel snatch/);
+    assert.match(html, /aria-pressed="true"/);
+    assert.match(html, /role="status"/);
+    assert.equal(h.api.snatchQueueCounts().manual,1);
+    h.state.snatchManual.clear();
+    assert.equal(h.api.snatchQueueCounts().manual,0);
+    assert.match(h.api.snatchQueueHtml(),/No snatches armed/);
+    assert.match(h.api.snatchButton('item','gold',789,106),/data-moth-snatch="item:gold:789"/);
+    assert.equal(h.api.snatchButton('diamond','gold',789,106),'');
+});
+
+test('Snatch UX: dedicated queue, focus recovery and responsive controls are wired', () => {
+    const render=fs.readFileSync(path.join(__dirname,'..','src/mothwatch',
+        'ui-render-section.js'),'utf8');
+    const events=fs.readFileSync(path.join(__dirname,'..','src/mothwatch',
+        'ui-events-section.js'),'utf8');
+    const style=fs.readFileSync(path.join(__dirname,'..','src/mothwatch',
+        'ui-style-section.js'),'utf8');
+    const source=fs.readFileSync(path.join(__dirname,'..','src/mothwatch',
+        'snatch-section.js'),'utf8');
+    assert.match(render,/data-moth-view="snatches"/);
+    assert.match(render,/moth-mw-snatch-tab/);
+    assert.match(render,/snatchQueueCounts\(\)/);
+    assert.match(render,/focused = snatchHost\.contains\(document\.activeElement\)/);
+    assert.match(render,/restored\.focus\(\{preventScroll:true\}\)/);
+    assert.match(events,/data-moth-goto/);
+    assert.match(events,/Snatch armed for listing/);
+    assert.match(source,/data-moth-snatch=/);
+    assert.match(source,/aria-label/);
+    assert.match(source,/snatchEnhanceNativeMarket/);
+    assert.match(style,/moth-mw-snatch-entry-bottom/);
+    assert.match(style,/max-width:600px/);
+    assert.match(script,/moth-pokeidle-market-watch-view-v1/);
+    const pt=section('    const PT_BR = Object.freeze(', '    function tr(');
+    const dict=new Function(pt+'\nreturn PT_BR;')();
+    for(const key of ['Snatch queue','Snatch','Cancel snatch',
+        'Purchases are paused','Purchase sent · awaiting server confirmation',
+        'Snatch armed for listing #{id}.','Competing for purchase'])
+        assert.ok(dict[key],key+' must be translated to PT-BR');
 });

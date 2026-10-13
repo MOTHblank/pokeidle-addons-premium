@@ -133,6 +133,7 @@
         snatchNativeOffers: new Map(),
         snatchRecoverAt: new Map(),
         snatchWake: null,
+        snatchNotice: '',
         detailQueue: [],
         detailQueued: new Set(),
         detailPending: null,
@@ -154,7 +155,7 @@
         lastScanAt: 0,
         scanTimer: null,
         watchOpen: false,
-        watchView: (() => { try { const value = localStorage.getItem('moth-pokeidle-market-watch-view-v1'); return ['opportunities', 'inventory', 'pricing', 'economy', 'automation', 'activity'].includes(value) ? value : 'opportunities'; } catch { return 'opportunities'; } })(),
+        watchView: (() => { try { const value = localStorage.getItem('moth-pokeidle-market-watch-view-v1'); return ['opportunities', 'inventory', 'pricing', 'economy', 'snatches', 'automation', 'activity'].includes(value) ? value : 'opportunities'; } catch { return 'opportunities'; } })(),
         opportunitySearch: (() => { try { return localStorage.getItem('moth-pokeidle-market-watch-search-v1') || ''; } catch { return ''; } })(),
         firstSeenCache: new Map(),
         itemInventoryCollapsed: (() => {
@@ -221,6 +222,41 @@
         "Underpriced listings and market sniper settings": "Ofertas abaixo do preço e configurações de compra no mercado",
         "Scan now": "Escanear agora",
         "Moth Watch views": "Seções do Moth Watch",
+        "Snatch": "Arrematar",
+        "Cancel snatch": "Cancelar arremate",
+        "Snatch queue": "Fila de arremates",
+        "Snatch queue · {count}": "Arremates · {count}",
+        "Snatches armed: {count}": "Arremates preparados: {count}",
+        "Armed targets have moved to the Snatch queue tab.": "Os alvos preparados agora ficam na aba Fila de arremates.",
+        "Open Snatch queue": "Abrir fila de arremates",
+        "Pre-armed purchases · no scan required at unlock": "Compras preparadas · sem esperar nova varredura na liberação",
+        "Click Snatch beside a market listing to authorize one exact listing at or below its shown price. A matching enabled buying rule can also arm held listings automatically.": "Clique em Arrematar em uma oferta para autorizar a compra daquele anúncio específico até o preço exibido. Regras de compra habilitadas também podem preparar anúncios retidos.",
+        "The game tab must remain connected. The server decides availability; competing buyers may win. Unknown purchase outcomes block retries.": "A aba do jogo precisa permanecer conectada. O servidor decide a disponibilidade e outros compradores podem vencer. Resultados de compra não confirmados bloqueiam novas tentativas.",
+        "No snatches armed.": "Nenhum arremate preparado.",
+        "Use Snatch beside a held item or Pokémon listing, or enable a matching buying rule.": "Use Arrematar ao lado de um item ou Pokémon retido, ou habilite uma regra de compra correspondente.",
+        "Player-marked targets": "Alvos marcados pelo jogador",
+        "Rule-triggered targets": "Alvos preparados por regras",
+        "Player-marked": "Marcado pelo jogador",
+        "Buying rule": "Regra de compra",
+        "Maximum price:": "Preço máximo:",
+        "Attempts: {count}": "Tentativas: {count}",
+        "Managed by the buying rule": "Gerenciado pela regra de compra",
+        "Moth Watch is disabled": "Moth Watch desligado",
+        "Purchases are paused": "Compras pausadas",
+        "Blocked by an unverified purchase": "Bloqueado por compra sem confirmação",
+        "Purchase sent · awaiting server confirmation": "Compra enviada · aguardando confirmação do servidor",
+        "Recovering listing": "Recuperando anúncio",
+        "Unlocks in {seconds}s": "Liberação em {seconds}s",
+        "Next attempt in {seconds}s": "Próxima tentativa em {seconds}s",
+        "Refreshing listing evidence": "Atualizando dados do anúncio",
+        "Competing for purchase": "Disputando a compra",
+        "Cancel the armed purchase for listing #{id}": "Cancelar compra preparada do anúncio #{id}",
+        "Arm an automatic purchase for listing #{id} at its displayed maximum price": "Preparar compra automática do anúncio #{id} até o preço exibido",
+        "Snatch armed for listing #{id}.": "Arremate preparado para o anúncio #{id}.",
+        "Snatch cancelled for listing #{id}.": "Arremate cancelado para o anúncio #{id}.",
+        "Could not arm this target; load a current listing first.": "Não foi possível preparar este alvo. Atualize o anúncio antes.",
+        "Held · {seconds}s": "Retido · {seconds}s",
+        "Targets saved per account. The game tab must remain connected; competing buyers may win.": "Alvos salvos por conta. A aba do jogo precisa ficar conectada; outros compradores podem vencer.",
         "Warning: this broad rule has no cumulative spending or purchase-count limit. If enabled, it may repeatedly spend the available {currency}. Continue?": "Atenção: esta regra abrangente não tem limite acumulado de gastos ou compras. Se ativada, pode gastar repetidamente o saldo em {currency}. Continuar?",
         "Warning: enabling the master switch activates {count} broad buying rules without cumulative caps. Available balances may be spent repeatedly. Continue?": "Atenção: ativar a chave geral habilitará {count} regras abrangentes sem limites acumulados. Os saldos poderão ser gastos repetidamente. Continuar?",
         "Activation cancelled; no settings changed.": "Ativação cancelada; nenhuma configuração alterada.",
@@ -3710,38 +3746,114 @@
                 row.querySelector('button');
             if (!marker || !offer || !['item','pokemon'].includes(kind)) continue;
             const button=document.createElement('button');
-            button.type='button'; button.className='moth-mw-btn';
+            button.type='button';
             button.dataset.mothNativeSnatch=key;
             button.dataset.mothSnatchItem=String(Number(offer.itemId)||0);
-            button.textContent=tr(state.snatchManual.has(key)?'Cancel snatch':'Snatch');
+            const syncButton=()=>{
+                const active=state.snatchManual.has(key);
+                button.className='moth-mw-btn moth-mw-snatch-button'+(active?' is-armed':'');
+                button.textContent=tr(active?'Cancel snatch':'Snatch');
+                button.setAttribute('aria-pressed',active?'true':'false');
+                const hint=tr(active
+                    ? 'Cancel the armed purchase for listing #{id}'
+                    : 'Arm an automatic purchase for listing #{id} at its displayed maximum price', {id});
+                button.setAttribute('aria-label',hint);
+                button.title=hint;
+            };
             button.style.marginInlineStart='0.4rem';
             button.addEventListener('click',event=>{
                 event.preventDefault(); event.stopPropagation();
+                const wasArmed=state.snatchManual.has(key);
                 const accepted=snatchMark(kind,currency,id,Number(offer.itemId)||0);
                 if (accepted) {
-                    button.textContent=tr(state.snatchManual.has(key)?'Cancel snatch':'Snatch');
-                    button.setAttribute('aria-pressed',state.snatchManual.has(key)?'true':'false');
-                } else addLog('Snatch not armed · load the listing again');
+                    state.snatchNotice=tr(wasArmed?'Snatch cancelled for listing #{id}.':
+                        'Snatch armed for listing #{id}.', {id});
+                    syncButton();
+                } else {
+                    state.snatchNotice=tr('Could not arm this target; load a current listing first.');
+                    addLog('Snatch not armed · load the listing again');
+                }
             });
-            button.setAttribute('aria-pressed',state.snatchManual.has(key)?'true':'false');
+            syncButton();
             marker.insertAdjacentElement('afterend',button);
         }
     }
 
+    function snatchQueueCounts() {
+        let automatic = 0;
+        for (const [key, entry] of state.snatchObserved) {
+            if (!state.snatchManual.has(key) && activeRuleById(entry.ruleId)) automatic++;
+        }
+        return {manual: state.snatchManual.size, automatic};
+    }
+
+    function snatchDisplayStatus(target, observation) {
+        if (!config.enabled) return {tone:'muted', text:tr('Moth Watch is disabled')};
+        if (config.purchasesPaused) return {tone:'muted', text:tr('Purchases are paused')};
+        if (unverifiedOrdersExist()) return {tone:'warning', text:tr('Blocked by an unverified purchase')};
+        if (!state.gameSocket || state.gameSocket.readyState !== 1)
+            return {tone:'warning', text:tr('Waiting for game connection')};
+        if (state.pendingBuy?.listingId === target.id)
+            return {tone:'pending', text:tr('Purchase sent · awaiting server confirmation')};
+        if (!observation) return {tone:'muted', text:tr('Recovering listing')};
+        if (observation.releaseAt > serverNow()) {
+            const seconds=Math.max(1,Math.ceil((observation.releaseAt-serverNow())/1000));
+            return {tone:'held',text:tr('Unlocks in {seconds}s',{seconds})};
+        }
+        const retry = Math.ceil((Number(observation.retryAt||0)-Date.now())/1000);
+        if (retry>0) return {tone:'pending',text:tr('Next attempt in {seconds}s',{seconds:retry})};
+        if (!freshQuote(observation.candidate,true) && !snatchReleaseQuote(observation.candidate))
+            return {tone:'warning',text:tr('Refreshing listing evidence')};
+        return {tone:'ready',text:tr('Competing for purchase')};
+    }
+
     function snatchQueueHtml() {
-        const rows=[...state.snatchManual.entries()].slice(0,SNATCH_LIMIT);
-        if (!rows.length) return '<p class="moth-mw-rule-hint">' +
-            escapeHtml(tr('No snatches armed.')) + '</p>';
-        return rows.map(([key,target]) => {
-            const observation=state.snatchObserved.get(key);
-            const count=observation?.releaseAt>serverNow()
-                ? tr('Held · {seconds}s', {seconds:Math.max(1,Math.ceil((observation.releaseAt-serverNow())/1000))})
-                : observation ? tr('Waiting for purchase') : tr('Waiting for a fresh listing');
-            return '<div class="moth-mw-offer-row"><b>#'+num(target.id)+'</b> · ' +
-                escapeHtml(tr(target.kind==='pokemon'?'Pokémon':'Items')) +
-                ' · ' + money(target.maxPrice,target.currency) + ' · ' + escapeHtml(count) +
-                snatchButton(target.kind,target.currency,target.id,target.itemId) + '</div>';
-        }).join('');
+        const own=[...state.snatchManual.entries()]
+            .sort(([keyA],[keyB])=>
+                Number(state.snatchObserved.get(keyA)?.releaseAt || Infinity) -
+                Number(state.snatchObserved.get(keyB)?.releaseAt || Infinity))
+            .slice(0,SNATCH_LIMIT);
+        const automatic=[...state.snatchObserved.entries()]
+            .filter(([key,entry])=>!state.snatchManual.has(key) && activeRuleById(entry.ruleId))
+            .slice(0,SNATCH_LIMIT);
+        if (!own.length && !automatic.length) return '<div class="moth-mw-snatch-empty" role="status">' +
+            '<b>' + escapeHtml(tr('No snatches armed.')) + '</b><p>' +
+            escapeHtml(tr('Use Snatch beside a held item or Pokémon listing, or enable a matching buying rule.')) +
+            '</p></div>';
+        const entryHtml = (key,target,observation,manual) => {
+            const candidate = observation?.candidate;
+            const status = snatchDisplayStatus(target, observation);
+            const itemName = candidate?.name || (target.kind === 'item' && target.itemId
+                ? catalogName(target.itemId) : tr(target.kind==='pokemon'?'Pokémon':'Items'));
+            const attempts = Math.max(0,Number(observation?.attempts||0));
+            return '<article class="moth-mw-snatch-entry">' +
+                '<div class="moth-mw-snatch-entry-head"><b>' + escapeHtml(itemName) + '</b>' +
+                '<span class="moth-mw-snatch-id">#' + num(target.id) + '</span></div>' +
+                '<div class="moth-mw-snatch-entry-meta">' +
+                '<span>' + escapeHtml(tr(target.kind==='pokemon'?'Pokémon':'Items')) + '</span>' +
+                '<span>' + escapeHtml(tr('Maximum price:')) + ' ' + money(target.maxPrice,target.currency) + '</span>' +
+                '<span>' + escapeHtml(manual ? tr('Player-marked') : tr('Buying rule')) + '</span></div>' +
+                '<div class="moth-mw-snatch-entry-bottom"><span role="status" class="moth-mw-snatch-status" data-status="' +
+                escapeHtml(status.tone) + '">' + escapeHtml(status.text) + '</span>' +
+                (attempts ? '<span class="moth-mw-snatch-attempts">' +
+                    escapeHtml(tr('Attempts: {count}',{count:num(attempts)})) + '</span>':'') +
+                (manual ? snatchButton(target.kind,target.currency,target.id,target.itemId) :
+                    '<span class="moth-mw-snatch-rule-note">' +
+                    escapeHtml(tr('Managed by the buying rule')) + '</span>') +
+                '</div></article>';
+        };
+        return '<div class="moth-mw-snatch-queue">' +
+            (own.length ? '<section class="moth-mw-snatch-group"><h5>' +
+                escapeHtml(tr('Player-marked targets')) + '</h5>' +
+                own.map(([key,target])=>entryHtml(key,target,state.snatchObserved.get(key),true)).join('') +
+                '</section>' : '') +
+            (automatic.length ? '<section class="moth-mw-snatch-group"><h5>' +
+                escapeHtml(tr('Rule-triggered targets')) + '</h5>' +
+                automatic.map(([key,entry])=>entryHtml(key,{
+                    kind:entry.candidate.kind,currency:entry.candidate.currency,
+                    id:entry.candidate.listingId,itemId:entry.candidate.itemId,
+                    maxPrice:entry.candidate.price
+                },entry,false)).join('') + '</section>' : '') + '</div>';
     }
 
     function snatchButton(kind,currency,id,itemId=0) {
@@ -3749,10 +3861,17 @@
             return '';
         const key = snatchKey(kind,currency,id);
         const active = state.snatchManual.has(key);
-        return '<button type="button" class="moth-mw-btn" data-moth-snatch="' +
+        const label = tr(active ? 'Cancel snatch' : 'Snatch');
+        const explanation = tr(active
+            ? 'Cancel the armed purchase for listing #{id}'
+            : 'Arm an automatic purchase for listing #{id} at its displayed maximum price', {id});
+        return '<button type="button" class="moth-mw-btn moth-mw-snatch-button' +
+            (active ? ' is-armed' : '') + '" data-moth-snatch="' +
             escapeHtml(key) + '" data-moth-snatch-item="' + Number(itemId||0) +
-            '" aria-pressed="' + (active?'true':'false') + '">' +
-            escapeHtml(tr(active ? 'Cancel snatch' : 'Snatch')) + '</button>';
+            '" aria-pressed="' + (active?'true':'false') +
+            '" aria-label="' + escapeHtml(explanation) +
+            '" title="' + escapeHtml(explanation) + '">' +
+            escapeHtml(label) + '</button>';
     }
     // END MOTHWATCH SNATCH GENERATED
 
@@ -4330,6 +4449,34 @@
             '.moth-mw-money{display:inline-flex;align-items:center;gap:3px;font-weight:700}.moth-mw-money img{width:15px;height:15px;object-fit:contain}',
             '.moth-mw-meta{font-size:9px;color:var(--sobre-mad-dim,#aaa)}',
             '.moth-mw-empty{padding:22px;text-align:center;color:var(--sobre-mad-dim,#aaa);background:var(--vao,#21191d);border-radius:6px}',
+            '.moth-mw-overview .moth-mw-overview-snatch{color:var(--seta,#efc66b);font-weight:700}',
+            '#moth-mw-snatch-tab{white-space:nowrap;min-width:125px}',
+            '.moth-mw-snatch-button{white-space:nowrap;min-height:30px;box-shadow:inset 0 0 0 1px var(--rx,#84325f);background:transparent}',
+            '.moth-mw-snatch-button.is-armed{background:var(--rx,#84325f);color:#fff}',
+            '.moth-mw-snatch-button[aria-pressed=true]{box-shadow:inset 0 0 0 1px var(--seta,#efc66b)}',
+            '.moth-mw-snatch-explainer{margin:8px 0 14px;font-size:11px;line-height:1.6;color:var(--sobre-mad-dim,#bbb)}',
+            '.moth-mw-snatch-feedback{margin:7px 0;font-size:11px;font-weight:700;color:var(--seta,#efc66b)}',
+            '.moth-mw-snatch-queue{display:grid;gap:16px;margin:12px 0}',
+            '.moth-mw-snatch-group{display:grid;gap:8px;min-width:0}',
+            '.moth-mw-snatch-group h5{margin:0;font-size:12px}',
+            '.moth-mw-snatch-entry{display:grid;gap:7px;padding:11px 12px;border-radius:8px;background:var(--vao,#21191d);border:1px solid var(--mad-linha,#604850);min-width:0;overflow-wrap:anywhere}',
+            '.moth-mw-snatch-entry-head,.moth-mw-snatch-entry-meta,.moth-mw-snatch-entry-bottom{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
+            '.moth-mw-snatch-entry-head{justify-content:space-between;font-size:12px}',
+            '.moth-mw-snatch-id,.moth-mw-snatch-entry-meta,.moth-mw-snatch-attempts,.moth-mw-snatch-rule-note{font-size:10px;color:var(--sobre-mad-dim,#bbb)}',
+            '.moth-mw-snatch-entry-meta>span:not(:last-child):after{content:" ·";margin-left:4px}',
+            '.moth-mw-snatch-entry-bottom{justify-content:space-between}',
+            '.moth-mw-snatch-status{font-size:11px;font-weight:700}',
+            '.moth-mw-snatch-status[data-status=held],.moth-mw-snatch-status[data-status=pending]{color:var(--seta,#efc66b)}',
+            '.moth-mw-snatch-status[data-status=ready]{color:var(--sobre-mad,#fff)}',
+            '.moth-mw-snatch-status[data-status=warning]{color:#edb0aa}',
+            '.moth-mw-snatch-status[data-status=muted]{color:var(--sobre-mad-dim,#aaa)}',
+            '.moth-mw-snatch-empty{padding:22px;border:1px dashed var(--mad-linha,#604850);border-radius:9px;text-align:center;color:var(--sobre-mad-dim,#bbb)}',
+            '.moth-mw-snatch-empty b{font-size:13px;color:var(--sobre-mad,#fff)}',
+            '.moth-mw-snatch-empty p{font-size:11px;line-height:1.5}',
+            '.moth-mw-offer-row{display:flex;flex-wrap:wrap;gap:7px;min-width:0}',
+            '.moth-mw-offer-row>.moth-mw-offer-seller{flex:1 1 110px;min-width:0}',
+            '.moth-mw-offer-row>.moth-mw-btn{flex:0 0 auto}',
+            '@media(max-width:600px){.moth-mw-snatch-entry-bottom>.moth-mw-snatch-button{flex:1 1 100%;min-height:36px}}',
             '.moth-mw-log{margin-top:10px;padding-top:8px;border-top:1px solid var(--mad-linha,#444);font-size:9px;color:var(--sobre-mad-dim,#aaa)}',
             '.moth-mw-log div{margin:2px 0}',
             '@media(max-width:850px){.moth-mw-row{grid-template-columns:minmax(150px,1fr) 105px 80px auto}.moth-mw-row .moth-mw-ref,.moth-mw-row .moth-mw-seller{display:none}}'
@@ -5623,7 +5770,7 @@
             if (panel.dataset.mothWatchShell) delete panel.dataset.mothWatchShell;
             forceViewBuild = true;
         }
-        const views = ['opportunities', 'inventory', 'pricing', 'economy', 'automation', 'activity'];
+        const views = ['opportunities', 'inventory', 'pricing', 'economy', 'snatches', 'automation', 'activity'];
         if (!views.includes(state.watchView)) state.watchView = 'opportunities';
 
         if (!panel.dataset.mothWatchShell) {
@@ -5636,6 +5783,7 @@
                 '<button type="button" class="moth-mw-tab" data-moth-view="inventory">' + escapeHtml(tr('Market inventory')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="pricing">' + escapeHtml(tr('Pokémon price evidence')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="economy">' + escapeHtml(tr('Economy & holdings')) + '</button>' +
+                '<button type="button" class="moth-mw-tab" data-moth-view="snatches" id="moth-mw-snatch-tab">' + escapeHtml(tr('Snatch queue')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="automation">' + escapeHtml(tr('Automation & budget')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="activity">' + escapeHtml(tr('Activity & references')) + '</button></nav>' +
                 '<div class="moth-mw-workspace"><div id="moth-mw-view-content"></div></div>';
@@ -5669,10 +5817,18 @@
 
         const overview = q('#moth-mw-overview', panel);
         const countLabel = tr(candidates.length === 1 ? '1 matching listing' : '{count} matching listings', { count: num(candidates.length) });
+        const snatchCounts = snatchQueueCounts();
+        const armedTotal = snatchCounts.manual + snatchCounts.automatic;
+        const snatchTab = q('#moth-mw-snatch-tab', panel);
+        if (snatchTab) {
+            const tabText = tr('Snatch queue · {count}', {count:num(armedTotal)});
+            if (snatchTab.textContent !== tabText) snatchTab.textContent = tabText;
+        }
         const overviewHtml = '<b>' + escapeHtml(countLabel) + '</b>' +
             '<span>' + num(state.gold) + ' ' + escapeHtml(tr('Coins')) + ' · ' + num(state.orbs) + ' ' + escapeHtml(tr('Gems')) + '</span>' +
             '<span>' + escapeHtml(tr('Watch threshold: {value}% of reference', { value: num(config.watchPercent) })) + '</span>' +
-            '<span class="moth-mw-overview-automation">' + escapeHtml(tr('Automation: {summary}', { summary: automationOverviewSummary() })) + '</span>';
+            '<span class="moth-mw-overview-automation">' + escapeHtml(tr('Automation: {summary}', { summary: automationOverviewSummary() })) + '</span>' +
+            (armedTotal ? '<span class="moth-mw-overview-snatch">' + escapeHtml(tr('Snatches armed: {count}', {count:num(armedTotal)})) + '</span>' : '');
         if (overview && overview.innerHTML !== overviewHtml) overview.innerHTML = overviewHtml;
 
         for (const button of qa('[data-moth-view]', panel)) {
@@ -5720,6 +5876,18 @@
                     escapeHtml(tr('Economy & holdings')) + '</h4><span>' +
                     escapeHtml(tr('Read-only estimates and user-entered holdings; never realized proceeds.')) +
                     '</span></div><div id="moth-mw-economy"></div>';
+            } else if (state.watchView === 'snatches') {
+                content.innerHTML =
+                    '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Snatch queue')) +
+                    '</h4><span>' + escapeHtml(tr('Pre-armed purchases · no scan required at unlock')) + '</span></div>' +
+                    '<p class="moth-mw-snatch-explainer">' +
+                    escapeHtml(tr('Click Snatch beside a market listing to authorize one exact listing at or below its shown price. A matching enabled buying rule can also arm held listings automatically.')) +
+                    '</p>' +
+                    '<p class="moth-mw-snatch-feedback" id="moth-mw-snatch-feedback" role="status" aria-live="polite"></p>' +
+                    '<div id="moth-mw-snatch-list" aria-live="off"></div>' +
+                    '<p class="moth-mw-rule-hint">' +
+                    escapeHtml(tr('The game tab must remain connected. The server decides availability; competing buyers may win. Unknown purchase outcomes block retries.')) +
+                    '</p>';
             } else if (state.watchView === 'automation') {
                 content.innerHTML =
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Automation status')) + '</h4><span>' +
@@ -5763,11 +5931,10 @@
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Recent activity')) + '</h4><span>' +
                     escapeHtml(tr('Purchase attempts, confirmations, and errors.')) + '</span></div>' +
                     '<div class="moth-mw-log" id="moth-mw-activity-log"></div>' +
-                    '<section class="moth-mw-automation-block"><h4>' +
-                    escapeHtml(tr('Armed snatches')) + '</h4><div id="moth-mw-snatch-list"></div>' +
                     '<p class="moth-mw-rule-hint">' +
-                    escapeHtml(tr('Targets saved per account. The game tab must remain connected; competing buyers may win.')) +
-                    '</p></section>' +
+                    escapeHtml(tr('Armed targets have moved to the Snatch queue tab.')) +
+                    ' <button type="button" class="moth-mw-btn" data-moth-goto="snatches">' +
+                    escapeHtml(tr('Open Snatch queue')) + '</button></p>' +
                     '<section class="moth-mw-automation-block"><h4>' + escapeHtml(tr('Redacted diagnostics (opt-in)')) + '</h4>' +
                     '<p class="moth-mw-rule-hint">' +
                     escapeHtml(tr('Disabled by default. When on, keeps only 64 schema/count samples in memory. Never records packet values, seller names, listing IDs, credentials or private settings.')) +
@@ -5817,12 +5984,28 @@
             if (host && host.innerHTML !== html && !host.contains(document.activeElement)) host.innerHTML = html;
         } else if (state.watchView === 'automation') {
             refreshAutomationLive(content);
-        } else if (state.watchView === 'activity') {
+        } else if (state.watchView === 'snatches') {
+            const feedback = q('#moth-mw-snatch-feedback', content);
+            if (feedback && feedback.textContent !== state.snatchNotice)
+                feedback.textContent = state.snatchNotice;
             const snatchHost = q('#moth-mw-snatch-list', content);
-            if (snatchHost && !snatchHost.contains(document.activeElement)) {
+            if (snatchHost) {
                 const snatchHtml = snatchQueueHtml();
-                if (snatchHost.innerHTML !== snatchHtml) snatchHost.innerHTML = snatchHtml;
+                if (snatchHost.innerHTML !== snatchHtml) {
+                    const focused = snatchHost.contains(document.activeElement)
+                        ? document.activeElement.getAttribute('data-moth-snatch') : null;
+                    const scroll = snatchHost.scrollTop;
+                    snatchHost.innerHTML = snatchHtml;
+                    snatchHost.scrollTop = scroll;
+                    if (focused) {
+                        const restored = qa('[data-moth-snatch]', snatchHost)
+                            .find(button => button.dataset.mothSnatch === focused);
+                        if (restored) restored.focus({preventScroll:true});
+                        else q('#moth-mw-snatch-tab', panel)?.focus({preventScroll:true});
+                    }
+                }
             }
+        } else if (state.watchView === 'activity') {
             const refs = q('#moth-mw-reference-tools', content);
             const html = '<div class="moth-mw-reference-info"><b>' + escapeHtml(tr('Item references:')) + '</b> ' +
                 escapeHtml(tr('live server 7-day averages with a saved fallback captured')) + ' ' + escapeHtml(captured) + '. ' +
@@ -5866,18 +6049,29 @@
                 const parts = String(button.dataset.mothSnatch || '').split(':');
                 if (parts.length !== 3) return;
                 const [kind,currency,rawId] = parts;
+                const wasArmed = state.snatchManual.has(button.dataset.mothSnatch);
                 const ok = snatchMark(kind,currency,Number(rawId),
                     Number(button.dataset.mothSnatchItem || 0));
+                state.snatchNotice = tr(ok
+                    ? (wasArmed ? 'Snatch cancelled for listing #{id}.' : 'Snatch armed for listing #{id}.')
+                    : 'Could not arm this target; load a current listing first.', {id:rawId});
                 if (ok) addLog('Snatch queue updated · listing #' + rawId);
                 else addLog('Snatch not armed · load the listing again');
                 state.itemInventoryMemo = null;
                 state.pokemonEvidenceMemo = null;
-                renderWatch(true); return;
+                renderWatch(state.watchView !== 'snatches'); return;
+            }
+            const quickLink = target.closest('[data-moth-goto]');
+            if (quickLink?.dataset.mothGoto === 'snatches') {
+                state.watchView = 'snatches';
+                try { localStorage.setItem('moth-pokeidle-market-watch-view-v1', 'snatches'); } catch {}
+                renderWatch(true);
+                return;
             }
             const tab = target.closest('[data-moth-view]');
             if (tab) {
                 const view = tab.dataset.mothView;
-                if (!['opportunities', 'inventory', 'pricing', 'economy', 'automation', 'activity'].includes(view)) return;
+                if (!['opportunities', 'inventory', 'pricing', 'economy', 'snatches', 'automation', 'activity'].includes(view)) return;
                 state.watchView = view;
                 try { localStorage.setItem('moth-pokeidle-market-watch-view-v1', view); } catch {}
                 renderWatch(true);

@@ -12,18 +12,29 @@
                 const parts = String(button.dataset.mothSnatch || '').split(':');
                 if (parts.length !== 3) return;
                 const [kind,currency,rawId] = parts;
+                const wasArmed = state.snatchManual.has(button.dataset.mothSnatch);
                 const ok = snatchMark(kind,currency,Number(rawId),
                     Number(button.dataset.mothSnatchItem || 0));
+                state.snatchNotice = tr(ok
+                    ? (wasArmed ? 'Snatch cancelled for listing #{id}.' : 'Snatch armed for listing #{id}.')
+                    : 'Could not arm this target; load a current listing first.', {id:rawId});
                 if (ok) addLog('Snatch queue updated · listing #' + rawId);
                 else addLog('Snatch not armed · load the listing again');
                 state.itemInventoryMemo = null;
                 state.pokemonEvidenceMemo = null;
-                renderWatch(true); return;
+                renderWatch(state.watchView !== 'snatches'); return;
+            }
+            const quickLink = target.closest('[data-moth-goto]');
+            if (quickLink?.dataset.mothGoto === 'snatches') {
+                state.watchView = 'snatches';
+                try { localStorage.setItem('moth-pokeidle-market-watch-view-v1', 'snatches'); } catch {}
+                renderWatch(true);
+                return;
             }
             const tab = target.closest('[data-moth-view]');
             if (tab) {
                 const view = tab.dataset.mothView;
-                if (!['opportunities', 'inventory', 'pricing', 'economy', 'automation', 'activity'].includes(view)) return;
+                if (!['opportunities', 'inventory', 'pricing', 'economy', 'snatches', 'automation', 'activity'].includes(view)) return;
                 state.watchView = view;
                 try { localStorage.setItem('moth-pokeidle-market-watch-view-v1', view); } catch {}
                 renderWatch(true);

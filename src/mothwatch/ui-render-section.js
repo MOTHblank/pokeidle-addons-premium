@@ -44,7 +44,7 @@
             if (panel.dataset.mothWatchShell) delete panel.dataset.mothWatchShell;
             forceViewBuild = true;
         }
-        const views = ['opportunities', 'inventory', 'pricing', 'economy', 'automation', 'activity'];
+        const views = ['opportunities', 'inventory', 'pricing', 'economy', 'snatches', 'automation', 'activity'];
         if (!views.includes(state.watchView)) state.watchView = 'opportunities';
 
         if (!panel.dataset.mothWatchShell) {
@@ -57,6 +57,7 @@
                 '<button type="button" class="moth-mw-tab" data-moth-view="inventory">' + escapeHtml(tr('Market inventory')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="pricing">' + escapeHtml(tr('Pokémon price evidence')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="economy">' + escapeHtml(tr('Economy & holdings')) + '</button>' +
+                '<button type="button" class="moth-mw-tab" data-moth-view="snatches" id="moth-mw-snatch-tab">' + escapeHtml(tr('Snatch queue')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="automation">' + escapeHtml(tr('Automation & budget')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="activity">' + escapeHtml(tr('Activity & references')) + '</button></nav>' +
                 '<div class="moth-mw-workspace"><div id="moth-mw-view-content"></div></div>';
@@ -90,10 +91,18 @@
 
         const overview = q('#moth-mw-overview', panel);
         const countLabel = tr(candidates.length === 1 ? '1 matching listing' : '{count} matching listings', { count: num(candidates.length) });
+        const snatchCounts = snatchQueueCounts();
+        const armedTotal = snatchCounts.manual + snatchCounts.automatic;
+        const snatchTab = q('#moth-mw-snatch-tab', panel);
+        if (snatchTab) {
+            const tabText = tr('Snatch queue · {count}', {count:num(armedTotal)});
+            if (snatchTab.textContent !== tabText) snatchTab.textContent = tabText;
+        }
         const overviewHtml = '<b>' + escapeHtml(countLabel) + '</b>' +
             '<span>' + num(state.gold) + ' ' + escapeHtml(tr('Coins')) + ' · ' + num(state.orbs) + ' ' + escapeHtml(tr('Gems')) + '</span>' +
             '<span>' + escapeHtml(tr('Watch threshold: {value}% of reference', { value: num(config.watchPercent) })) + '</span>' +
-            '<span class="moth-mw-overview-automation">' + escapeHtml(tr('Automation: {summary}', { summary: automationOverviewSummary() })) + '</span>';
+            '<span class="moth-mw-overview-automation">' + escapeHtml(tr('Automation: {summary}', { summary: automationOverviewSummary() })) + '</span>' +
+            (armedTotal ? '<span class="moth-mw-overview-snatch">' + escapeHtml(tr('Snatches armed: {count}', {count:num(armedTotal)})) + '</span>' : '');
         if (overview && overview.innerHTML !== overviewHtml) overview.innerHTML = overviewHtml;
 
         for (const button of qa('[data-moth-view]', panel)) {
@@ -141,6 +150,18 @@
                     escapeHtml(tr('Economy & holdings')) + '</h4><span>' +
                     escapeHtml(tr('Read-only estimates and user-entered holdings; never realized proceeds.')) +
                     '</span></div><div id="moth-mw-economy"></div>';
+            } else if (state.watchView === 'snatches') {
+                content.innerHTML =
+                    '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Snatch queue')) +
+                    '</h4><span>' + escapeHtml(tr('Pre-armed purchases · no scan required at unlock')) + '</span></div>' +
+                    '<p class="moth-mw-snatch-explainer">' +
+                    escapeHtml(tr('Click Snatch beside a market listing to authorize one exact listing at or below its shown price. A matching enabled buying rule can also arm held listings automatically.')) +
+                    '</p>' +
+                    '<p class="moth-mw-snatch-feedback" id="moth-mw-snatch-feedback" role="status" aria-live="polite"></p>' +
+                    '<div id="moth-mw-snatch-list" aria-live="off"></div>' +
+                    '<p class="moth-mw-rule-hint">' +
+                    escapeHtml(tr('The game tab must remain connected. The server decides availability; competing buyers may win. Unknown purchase outcomes block retries.')) +
+                    '</p>';
             } else if (state.watchView === 'automation') {
                 content.innerHTML =
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Automation status')) + '</h4><span>' +
@@ -184,11 +205,10 @@
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Recent activity')) + '</h4><span>' +
                     escapeHtml(tr('Purchase attempts, confirmations, and errors.')) + '</span></div>' +
                     '<div class="moth-mw-log" id="moth-mw-activity-log"></div>' +
-                    '<section class="moth-mw-automation-block"><h4>' +
-                    escapeHtml(tr('Armed snatches')) + '</h4><div id="moth-mw-snatch-list"></div>' +
                     '<p class="moth-mw-rule-hint">' +
-                    escapeHtml(tr('Targets saved per account. The game tab must remain connected; competing buyers may win.')) +
-                    '</p></section>' +
+                    escapeHtml(tr('Armed targets have moved to the Snatch queue tab.')) +
+                    ' <button type="button" class="moth-mw-btn" data-moth-goto="snatches">' +
+                    escapeHtml(tr('Open Snatch queue')) + '</button></p>' +
                     '<section class="moth-mw-automation-block"><h4>' + escapeHtml(tr('Redacted diagnostics (opt-in)')) + '</h4>' +
                     '<p class="moth-mw-rule-hint">' +
                     escapeHtml(tr('Disabled by default. When on, keeps only 64 schema/count samples in memory. Never records packet values, seller names, listing IDs, credentials or private settings.')) +
@@ -238,12 +258,28 @@
             if (host && host.innerHTML !== html && !host.contains(document.activeElement)) host.innerHTML = html;
         } else if (state.watchView === 'automation') {
             refreshAutomationLive(content);
-        } else if (state.watchView === 'activity') {
+        } else if (state.watchView === 'snatches') {
+            const feedback = q('#moth-mw-snatch-feedback', content);
+            if (feedback && feedback.textContent !== state.snatchNotice)
+                feedback.textContent = state.snatchNotice;
             const snatchHost = q('#moth-mw-snatch-list', content);
-            if (snatchHost && !snatchHost.contains(document.activeElement)) {
+            if (snatchHost) {
                 const snatchHtml = snatchQueueHtml();
-                if (snatchHost.innerHTML !== snatchHtml) snatchHost.innerHTML = snatchHtml;
+                if (snatchHost.innerHTML !== snatchHtml) {
+                    const focused = snatchHost.contains(document.activeElement)
+                        ? document.activeElement.getAttribute('data-moth-snatch') : null;
+                    const scroll = snatchHost.scrollTop;
+                    snatchHost.innerHTML = snatchHtml;
+                    snatchHost.scrollTop = scroll;
+                    if (focused) {
+                        const restored = qa('[data-moth-snatch]', snatchHost)
+                            .find(button => button.dataset.mothSnatch === focused);
+                        if (restored) restored.focus({preventScroll:true});
+                        else q('#moth-mw-snatch-tab', panel)?.focus({preventScroll:true});
+                    }
+                }
             }
+        } else if (state.watchView === 'activity') {
             const refs = q('#moth-mw-reference-tools', content);
             const html = '<div class="moth-mw-reference-info"><b>' + escapeHtml(tr('Item references:')) + '</b> ' +
                 escapeHtml(tr('live server 7-day averages with a saved fallback captured')) + ' ' + escapeHtml(captured) + '. ' +
