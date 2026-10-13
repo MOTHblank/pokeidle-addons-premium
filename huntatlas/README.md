@@ -1,6 +1,6 @@
 # PokéIdle Hunt Atlas
 
-> **Versão experimental 1.9.8.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
+> **Versão experimental 1.9.9.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
 >
 > Não há mapa visual novo. O Atlas continua sendo uma lista pesquisável; o índice `map-markers.json` só adiciona contexto textual de localização para hunts com slug correspondente. O índice `moves-index.json` oferece golpes possíveis por espécie/nível, não uma lista de golpes equipados. Agora o Atlas compara os golpes dos índices com o catálogo mais recente de Pokémon e mostra divergências. Quando o jogo fornece nomes de golpes, o modelo usa **amostras por execução**, sem contar várias vítimas de um ataque em área como vários golpes. Quando o nome não chega, mantém o modelo por tipo. XP/h **medido** continua acima de qualquer projeção. Os índices são opcionais e podem estar desatualizados.
 >
@@ -48,6 +48,16 @@ No painel **Planejador de capturas e shinies**, a escolha Ultra/Beast e a simula
 **Dados medidos** vêm de `morte`, `bola` e `capturado` correlacionados: ao menos seis abates e 60 segundos, com denominador de tempo corrido, separando tentativas aceitas, capturas confirmadas e shiny visto/capturado. Para outras hunts, as projeções indicam claramente um **teto condicional se uma bola for aceita por corpo**, não que o Auto Catch alcance esse ritmo. Quando um Pokémon não fornece raridade econômica confiável, a chance fica indisponível; não usamos preço de venda MKT/RMT. A chance é o **modelo da wiki, ainda não confirmado com a fórmula do servidor**. Na Outland, a elegibilidade para shiny continua não verificada, portanto não é inventada. Arena Mística usa tabela própria e ticket por tentativa.
 
 Veja [contrato técnico, cenários de teste e limitações](../docs/HUNTATLAS_MILESTONE_E.md). O addon não compra bolas automaticamente nem altera o Auto Catch+.
+
+### Rankings, detalhes compactos e desempenho (v1.9.9 · Marco F)
+
+O **Top 5 agora acompanha a métrica selecionada** — XP do treinador, XP do Pokémon, Moedas por abate, valor esperado de loot NPC, Moedas líquidas, item raro/h (escolha o item e a prévia do tier Outland), capturas/h, shinies capturados/h ou eficiência da Ultra em Moedas por captura. Uma hunt excelente em XP não lidera automaticamente uma pesquisa de raros. Valores indisponíveis ficam no fim e **não viram zero**. A ordenação também respeita os filtros de busca, fraqueza, tipo e desbloqueio. Em capturas, é o resultado do **Pokémon alvo correspondente ao filtro**, com Ultra como padrão e Beast opcional, não uma porcentagem genérica da região.
+
+A lista de hunts está mais compacta. **Clique em “Detalhes da hunt”** para ver K/h, XP/h dos dois canais, economia, chance de captura, previsão de shiny, item raro escolhido, fonte e confiança. O painel geral de economia/captura/raros também fica recolhido por padrão, com um diagnóstico **opcional e somente local**, sem mensagens brutas ou tokens. O botão **Top 5** continua independente.
+
+**Performance:** as medições de eventos continuam independentes da interface. Com o mapa fechado, nativo ou no minigame, o Atlas não repinta a lista nem faz uma leitura pesada do Controller Bridge a cada 3 segundos. Quando visível, repinturas de eventos são agrupadas (intervalo mínimo de 1,5 s) e a atualização passiva é muito menos frequente (12 s). Os caches, amostras e janelas são limitados. O resultado real de CPU/RAM em sessões longas permanece para verificar no jogo, assim como os bônus e a fórmula de captura do servidor.
+
+Detalhes: [Marco F](../docs/HUNTATLAS_MILESTONE_F.md).
 
 ### 🎮 Correio Maluco — minigame experimental (1.9.3)
 
@@ -173,6 +183,16 @@ In the **Catch and shiny planner**, switching Ultra/Beast or simulating **Shiny 
 **Measured throughput** is based on correlated `morte`, accepted `bola` and confirmed `capturado` server events, requiring at least six kills and 60 seconds. For unvisited hunts, estimates are explicitly **ceilings conditional on one accepted ball per fallen body**, not guarantees that automation will reach that rate. Missing trustworthy species economic rarity yields an unknown chance, never the Pokémon's sale/listing price. This is the **wiki-conditional capture equation, not a deployed-server-verified formula**. Outland shiny eligibility stays unknown; Mystic Arena has a separate ticket-gated capture table.
 
 Read the [technical contract, tests and limitations](../docs/HUNTATLAS_MILESTONE_E.md). No automatic buying or changes to Auto Catch+ were introduced.
+
+### Meaningful rankings, compact details and performance (v1.9.9 · Milestone F)
+
+**Top Five now follows your chosen metric**: trainer XP, Pokémon XP, kill Coins, NPC loot expected value, net Coins, selected rare item/hour (choose both the item and the preview Outland tier), target captures/hour, shiny catches/hour or fewest Ultra Coins per expected capture. An XP-heavy hunt can no longer lead an unrelated rare-item list. Missing values rank last **without being treated as zero**. Existing search, weakness, type, collection and unlock filters still apply. Capture recommendations rank the **matching target species**, with Ultra by default or Beast when selected.
+
+Hunt rows are now compact: expand **Hunt details** to see K/h, the two XP channels, economics, target capture/shiny chances, selected rare units, source and confidence. The main capture/economy/rare sections are also collapsed by default; an optional **local-only** diagnostics toggle reveals safe aggregate evidence, never full packets or tokens. The separate Top Five toggle remains.
+
+**Performance:** accepted-event recording is independent of the visual panel. Closed/native-map/headless/mini-game sessions no longer redraw the full list or parse heavyweight controller snapshots every three seconds. Visible redraws are coalesced (at least 1.5 seconds apart), while the passive refresh is every 12 seconds or more. All histories remain bounded. Actual four-profile CPU/RAM and live probability/bonus semantics still need owner testing.
+
+See the [Milestone F implementation details](../docs/HUNTATLAS_MILESTONE_F.md).
 
 ### 🎮 Parcel Panic — experimental mini-game (1.9.3)
 
