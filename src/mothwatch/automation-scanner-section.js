@@ -5,14 +5,15 @@
         const status = reason === 'server-confirmed' ? 'confirmed' :
             reason === 'refused' ? 'refused' : 'unknown';
         settleOrder(pending.order, status);
-        snatchOutcome(pending.listingId,status);
         diagnosticOutcome(status);
         if (status === 'confirmed') {
             state.candidates.delete(pending.candidateKey);
             state.itemInventoryMemo = null;
         }
-        requestItemSummary(activeAnyItemRules().length > 0);
-        setTimeout(startPokemonScan, 250);
+        if (!snatchCriticalWindow()) {
+            requestItemSummary(activeAnyItemRules().length > 0);
+            setTimeout(startPokemonScan, 250);
+        }
         queueRender();
     }
 
