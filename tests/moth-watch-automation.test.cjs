@@ -109,7 +109,9 @@ test('Multiple fixed rules are checked fairly, including after an unaffordable r
         config, state, () => false, () => null, v => v,
         id => { requested.push(id); }, rule => ({ listingId: rule.itemId, name: String(rule.itemId) }),
         candidate => candidate.listingId === 106 ? 0 : 1,
-        candidate => { bought.push(candidate.listingId); return true; }
+        candidate => { bought.push(candidate.listingId); return true; },
+        () => config.enabled && config.fixedRulesEnabled,
+        () => [], () => [], () => [], () => null, () => null
     );
     fn();
     assert.deepEqual(requested, [106, 107]);
