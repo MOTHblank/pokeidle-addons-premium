@@ -1553,6 +1553,12 @@
         );
     }
 
+    function farmingSnapshotScope() {
+        return [state.farmingSnapshot.outlandTier ?? '?',
+            state.farmingSnapshot.catalogRevision ?? '?',
+            state.farmingSnapshot.boostSignature ?? '?'].join('|');
+    }
+
     function performanceKey(
         huntSlug,
         pokemon =
@@ -1587,6 +1593,7 @@
             version: 5,
             rateGeneration: state.rateGeneration,
             sessionToken: state.farmingSessionToken,
+            snapshotScope: farmingSnapshotScope(),
             rateWindow: null,
             huntSlug,
             signature:
@@ -3295,6 +3302,7 @@
             )
         ) {
             if (state.currentHuntSlug !== gameState.huntSlug) {
+                state.rateGeneration++;
                 state.farmingLedger = makeFarmingLedger();
             }
             state.currentHuntSlug =
@@ -3561,6 +3569,7 @@
         }
 
         if (state.currentHuntSlug !== huntEvent.slug) {
+            state.rateGeneration++;
             state.farmingLedger = makeFarmingLedger();
         }
         state.currentHuntSlug =
@@ -5845,6 +5854,7 @@
                     5 &&
                 record.rateGeneration === state.rateGeneration &&
                 record.sessionToken === state.farmingSessionToken &&
+                record.snapshotScope === farmingSnapshotScope() &&
                 record.signature ===
                     signature
         );
@@ -5922,6 +5932,7 @@
                             5 &&
                         record.rateGeneration === state.rateGeneration &&
                         record.sessionToken === state.farmingSessionToken &&
+                        record.snapshotScope === farmingSnapshotScope() &&
                         record.loadoutSignature ===
                             loadout &&
                         record.signature !==
@@ -5982,7 +5993,8 @@
     }
     function observedRates(record, now = Date.now()) {
         if (!record || record.rateGeneration !== state.rateGeneration ||
-            record.sessionToken !== state.farmingSessionToken) return null;
+            record.sessionToken !== state.farmingSessionToken ||
+            record.snapshotScope !== farmingSnapshotScope()) return null;
         return farmingObservedRates(record.rateWindow, now);
     }
 
