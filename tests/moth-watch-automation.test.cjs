@@ -69,10 +69,10 @@ test('Rule matching directly examines fresh item listings, skips attempted and r
         attemptedListings: new Map([[11, now + 60000]])
     };
     const fn = new Function('state', 'isOwnListing', 'retentionUntil', 'serverNow',
-        'itemReference', 'catalogName', section('    function fixedRuleCandidate(', '    function runMarketAutomation(') +
+        'itemReference', 'catalogName', 'unresolvedListing', section('    function fixedRuleCandidate(', '    function runMarketAutomation(') +
         '\nreturn fixedRuleCandidate;')(state, offer => offer.vendedor === 'self',
         offer => Number(offer.compravelEm || 0) > now ? offer.compravelEm : 0,
-        () => now, () => null, () => 'Cocoon Stone');
+        () => now, () => null, () => 'Cocoon Stone', id => state.unknownListings?.has(id) || false);
     const rule = { itemId: 106, currency: 'gold', buyMax: 30000 };
     assert.equal(fn(rule).listingId, 12, 'An already attempted cheap offer must not block the next one');
     assert.equal(fn(rule).price, 24000);
@@ -412,10 +412,10 @@ test('Pokémon categories honor price, currency, retention, owner and repeated a
     ]),attemptedListings:new Map()};
     const src=section('    function anyItemRuleTargets(', '    function runMarketAutomation(');
     const api=new Function('state','fixedRuleCandidate','pokemonCurrencyAllowed',
-        'isOwnListing','retentionUntil','serverNow','pokemonListingName',
+        'isOwnListing','retentionUntil','serverNow','pokemonListingName','unresolvedListing',
         src+'\nreturn {pokemonRuleMatches,pokemonRuleCandidate};')(
         state,()=>null,(pk,c)=>c==='orb'||!pk.shiny,
-        l=>l.vendedor==='self',l=>l.compravelEm||0,()=>now,()=> 'Poke'
+        l=>l.vendedor==='self',l=>l.compravelEm||0,()=>now,()=> 'Poke',()=>false
     );
     assert.equal(api.pokemonRuleCandidate({kind:'any',currency:'gold',buyMax:1000000}).listingId,12);
     assert.equal(api.pokemonRuleCandidate({kind:'p5',currency:'gold',buyMax:1000000}).listingId,12);
@@ -640,11 +640,15 @@ test('Milestone A: fixture families cover positive, empty, missing and conflicti
     assert.equal(api.marketReplyMatches(fixtures.diamondVitrine.wrongCurrency,'diamante'),false);
 });
 
-test('Milestone A: orders remain blocked after uncertain outcome even across listing IDs', () => {
+test('Unverified orders quarantine only their exact listing, not every unrelated rule', () => {
     const body = section('    function tryBuy(', '    function controllerResult(');
-    assert.match(body, /unverifiedOrdersExist\(\)/);
     const runner = section('    function runMarketAutomation(', '    function runScan(force)');
-    assert.match(runner, /unverifiedOrdersExist\(\)/);
+    assert.doesNotMatch(body, /unverifiedOrdersExist\(\)/);
+    assert.doesNotMatch(runner, /unverifiedOrdersExist\(\)/);
+    assert.doesNotMatch(runner, /q\('#modal \.cm-folha'\)/);
+    assert.match(runner, /communityMarketIsOpen\(\)/);
+    assert.match(script, /!unresolvedListing\(id\)/);
+    assert.match(script, /unresolvedListing\(candidate\.listingId\)/);
 });
 
 
@@ -746,7 +750,7 @@ test('Milestone B: price inspection is read-only and cannot authorize market ord
     ]};
     const src=section('    function pokemonRulePreview(', '    function pokemonEvidenceCard(');
     const preview=new Function('state','config','sanitizePokemonBuyRules','pokemonRuleMatches',
-        'isOwnListing','retentionUntil','serverNow','unverifiedOrdersExist',
+        'isOwnListing','retentionUntil','serverNow','unresolvedListing',
         'remainingBudget','balanceFor','reserveFor',
         src+'\nreturn pokemonRulePreview;')(
         state,config,items=>items,
@@ -912,7 +916,7 @@ test('Milestone C: optional session telemetry avoids duplicate NPC sales', () =>
 test('Milestone C: independent economy UI cannot start selling automation', () => {
     assert.match(script,/data-moth-view="economy"/);
     assert.match(script,/Read-only estimates and user-entered holdings/);
-    assert.match(script,/@version\s+0\.6\.1/);
+    assert.match(script,/@version\s+0\.6\.5/);
     assert.doesNotMatch(script,/market\.criar|autoSellRules|sendItemSale/);
 });
 
@@ -993,7 +997,7 @@ test('Milestone D: diagnostics source is synchronized with standalone userscript
     assert.equal(embedded,source,'module must exactly match generated userscript section');
     const tool=fs.readFileSync(path.join(__dirname,'..','tools','build-mothwatch.cjs'),'utf8');
     assert.match(tool,/--check/);
-    assert.match(script,/@version\s+0\.6\.1/);
+    assert.match(script,/@version\s+0\.6\.5/);
     assert.doesNotMatch(script,/^\s*\/\/\s*@(?:downloadURL|updateURL)/m,
         'private repo must not advertise inaccessible raw auto-update endpoints');
 });
@@ -1124,7 +1128,7 @@ test('MothWatch v0.6.1: source sections match the single distributable userscrip
         const moduleSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'mothwatch', name), 'utf8').trimEnd();
         assert.equal(script.slice(a + begin.length, b), moduleSource, 'generated parity: ' + id);
     }
-    assert.match(script, /@version\s+0\.6\.1/);
+    assert.match(script, /@version\s+0\.6\.5/);
     assert.doesNotMatch(script, /\bimport\s*\(|\brequire\s*\(/,
         'one Violentmonkey userscript must not require runtime module loading');
 });
@@ -1266,7 +1270,7 @@ function heldSnatchHarness() {
         'snatchDisplayStatus,snatchQueueCounts,snatchButton};')(
         state,config,DateClock,(fn,ms)=>{const t={fn,ms};timers.push(t);return t;},
         ()=>{},()=> 'acct',()=>server,
-        ()=>false,()=>false,()=>null,()=>[],()=>[],()=>[],()=>[],()=>[],
+        ()=>false,()=>unknown,()=>null,()=>[],()=>[],()=>[],()=>[],()=>[],
         ()=>true,()=> 'Pokémon',()=> 'Item', {getItem:()=>null,setItem:()=>{}},
         ()=>{},()=>{},x=>x,String,String,String,()=>false,()=>unknown,
         ()=>false,()=>1,()=>0,(c,manual,qty,rule,release)=>{
