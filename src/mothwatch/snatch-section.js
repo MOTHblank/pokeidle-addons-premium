@@ -59,7 +59,7 @@
                 });
             }
         } catch {}
-        snatchSchedule();
+        snatchSchedule(25);
     }
 
     function snatchSave() {
@@ -252,6 +252,8 @@
                 continue;
             }
             if (!freshQuote(c,!!manual) && !snatchReleaseQuote(c)) {
+                // Missing a current quote must not create a 35ms busy loop.
+                entry.retryAt = now + 1000;
                 snatchRefresh(entry,now);
                 continue;
             }
@@ -265,7 +267,10 @@
                 state.snatchObserved.delete(key); continue;
             }
             const activeRule = manual ? null : rule;
-            if (purchaseQuantity(c,activeRule?.id || '') < 1) continue;
+            if (purchaseQuantity(c,activeRule?.id || '') < 1) {
+                entry.retryAt = now + 1000;
+                continue;
+            }
             // No refresh request is made before the scheduled first buy.
             entry.retryAt = now + SNATCH_RETRY_MS;
             if (tryBuy(c,!!manual,1,activeRule || false,true)) {
@@ -273,6 +278,8 @@
                 queueRender();
                 break;
             }
+            // An unsent attempt was not accepted as an order. Avoid spinning.
+            entry.retryAt = now + 1000;
         }
         snatchSchedule();
     }
