@@ -138,7 +138,7 @@
             return Number.isSafeInteger(id) && id > 0 &&
                 Number.isFinite(price) && price > 0 && price <= rule.buyMax &&
                 Number.isSafeInteger(Number(offer.qtd)) && Number(offer.qtd) > 0 &&
-                !isOwnListing(offer) &&
+                !isOwnListing(offer) && !unresolvedListing(id) &&
                 !(retentionUntil(offer) > serverNow()) &&
                 Number(state.attemptedListings.get(id) || 0) <= Date.now();
         }).sort((a, b) => Number(a.preco) - Number(b.preco) || Number(a.id) - Number(b.id));
@@ -218,7 +218,8 @@
                 typeof listing.ficha.shiny !== 'boolean' ||
                 !Number.isSafeInteger(Number(listing.ficha.potencia)) ||
                 Number(listing.ficha.potencia) < 1 || Number(listing.ficha.potencia) > 5 ||
-                isOwnListing(listing) || retentionUntil(listing) > serverNow() ||
+                isOwnListing(listing) || unresolvedListing(id) ||
+                retentionUntil(listing) > serverNow() ||
                 Number(state.attemptedListings.get(id) || 0) > Date.now()) continue;
             if (!best || unitPrice < best.price || (unitPrice === best.price && id < best.listingId)) {
                 best = {
@@ -241,8 +242,9 @@
             return;
         }
         if (!state.socket || state.socket.readyState !== 1) return;
-        if (q('#modal .cm-folha') || communityMarketIsOpen() ||
-            state.pendingBuy || config.purchasesPaused || unverifiedOrdersExist()) return;
+        // A hidden native-market sheet may remain mounted in #modal. Its
+        // mere DOM presence must not disable all background automation.
+        if (communityMarketIsOpen() || state.pendingBuy || config.purchasesPaused) return;
         const now = Date.now();
         if (now - Number(state.automationLastRunAt || 0) < 1000) return;
         state.automationLastRunAt = now;
