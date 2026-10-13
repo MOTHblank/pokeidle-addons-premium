@@ -550,7 +550,7 @@ test('Milestone A: session/day caps account for outstanding unknown orders acros
         maxPurchasesPerSession:2,maxQuantityPerSession:3,
         fixedRulesEnabled:false};
     const state = {nick:'synthetic-alice',attemptedListings:new Map(),pendingBuy:null,lastPurchaseOutcome:'idle'};
-    const source = section('    function orderSessionId(', '    function loadConfig()');
+    const source = section('    function orderAccountKey(', '    function loadConfig()');
     const log = [];
     const api = new Function('state','config','localStorage','sessionStorage',
         'ORDER_JOURNAL_KEY','ORDER_SESSION_KEY','normalize','addLog','queueRender',
