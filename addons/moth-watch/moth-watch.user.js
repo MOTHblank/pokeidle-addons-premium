@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.6.11
+// @version      0.6.12
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -14,7 +14,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.11');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.12');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -1027,6 +1027,50 @@
             o.listingId === listingId && o.status === 'unknown');
         if (order) return settleOrder(order, status, receipt);
         return false;
+    }
+
+    // The native game accepts marketComprado without requiring a listing ID.
+    // Resolve an ID-less acknowledgement only when a *single listing* can
+    // account for it; never infer which of several distinct concurrent buys
+    // succeeded. An explicit but unmatched ID is not a fallback opportunity.
+    function resolvePurchaseAcknowledgement(event) {
+        if (event?.k !== 'marketComprado') return false;
+        const ids = [event.listingId, event.anuncioId, event.vendaId,
+            event.anuncio?.id, event.listing?.id];
+        if (ids.some(id => id != null)) {
+            for (const id of ids) {
+                if (Number.isSafeInteger(Number(id)) && Number(id) > 0 &&
+                    resolveOrder(Number(id), 'confirmed', event)) return true;
+            }
+            return false;
+        }
+
+        const pending = [...(state.pendingBuys?.values() || [])].flat();
+        if (!pending.length && state.pendingBuy) pending.push(state.pendingBuy);
+        const pendingIds = new Set(pending.map(order => Number(order?.listingId)));
+        // Only the single pending listing (possibly with multiple Snatch sends)
+        // is unambiguous. Prior unverified orders could also own this event.
+        const now = Date.now();
+        const recentUnknown = (state.orderJournal?.orders || []).filter(order =>
+            order.status === 'unknown' && now >= Number(order.sentAt) &&
+            now - Number(order.sentAt) <= 30000);
+        if (pending.length) {
+            if (pendingIds.size !== 1 || recentUnknown.length ||
+                !pending.some(order => order?.order?.status === 'submitted')) return false;
+            const [listingId] = pendingIds;
+            return Number.isSafeInteger(listingId) && listingId > 0 &&
+                resolveOrder(listingId, 'confirmed', event);
+        }
+
+        // An acknowledgement can arrive after the five-second timeout.
+        // Reconcile it only if there is a single recent unverified attempt
+        // and no other recently sent order that could have succeeded.
+        if (recentUnknown.length !== 1) return false;
+        const eligible = recentUnknown[0];
+        if ((state.orderJournal?.orders || []).some(order =>
+            order !== eligible && now >= Number(order.sentAt) &&
+            now - Number(order.sentAt) <= 30000)) return false;
+        return resolveOrder(eligible.listingId, 'confirmed', event);
     }
 
     function currentRuleMatches(rule, candidate, price) {
@@ -4243,12 +4287,7 @@
         if (message.t === 'batalha') {
             for (const event of message.ev || []) {
                 if (event?.k === 'marketComprado') {
-                    const ids = [event.listingId, event.anuncioId, event.vendaId,
-                        event.anuncio?.id, event.listing?.id];
-                    for (const id of ids) {
-                        if (Number.isSafeInteger(Number(id)) && Number(id) > 0 &&
-                            resolveOrder(Number(id), 'confirmed', event)) break;
-                    }
+                    resolvePurchaseAcknowledgement(event);
                 }
             }
             return;

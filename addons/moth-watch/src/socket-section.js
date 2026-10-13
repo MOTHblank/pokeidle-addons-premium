@@ -92,12 +92,7 @@
         if (message.t === 'batalha') {
             for (const event of message.ev || []) {
                 if (event?.k === 'marketComprado') {
-                    const ids = [event.listingId, event.anuncioId, event.vendaId,
-                        event.anuncio?.id, event.listing?.id];
-                    for (const id of ids) {
-                        if (Number.isSafeInteger(Number(id)) && Number(id) > 0 &&
-                            resolveOrder(Number(id), 'confirmed', event)) break;
-                    }
+                    resolvePurchaseAcknowledgement(event);
                 }
             }
             return;
