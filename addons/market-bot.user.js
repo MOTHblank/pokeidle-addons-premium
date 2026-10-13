@@ -1364,6 +1364,7 @@
             return;
         }
         if (now - Number(state.lastDetailRequest.get(key) || 0) < Math.max(1000, config.scanSeconds * 800)) return;
+        if (state.detailQueue.length >= MAX_DETAIL_QUEUE && !urgent) return;
         state.detailQueued.add(key);
         const job = { itemId: Number(itemId), currency: currency, key: key, enqueuedAt: now };
         if (urgent || rulePriority) state.detailQueue.splice(priorityIndex(), 0, job);
@@ -1599,11 +1600,26 @@
         queueRender();
     }
 
+    function pruneDetailCache() {
+        for (const [key, record] of state.itemOfferDetails) {
+            if (record.updatedAt < Date.now() - 300000 &&
+                state.selectedItemFocus?.key !== key) state.itemOfferDetails.delete(key);
+        }
+        if (state.itemOfferDetails.size > MAX_DETAIL_CACHE) {
+            const sorted = [...state.itemOfferDetails].sort((a,b) => a[1].updatedAt - b[1].updatedAt);
+            for (const [key] of sorted.slice(0, state.itemOfferDetails.size - MAX_DETAIL_CACHE)) {
+                if (state.selectedItemFocus?.key !== key) state.itemOfferDetails.delete(key);
+            }
+        }
+    }
+
     function handleItemListings(message) {
         // Matches upstream Community Market response fields: itemId, moeda and linhas.
         const itemId = Number(message.itemId);
         const currency = message.moeda === 'orb' || message.moeda === 'gold' ? message.moeda : null;
-        if (!Number.isFinite(itemId) || itemId <= 0 || !currency) return;
+        if (!Number.isSafeInteger(itemId) || itemId <= 0 || !currency) return;
+        if (!state.detailPending || state.detailPending.itemId !== itemId ||
+            state.detailPending.currency !== currency || communityMarketIsOpen()) return;
         const lines = Array.isArray(message.linhas) ? message.linhas : [];
         const pending = state.detailPending;
         if (pending && pending.itemId === itemId && pending.currency === currency) {
@@ -1614,12 +1630,13 @@
 
     function processItemListingPayload(itemId, currency, lines) {
         const detailKey = String(itemId) + ':' + currency;
-        const offers = Array.isArray(lines) ? lines.slice() : [];
+        const offers = Array.isArray(lines) ? lines.slice(0, 120) : [];
         const explicitlyLoaded = state.loadedItemKeys.has(detailKey);
         const selected = state.selectedItemFocus?.key === detailKey;
         const neededForRecommendation = state.sellRecommendationKey === detailKey;
         if (explicitlyLoaded || selected || neededForRecommendation || state.ruleItemKeys.has(detailKey)) {
             state.itemOfferDetails.set(detailKey, { itemId, currency, offers, updatedAt: Date.now() });
+            pruneDetailCache();
             state.itemDetailStatus = {
                 key: detailKey,
                 itemId,
@@ -2684,7 +2701,8 @@
             const id = Number(offer?.id), price = Number(offer?.preco);
             return Number.isSafeInteger(id) && id > 0 &&
                 Number.isFinite(price) && price > 0 && price <= rule.buyMax &&
-                Number(offer.qtd || 1) > 0 && !isOwnListing(offer) &&
+                Number.isSafeInteger(Number(offer.qtd)) && Number(offer.qtd) > 0 &&
+                !isOwnListing(offer) &&
                 !(retentionUntil(offer) > serverNow()) &&
                 Number(state.attemptedListings.get(id) || 0) <= Date.now();
         }).sort((a, b) => Number(a.preco) - Number(b.preco) || Number(a.id) - Number(b.id));
@@ -2696,8 +2714,10 @@
             key: 'rule:' + rule.itemId + ':' + rule.currency + ':' + offer.id,
             kind: 'item', listingId: Number(offer.id), itemId: rule.itemId,
             name: catalogName(rule.itemId), currency: rule.currency,
-            price: Number(offer.preco), qty: Math.max(1, Math.floor(Number(offer.qtd || 1))),
-            average, ratio: average > 0 ? Number(offer.preco) / average : 1, retainedUntil: 0
+            price: Number(offer.preco), qty: Number(offer.qtd),
+            seller: String(offer.vendedor || ''), seenAt: detail.updatedAt,
+            average, ratio: average > 0 ? Number(offer.preco) / average : 1,
+            retainedUntil: retentionUntil(offer)
         };
     }
 
@@ -2753,6 +2773,8 @@
                 !Number.isSafeInteger(unitPrice) || unitPrice <= 0 ||
                 unitPrice > rule.buyMax || Number(listing.qtd || 1) !== 1 ||
                 !pokemonRuleMatches(rule, listing.ficha, rule.currency) ||
+                typeof listing.ficha.shiny !== 'boolean' ||
+                !Number.isSafeInteger(Number(listing.ficha.potencia)) ||
                 isOwnListing(listing) || retentionUntil(listing) > serverNow() ||
                 Number(state.attemptedListings.get(id) || 0) > Date.now()) continue;
             if (!best || unitPrice < best.price || (unitPrice === best.price && id < best.listingId)) {
@@ -2762,7 +2784,8 @@
                     pokemonId: Number(listing.pokemonId || listing.ficha.id || 0),
                     ficha: listing.ficha, name: pokemonListingName(listing.ficha),
                     currency: rule.currency, price: unitPrice, unitPrice, qty: 1,
-                    average: 0, ratio: 1, retainedUntil: 0
+                    average: 0, ratio: 1, retainedUntil: retentionUntil(listing),
+                    seller: String(listing.vendedor || ''), seenAt: record.updatedAt
                 };
             }
         }
@@ -2775,7 +2798,8 @@
             return;
         }
         if (!state.socket || state.socket.readyState !== 1) return;
-        if (q('#modal .cm-folha') || state.pendingBuy) return;
+        if (q('#modal .cm-folha') || communityMarketIsOpen() ||
+            state.pendingBuy || config.purchasesPaused) return;
         const now = Date.now();
         if (now - Number(state.automationLastRunAt || 0) < 1000) return;
         state.automationLastRunAt = now;
@@ -2784,10 +2808,7 @@
         const broad = activeAnyItemRules();
         const pokemon = activePokemonRules();
         const targets = anyItemRuleTargets(broad);
-        state.ruleItemKeys = new Set([
-            ...fixed.map(rule => rule.itemId + ':' + rule.currency),
-            ...targets.map(row => row.key)
-        ]);
+        state.ruleItemKeys = new Set(fixed.map(rule => rule.itemId + ':' + rule.currency));
         for (const rule of fixed) automationDetail(rule.itemId, rule.currency);
         if (broad.length && targets.length && state.detailQueue.length + (state.detailPending ? 1 : 0) < 12) {
             let count = 0;
@@ -2801,17 +2822,17 @@
         // Serialized purchases share balances, reserves, caps and cooldowns.
         for (const rule of fixed) {
             const candidate = fixedRuleCandidate(rule);
-            if (candidate && purchaseQuantity(candidate) > 0 &&
+            if (candidate && purchaseQuantity(candidate, rule.id) > 0 &&
                 tryBuy(candidate, false, null, rule)) return;
         }
         for (const rule of broad) {
             const candidate = anyItemRuleCandidate(rule, targets);
-            if (candidate && purchaseQuantity(candidate) > 0 &&
+            if (candidate && purchaseQuantity(candidate, rule.id) > 0 &&
                 tryBuy(candidate, false, null, rule)) return;
         }
         for (const rule of pokemon) {
             const candidate = pokemonRuleCandidate(rule);
-            if (candidate && purchaseQuantity(candidate) > 0 &&
+            if (candidate && purchaseQuantity(candidate, rule.id) > 0 &&
                 tryBuy(candidate, false, null, rule)) return;
         }
     }
