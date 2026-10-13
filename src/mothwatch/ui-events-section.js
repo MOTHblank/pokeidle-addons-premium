@@ -12,13 +12,17 @@
                 const parts = String(button.dataset.mothSnatch || '').split(':');
                 if (parts.length !== 3) return;
                 const [kind,currency,rawId] = parts;
+                const wasArmed = state.snatchManual.has(button.dataset.mothSnatch);
                 const ok = snatchMark(kind,currency,Number(rawId),
                     Number(button.dataset.mothSnatchItem || 0));
+                state.snatchNotice = tr(ok
+                    ? (wasArmed ? 'Snatch cancelled for listing #{id}.' : 'Snatch armed for listing #{id}.')
+                    : 'Could not arm this target; load a current listing first.', {id:rawId});
                 if (ok) addLog('Snatch queue updated · listing #' + rawId);
                 else addLog('Snatch not armed · load the listing again');
                 state.itemInventoryMemo = null;
                 state.pokemonEvidenceMemo = null;
-                renderWatch(true); return;
+                renderWatch(state.watchView !== 'snatches'); return;
             }
             const quickLink = target.closest('[data-moth-goto]');
             if (quickLink?.dataset.mothGoto === 'snatches') {
