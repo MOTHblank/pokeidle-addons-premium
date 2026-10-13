@@ -3006,17 +3006,26 @@
         if (
             !Array.isArray(
                 events
-            ) ||
-            !isHuntHere()
+            )
         ) {
             return;
         }
 
+        const hunting = isHuntHere();
         for (
             const event of
             events
         ) {
             recordFarmingEvidence(state.farmingLedger, event);
+            if (!hunting) {
+                // Boss and supplies are session events, never normal hunt
+                // kills/captures (Mystic and other scenes have different rules).
+                if (['bossMorto', 'cura', 'revive', 'compra'].includes(event?.k)) {
+                    const receipt = normalizeFarmingEvent(event);
+                    if (receipt) acceptFarmingEvent(state.farmingLedger, receipt);
+                }
+                continue;
+            }
             if (
                 event?.k ===
                     'spawn'
