@@ -112,17 +112,18 @@ test('forecast residual is bounded with signed error, invalid values rejected', 
     assert.equal(helpers.xpForecastResidual(500,1000).ratio,2);
 });
 
-// Integration: source contract prevents importing past measured XP multipliers
-// into a cold-start prediction (regression for HA-05).
-test('model path no longer multiplies generic per-lead observed XP bonuses', () => {
+// Integration: never transfer historical per-lead XP ratios into new hunts.
+// Only native, currently reported active game-state factors may enter a model.
+test('model uses native scoped XP factors, never stale observed per-lead ratios', () => {
     const start=source.indexOf('    function huntXpEstimate(');
     const end=source.indexOf('    function rankedUnlockedHunts(',start);
     const section=source.slice(start,end);
-    assert.match(section,/const trainerXpPerKill = baseXp;/);
-    assert.match(section,/const pokemonXpPerKill = baseXp;/);
+    assert.match(section,/const trainerXpPerKill = baseXp \* nativeBonus\.trainer/);
+    assert.match(section,/const pokemonXpPerKill = baseXp \* nativeBonus\.pokemon/);
     assert.doesNotMatch(section,/baseXp\s*\*\s*\(\s*Number\(profile\?\.trainerXpMult/);
     assert.match(section,/recordForecastResidual/);
-    assert.match(section,/bonusSource: 'unboosted-upstream-shared'/);
+    assert.match(section,/native-game-reported-partial-xp-bonuses/);
+    assert.match(section,/unboosted-upstream-shared/);
 });
 
 test('verified millisecond expiration transitions profile scope without a new packet', () => {
