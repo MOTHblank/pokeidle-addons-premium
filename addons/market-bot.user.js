@@ -910,9 +910,7 @@
         if (full || Object.prototype.hasOwnProperty.call(snapshot, 'orbs')) {
             if (Number.isFinite(Number(snapshot.orbs))) state.orbs = Number(snapshot.orbs);
         }
-        if (state.pendingBuy && Date.now() - state.pendingBuy.sentAt > 4500) {
-            finishPendingBuy('timeout');
-        }
+        // Balance snapshots cannot settle orders.
 
         if (state.watchOpen && (previousGold !== state.gold || previousOrbs !== state.orbs)) {
             queueRender();
@@ -2291,13 +2289,14 @@
         return Math.max(0, Number(currency === 'orb' ? config.maxGemsPerBuy : config.maxCoinsPerBuy) || 0);
     }
 
-    function purchaseQuantity(candidate) {
+    function purchaseQuantity(candidate, ruleId = '') {
         if (candidate.kind === 'pokemon' &&
             !pokemonCurrencyAllowed(candidate.ficha, candidate.currency)) return 0;
         const balance = balanceFor(candidate.currency);
         const available = Math.max(0, balance - reserveFor(candidate.currency));
         const cap = maxSpendFor(candidate.currency);
-        const budget = cap > 0 ? Math.min(available, cap) : available;
+        const exposure = remainingBudget(candidate.currency, ruleId);
+        const budget = Math.min(cap > 0 ? Math.min(available, cap) : available, exposure.spend);
 
         const unitPrice = candidate.kind === 'pokemon'
             ? Number(candidate.unitPrice || candidate.price)
@@ -2308,12 +2307,21 @@
         if (candidate.kind === 'pokemon') return 1;
 
         return Math.max(0, Math.min(
+            exposure.quantity,
             Math.max(1, Number(candidate.qty || 1)),
             Math.floor(budget / unitPrice)
         ));
     }
 
     function tryBuy(candidate, manual, requestedQuantity = null, fixedRule = false) {
+        // Rule eligibility is revalidated against the latest saved settings.
+        if (config.purchasesPaused || !freshQuote(candidate, !!manual)) {
+            if (manual) addLog('Stale or unverified quote · refresh listing');
+            return false;
+        }
+        const rule = !manual && fixedRule ? activeRuleById(fixedRule.id) : null;
+        const quotedPrice = Number(candidate.unitPrice || candidate.price);
+        if (!manual && !currentRuleMatches(rule, candidate, quotedPrice)) return false;
         if (!candidate || state.pendingBuy) return false;
         if (candidate.kind === 'pokemon' &&
             !pokemonCurrencyAllowed(candidate.ficha, candidate.currency)) {
@@ -2326,7 +2334,7 @@
         const blockedUntil = Number(state.attemptedListings.get(candidate.listingId) || 0);
         if (blockedUntil > now) return false;
 
-        const affordableQuantity = purchaseQuantity(candidate);
+        const affordableQuantity = purchaseQuantity(candidate, rule?.id || '');
         const requestedLimit = requestedQuantity == null
             ? affordableQuantity
             : Math.floor(Number(requestedQuantity));
@@ -2340,9 +2348,18 @@
             ? Number(candidate.unitPrice || candidate.price)
             : Number(candidate.price);
         const spend = unitPrice * qty;
+        if (!Number.isSafeInteger(spend) || spend <= 0) return false;
         const balanceBefore = balanceFor(candidate.currency);
 
+        const order = {
+            listingId: candidate.listingId, currency: candidate.currency,
+            sentAt: now, qty, spend, ruleId: rule?.id || '',
+            kind: candidate.kind, sessionId: state.orderJournal.sessionId,
+            day: orderDay(now), status: 'prepared'
+        };
+        if (!reserveOrder(order)) return false;
         state.pendingBuy = {
+            order,
             listingId: candidate.listingId,
             candidateKey: candidate.key,
             currency: candidate.currency,
@@ -2365,10 +2382,15 @@
 
         if (!sent) {
             state.pendingBuy = null;
+            state.orderJournal.orders.splice(state.orderJournal.orders.indexOf(order), 1);
+            saveOrderJournal();
             state.attemptedListings.delete(candidate.listingId);
             return false;
         }
 
+        order.status = 'submitted';
+        saveOrderJournal();
+        state.lastPurchaseOutcome = 'awaiting acknowledgement';
         addLog(
             (fixedRule ? 'RULE BUY' : 'BUY') + ' · ' +
             candidate.name + ' · ' + qty + ' × ' + num(unitPrice) + ' ' +
@@ -2447,59 +2469,11 @@
             });
         }
 
-        /*
-         * Native Controller can display a listing before the userscript has
-         * classified it. Keep the direct manual path, but apply spending,
-         * reserve, and duplicate-purchase guards just like candidate buys.
-         */
-        if (!state.socket || state.socket.readyState !== 1) {
-            return controllerResult({ ok: false, error: 'game websocket is not open', source: 'direct', listingId });
-        }
-        if (state.pendingBuy) {
-            return controllerResult({ ok: false, error: 'another purchase is awaiting server confirmation', source: 'guard', listingId });
-        }
-        if (state.attemptedListings.get(listingId) > Date.now()) {
-            return controllerResult({ ok: false, error: 'this listing was already attempted recently', source: 'guard', listingId });
-        }
-        const price = Number(request.preco);
-        const requestedQty = Math.floor(Number(request.qtd || 1));
-        if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(requestedQty) || requestedQty < 1) {
-            return controllerResult({ ok: false, error: 'invalid price or quantity', source: 'validation', listingId });
-        }
-
-        const available = Math.max(0, balanceFor(currency) - reserveFor(currency));
-        const extraCap = maxSpendFor(currency);
-        const budget = extraCap > 0 ? Math.min(available, extraCap) : available;
-        const affordableQty = Math.floor(budget / price);
-        const requestedLimit = requestedQty;
-        const qty = Math.min(requestedLimit, affordableQty);
-        if (qty < 1) {
-            return controllerResult({ ok: false, error: 'purchase exceeds spendable balance or configured cap', source: 'guard', listingId });
-        }
-
-        const now = Date.now();
-        const candidateKey = 'native:' + listingId + ':' + currency;
-        state.pendingBuy = {
-            listingId, candidateKey, currency, unitPrice: price, qty,
-            spend: price * qty, balanceBefore: balanceFor(currency), sentAt: now, manual: true
-        };
-        state.attemptedListings.set(listingId, now + 15000);
-        const sent = send({ t: 'market.comprar', id: listingId, qtd: qty, preco: price, moeda: currency });
-        if (!sent) {
-            state.pendingBuy = null;
-            state.attemptedListings.delete(listingId);
-            return controllerResult({ ok: false, error: 'game websocket is not open', source: 'direct', listingId });
-        }
-
-        addLog('BUY · controller listing #' + listingId + ' · ' + qty + ' × ' + num(price) +
-            ' ' + (currency === 'orb' ? 'Gems' : 'Coins'));
-        queueRender();
-        setTimeout(() => {
-            if (state.pendingBuy?.listingId === listingId && state.pendingBuy?.candidateKey === candidateKey) {
-                finishPendingBuy('settle-timeout');
-            }
-        }, 5000);
-        return controllerResult({ ok: true, source: 'direct', listingId });
+        // Caller-supplied prices are not verified server quotes.
+        return controllerResult({
+            ok: false, source: 'validation', listingId,
+            error: 'unverified quote; inspect a fresh listing in Moth Watch'
+        });
     }
 
     function configureFromController(patch) {
@@ -2581,43 +2555,14 @@
     function finishPendingBuy(reason) {
         const pending = state.pendingBuy;
         if (!pending) return;
-
-        const confirmed = reason === 'server-confirmed';
-
         state.pendingBuy = null;
-
-        if (confirmed) {
-            /*
-             * Do not hit the same partially-filled listing again just because
-             * it survives our purchase. This also makes max-per-buy a real
-             * cap instead of something the next scan silently circumvents.
-             */
-            state.attemptedListings.set(
-                pending.listingId,
-                Date.now() + 30 * 60 * 1000
-            );
-            state.candidates.delete(pending.candidateKey);
-            addLog('Purchase confirmed · listing #' + pending.listingId);
-        } else if (reason === 'refused') {
-            state.attemptedListings.set(pending.listingId, Date.now() + 5000);
-        } else {
-            // Never interpret silence or an unrelated event as a failed buy.
-            state.attemptedListings.set(pending.listingId, Date.now() + 60_000);
-            addLog('Purchase outcome unverified · listing #' + pending.listingId +
-                ' · temporarily held from another attempt');
-        }
-
+        const status = reason === 'server-confirmed' ? 'confirmed' :
+            reason === 'refused' ? 'refused' : 'unknown';
+        settleOrder(pending.order, status);
+        if (status === 'confirmed') state.candidates.delete(pending.candidateKey);
         requestItemSummary(activeAnyItemRules().length > 0);
         setTimeout(startPokemonScan, 250);
         queueRender();
-    }
-
-    function addLog(text) {
-        state.buyLog.unshift({
-            at: Date.now(),
-            text: String(text)
-        });
-        if (state.buyLog.length > 12) state.buyLog.length = 12;
     }
 
     function requestItemSummary(forceForAutomation = false) {
@@ -2857,17 +2802,17 @@
         for (const rule of fixed) {
             const candidate = fixedRuleCandidate(rule);
             if (candidate && purchaseQuantity(candidate) > 0 &&
-                tryBuy(candidate, false, null, true)) return;
+                tryBuy(candidate, false, null, rule)) return;
         }
         for (const rule of broad) {
             const candidate = anyItemRuleCandidate(rule, targets);
             if (candidate && purchaseQuantity(candidate) > 0 &&
-                tryBuy(candidate, false, null, true)) return;
+                tryBuy(candidate, false, null, rule)) return;
         }
         for (const rule of pokemon) {
             const candidate = pokemonRuleCandidate(rule);
             if (candidate && purchaseQuantity(candidate) > 0 &&
-                tryBuy(candidate, false, null, true)) return;
+                tryBuy(candidate, false, null, rule)) return;
         }
     }
 
@@ -2975,10 +2920,8 @@
             }
             // Game errors unrelated to an order must not clear an in-flight order.
             const listingId = Number(message.listingId ?? message.anuncioId ?? message.vendaId);
-            if (state.pendingBuy && listingId > 0 && listingId === state.pendingBuy.listingId) {
+            if (listingId > 0 && resolveOrder(listingId, 'refused')) {
                 addLog('Purchase refused: ' + String(message.chave || message.msg || 'server error'));
-                finishPendingBuy('refused');
-
             }
             return;
         }
@@ -2991,11 +2934,12 @@
          */
         if (message.t === 'batalha') {
             for (const event of message.ev || []) {
-                if (event?.k === 'marketComprado' && state.pendingBuy) {
+                if (event?.k === 'marketComprado') {
                     const ids = [event.listingId, event.anuncioId, event.vendaId,
                         event.anuncio?.id, event.listing?.id];
-                    if (ids.some(id => Number(id) > 0 && Number(id) === state.pendingBuy.listingId)) {
-                        finishPendingBuy('server-confirmed');
+                    for (const id of ids) {
+                        if (Number.isSafeInteger(Number(id)) && Number(id) > 0 &&
+                            resolveOrder(Number(id), 'confirmed')) break;
                     }
                 }
             }
@@ -3086,7 +3030,8 @@
             if (!state.socket) {
                 state.itemStatus = 'disconnected';
                 state.pokemonStatus = 'disconnected';
-                state.pendingBuy = null;
+                if (state.pendingBuy) finishPendingBuy('disconnect');
+                state.marketReply = null;
                 state.pokemonScan = null;
                 state.historyFetch = null;
 
