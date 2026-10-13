@@ -1,3 +1,40 @@
+    // Avoid rebuilding the 120-item inventory HTML on every unrelated socket
+    // notification. Cache only for the current view and invalidate on meaningful
+    // summary, catalog, focused-offer or locale changes.
+    function inventoryViewSnapshot() {
+        const focus = state.selectedItemFocus?.key || '';
+        const current = focus ? state.itemOfferDetails.get(focus) : null;
+        const pending = state.detailPending?.key === focus;
+        const queued = focus && (state.detailQueued.has(focus) ||
+            state.detailQueue.some(job => job.key === focus));
+        const previous = state.itemInventoryMemo;
+        const same = previous &&
+            previous.accountKey === state.orderJournal?.accountKey &&
+            previous.itemSummary === state.itemSummary &&
+            previous.catalog === state.catalog &&
+            previous.itemNamesSize === state.itemNames.size &&
+            previous.focus === focus &&
+            previous.offerDetail === current &&
+            previous.offerStatus === state.itemDetailStatus &&
+            previous.pending === pending &&
+            previous.queued === !!queued &&
+            previous.collapsed === state.itemInventoryCollapsed &&
+            previous.locale === currentLocale();
+        if (same) return previous;
+        const snapshot = {
+            accountKey: state.orderJournal?.accountKey,
+            itemSummary: state.itemSummary,
+            catalog: state.catalog,
+            itemNamesSize: state.itemNames.size,
+            focus, offerDetail: current, offerStatus: state.itemDetailStatus,
+            pending, queued: !!queued, collapsed: state.itemInventoryCollapsed,
+            locale: currentLocale(),
+            html: renderItemInventory()
+        };
+        state.itemInventoryMemo = snapshot;
+        return snapshot;
+    }
+
     function renderWatch(forceViewBuild = false) {
         const panel = q('#moth-market-watch-panel');
         if (!panel || !state.watchOpen) return;
@@ -27,7 +64,7 @@
             bindWatchEvents(panel);
         }
 
-        const baseline = baselineStats();
+        const baseline = state.watchView === 'activity' ? baselineStats() : null;
         const currencyFilter = ['gold', 'orb'].includes(config.viewCurrency) ? config.viewCurrency : 'all';
         const kindFilter = ['item', 'pokemon', 'diamond'].includes(config.viewKind) ? config.viewKind : 'all';
         const searchTerm = normalize(state.opportunitySearch);
@@ -37,8 +74,13 @@
             // Unreferenced diamonds remain inspectable. Referenced diamonds must meet the watch threshold.
             const visibleWithoutReference = manuallyLoaded || (c.kind === 'diamond' && !(Number(c.average) > 0));
             return (visibleWithoutReference || c.ratio <= Math.max(0.01, Number(config.watchPercent) / 100)) && candidateVisible(c);
-        }).sort(candidateSort);
-        const captured = state.baseline.capturedAt ? new Date(state.baseline.capturedAt).toLocaleString(locale) : tr('no reference captured yet');
+        });
+        // Other tabs still display the matching-listing count, but do not pay
+        // for sorting or price-reference formatting they never render.
+        if (state.watchView === 'opportunities') candidates.sort(candidateSort);
+        const captured = state.watchView === 'activity'
+            ? (state.baseline.capturedAt ? new Date(state.baseline.capturedAt).toLocaleString(locale)
+                : tr('no reference captured yet')) : '';
 
         const status = q('#moth-mw-status', panel);
         const statusText = tr('Items: {items} · Pokémon: {pokemon} · Diamonds: {diamonds}', {
@@ -60,7 +102,8 @@
 
         const content = q('#moth-mw-view-content', panel);
         const viewChanged = content.dataset.view !== state.watchView;
-        const settingsSignature = JSON.stringify(Object.keys(DEFAULTS).sort().map(key => [key, config[key]]));
+        const settingsSignature = state.watchView === 'automation'
+            ? JSON.stringify(Object.keys(DEFAULTS).sort().map(key => [key, config[key]])) : '';
         const settingsChanged = state.watchView === 'automation' && !viewChanged &&
             content.dataset.settingsSignature !== settingsSignature &&
             !(content.contains(document.activeElement) && document.activeElement.matches('input, select, textarea'));
@@ -170,11 +213,13 @@
             updateCandidateRows(list, candidates);
         } else if (state.watchView === 'inventory') {
             const host = q('#moth-mw-inventory-content', content);
-            const html = renderItemInventory();
-            if (host && host.innerHTML !== html) {
+            const snapshot = inventoryViewSnapshot();
+            if (host && (viewChanged || forceViewBuild ||
+                state.lastInventoryPaint !== snapshot)) {
                 const oldScroller = q('.moth-mw-inventory-list', host);
                 const scrollTop = oldScroller ? oldScroller.scrollTop : 0;
-                host.innerHTML = html;
+                host.innerHTML = snapshot.html;
+                state.lastInventoryPaint = snapshot;
                 const newScroller = q('.moth-mw-inventory-list', host);
                 if (newScroller) newScroller.scrollTop = scrollTop;
             }
