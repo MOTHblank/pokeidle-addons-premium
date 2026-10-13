@@ -3208,7 +3208,7 @@
         for(const x of hunt.especies){
             const w=Math.max(1,Number(x.pontos)||1);
             total+=w;
-            const row=known.get(Number(x.pokeId));
+            const row=known.get(Number(outlandNormalizeSpeciesId(x.pokeId)));
             if(row&&Number.isFinite(row.perKill)){covered+=w;weighted+=row.perKill*w;}
         }
         return {perHour:covered===total?killsH*weighted/total:null,
@@ -3581,7 +3581,7 @@
 
         if (slot) {
             const target = state.combatTargets.get(slot);
-            const speciesId = receipt.speciesId ?? target?.speciesId;
+            const speciesId = outlandNormalizeSpeciesId(receipt.speciesId ?? target?.speciesId);
             if (speciesId && Object.keys(record.speciesKills).length < 80) {
                 const key = String(speciesId);
                 record.speciesKills[key] = (record.speciesKills[key] || 0) + 1;
@@ -5624,10 +5624,7 @@
     function mergeCombatCreature(
         creature
     ) {
-        const id =
-            Number(
-                creature?.pokeId
-            );
+        const id = Number(outlandNormalizeSpeciesId(creature?.pokeId));
 
         if (
             !Number.isFinite(id)
@@ -5748,10 +5745,7 @@
     function speciesCombatMeta(
         speciesId
     ) {
-        const id =
-            Number(
-                speciesId
-            );
+        const id = Number(outlandNormalizeSpeciesId(speciesId));
 
         if (
             !Number.isFinite(id)
