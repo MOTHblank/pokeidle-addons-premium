@@ -12089,7 +12089,7 @@
                     escapeHtml(tr('rare.select'))+'</button>' :
                 escapeHtml(state.pendingOutlandTier?tr('rare.pending'):
                     !state.outlandTierSeen?tr('rare.noCommand'):
-                    nativeTier===selectedTier?'':tr('rare.previewOnly'))))+'</div>',
+                    nativeTier===selectedTier?'':tr('rare.previewOnly')))+'</div>',
             '<div class="mha-xp-note"><strong>'+
                 escapeHtml(tr('rare.outland'))+'</strong> · '+
                 escapeHtml(previewHunt?
