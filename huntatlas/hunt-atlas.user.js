@@ -11157,6 +11157,7 @@
                     true;
 
                 if (!wasOpen) {
+                    syncFromControllerBridge();
                     ensureTypeData();
                     ensureCombatCatalog();
                     ensureLocationIndex();
@@ -11164,7 +11165,8 @@
                     ensureMarketValues();
                 }
 
-                renderDrawer();
+                if(!wasOpen) renderDrawer();
+                else queueRender();
 
                 if (!wasOpen) {
                     queueMicrotask(
@@ -13179,7 +13181,8 @@
 
         drawer.hidden =
             false;
-
+        state.lastDrawerRenderAt=Date.now();
+        state.renderStats.attempts++;
         arcadeRender(drawer);
         if (arcade.open) return;
 
@@ -13408,45 +13411,25 @@
     }
 
     function queueRender() {
-        if (
-            state.renderQueued
-        ) {
+        // No expensive list/rate work in headless/background mode or when
+        // the user has switched back to the native map / minigame.
+        if(!state.drawerOpen || !state.atlasEnabled || arcade.open ||
+            !isMapModalOpen()) {
+            state.renderStats.skipped++;
             return;
         }
-
-        state.renderQueued =
-            true;
-
-        queueMicrotask(
-            () => {
-                state.renderQueued =
-                    false;
-
-                ensureButton();
-
-                if (
-                    isMapModalOpen()
-                ) {
-                    ensureMapToggle();
-
-                    if (
-                        state.atlasEnabled
-                    ) {
-                        state.drawerOpen =
-                            true;
-                        renderDrawer();
-                    } else {
-                        state.drawerOpen =
-                            false;
-                        restoreNativeMapView();
-                    }
-                } else {
-                    cleanupMapIntegration();
-                }
+        if(state.renderQueued)return;
+        state.renderQueued=true;
+        const delay=Math.max(0,1500-(Date.now()-state.lastDrawerRenderAt));
+        state.drawerRenderTimer=setTimeout(()=>{
+            state.renderQueued=false;
+            state.drawerRenderTimer=null;
+            if(state.drawerOpen&&state.atlasEnabled&&!arcade.open&&
+                isMapModalOpen()){
+                renderDrawer();
             }
-        );
+        },delay);
     }
-
 
     function controllerSnapshot() {
         syncFromControllerBridge();
@@ -13804,33 +13787,22 @@
         installMapObserver();
         scheduleMapSync();
 
-        setInterval(
-            () => {
+        setInterval(()=>{
+            // Keep a cheap button check; only read the bridge and redraw
+            // after a long idle gap AND while the Atlas list is visible.
+            ensureButton();
+            if(!isMapModalOpen()){
+                if(state.drawerOpen)cleanupMapIntegration();
+                return;
+            }
+            ensureMapToggle();
+            if(!state.atlasEnabled||arcade.open)return;
+            if(Date.now()-state.lastDrawerRenderAt>=12000){
                 syncFromControllerBridge();
-                ensureButton();
-
-                if (
-                    isMapModalOpen()
-                ) {
-                    ensureMapToggle();
-
-                    if (
-                        state.atlasEnabled
-                    ) {
-                        state.drawerOpen =
-                            true;
-                        renderDrawer();
-                    } else {
-                        state.drawerOpen =
-                            false;
-                        restoreNativeMapView();
-                    }
-                } else {
-                    cleanupMapIntegration();
-                }
-            },
-            3000
-        );
+                state.drawerOpen=true;
+                queueRender();
+            }
+        },3000);
 
         console.info(
             '[PokéIdle Hunt Atlas] v1.9.8 experimental loaded'
