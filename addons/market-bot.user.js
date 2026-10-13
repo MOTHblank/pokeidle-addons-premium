@@ -1036,7 +1036,9 @@
 
     function sendBackground(payload) {
         if (backgroundDelayMs() > 0) return false;
-        return send(payload);
+        const sent = send(payload);
+        if (sent) diagnosticOutbound(payload);
+        return sent;
     }
 
     function isRateLimitError(message) {
@@ -1061,6 +1063,7 @@
         state.itemStatus = 'rate-limit backoff';
         state.pokemonStatus = 'rate-limit backoff';
         addLog('Server rate limit · background scans paused for 15s');
+        diagnosticOutcome('rate-limit');
         queueRender();
     }
 
@@ -2714,6 +2717,7 @@
         // Rule eligibility is revalidated against the latest saved settings.
         if (config.purchasesPaused || unverifiedOrdersExist() ||
             !freshQuote(candidate, !!manual)) {
+            diagnosticOutcome('quote-rejected');
             if (manual) addLog('Stale or unverified quote · refresh listing');
             return false;
         }
@@ -2759,6 +2763,7 @@
             day: orderDay(now), status: 'prepared'
         };
         if (!reserveOrder(order)) return false;
+        diagnosticOutcome('prepared');
         state.pendingBuy = {
             order,
             listingId: candidate.listingId,
@@ -2790,6 +2795,7 @@
         }
 
         order.status = 'submitted';
+        diagnosticOutcome('submitted');
         saveOrderJournal();
         state.lastPurchaseOutcome = 'awaiting acknowledgement';
         addLog(
@@ -2964,6 +2970,7 @@
         const status = reason === 'server-confirmed' ? 'confirmed' :
             reason === 'refused' ? 'refused' : 'unknown';
         settleOrder(pending.order, status);
+        diagnosticOutcome(status);
         if (status === 'confirmed') state.candidates.delete(pending.candidateKey);
         requestItemSummary(activeAnyItemRules().length > 0);
         setTimeout(startPokemonScan, 250);
