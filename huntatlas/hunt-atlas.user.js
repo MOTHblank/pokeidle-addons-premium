@@ -3450,7 +3450,8 @@
                 );
             } else {
                 const receipt = normalizeFarmingEvent(event);
-                if (receipt) acceptFarmingEvent(state.farmingLedger, receipt);
+                if (receipt && acceptFarmingEvent(state.farmingLedger, receipt))
+                    farmTrackUse(receipt);
             }
         }
     }
@@ -3704,6 +3705,7 @@
          * In the delta protocol, a missing key means "unchanged" while an
          * explicit null means "clear it".
          */
+        farmUpdateInventory(gameState);
         const beforeFarmingScope = farmingSnapshotScope();
         const farmSnapshot = normalizeFarmingSnapshot(gameState);
         if (farmSnapshot) Object.assign(state.farmingSnapshot, farmSnapshot);
@@ -4157,6 +4159,7 @@
                 );
             }
 
+            farmApplyRuntimeCatalog(message);
             mergeState(
                 message.estado,
                 true
@@ -5470,6 +5473,9 @@
                         creature.huntLevel
                     )
                     : previous.huntLevel,
+            rawLoot: Array.isArray(creature?.loot)
+                ? creature.loot.map(line => ({...line}))
+                : previous.rawLoot ?? null,
             catalogSellValue:
                 Number.isFinite(
                     Number(
@@ -5562,6 +5568,92 @@
         return null;
     }
 
+
+    function rebuildNpcLootCatalog() {
+        // Uses already-loaded raw item/creature assets once per catalog
+        // revision. It reconstructs upstream normalization, not server truth.
+        const shopIds = new Set(state.itemPrices.keys());
+        const special = new Set([70000]); // upstream Bronze Boss Token
+        const priceOf = name => {
+            const item = state.itemsByName.get(String(name || '').toLowerCase());
+            return farmNpcPrice(item, shopIds, special);
+        };
+        state.npcLootBySpecies.clear();
+        if (!state.itemsByName.size) return;
+        for (const [id, meta] of state.speciesCombat) {
+            if (!Array.isArray(meta.rawLoot)) continue;
+            const rebuilt = farmRebalanceLoot({
+                loot:meta.rawLoot, huntLevel:meta.huntLevel,
+                type1:meta.type1
+            }, priceOf);
+            const value = farmLootValue(rebuilt, priceOf);
+            state.npcLootBySpecies.set(id,value);
+        }
+    }
+
+    function farmApplyRuntimeCatalog(message) {
+        const balls = message?.catalogoBolas;
+        const items = message?.itensCompraveis;
+        if (balls !== undefined)
+            state.ballPrices = farmNormalizePrices(balls, 'ball');
+        if (items !== undefined) {
+            state.itemPrices = farmNormalizePrices(items, 'item');
+            if (state.itemsByName.size) rebuildNpcLootCatalog();
+        }
+    }
+
+    function farmUpdateInventory(snapshot) {
+        if (!snapshot || typeof snapshot !== 'object') return;
+        for (const [name,kind] of [['balls','ball'],['items','item']]) {
+            if (!Object.hasOwn(snapshot,name)) continue;
+            for (const key of [...state.inventoryForCosts.keys()])
+                if (key.startsWith(kind+':')) state.inventoryForCosts.delete(key);
+            const source = snapshot[name];
+            const entries = Array.isArray(source) ? source.map(x=>
+                [x?.id??x?.itemId??x?.ballId, x?.qtd??x?.quantity??x?.count])
+                : source && typeof source === 'object' ?
+                    Object.entries(source) : [];
+            for (const [id,quantity] of entries.slice(0,200)) {
+                const n = Number(id), count = farmNum(quantity);
+                if (Number.isInteger(n) && count !== null)
+                    state.inventoryForCosts.set(kind+':'+n,count);
+            }
+        }
+    }
+
+    function farmTrackUse(receipt, at=Date.now()) {
+        if (!receipt || !['bola','cura','revive'].includes(receipt.kind) ||
+            !isHuntHere()) return;
+        const record = performanceRecord(state.currentHuntSlug,true);
+        if (!record) return;
+        record.rateUseWindow = farmAppendUse(record.rateUseWindow,receipt,at);
+    }
+
+    function huntEconomyEstimate(hunt, xp = huntXpEstimate(hunt)) {
+        const killsH = Number.isFinite(xp?.killsH) ? xp.killsH : null;
+        const modelKillGoldH = farmGoldPrediction(hunt,killsH);
+        const loot = farmLootPrediction(hunt,state.npcLootBySpecies,killsH);
+        const current = isHuntHere(hunt?.slug);
+        const record = current ? performanceRecord(hunt?.slug,false) : null;
+        const rates = current ? observedRates(record) : null;
+        const now = Date.now();
+        const measuredStart = rates ? now-rates.windowMs : null;
+        const costs = measuredStart !== null
+            ? farmCostRates(record?.rateUseWindow, measuredStart, now,
+                {balls:state.ballPrices,items:state.itemPrices},
+                state.inventoryForCosts) : null;
+        const summary = farmFinancialSummary(killsH,modelKillGoldH,
+            rates?.killGoldH ?? null,rates?.autoSaleH ?? null,
+            loot.perHour,costs);
+        return {...summary, lootCoverage:loot.coverage,
+            lootSource:loot.source,
+            sampleCount:rates?.samples??0,
+            windowMs:rates?.windowMs??null,
+            useEvidence:costs?.items??[],
+            unknownCosts:costs?.unknown??null,
+            unboosted:!xp?.observed};
+    }
+
     function ensureCombatCatalog() {
         if (
             state.combatCatalogStatus ===
@@ -5624,14 +5716,16 @@
                     '/assets/creatures-audit-overrides.json'
                 ).catch(
                     () => null
-                )
+                ),
+                load('/assets/items.json').catch(() => null)
             ])
                 .then(
                     ([
                         base,
                         novos,
                         outland,
-                        audit
+                        audit,
+                        items
                     ]) => {
                         for (
                             const data of [
@@ -5660,6 +5754,19 @@
                                 override
                             );
                         }
+
+                        state.itemsByName.clear();
+                        state.itemsById.clear();
+                        if (Array.isArray(items?.items)) {
+                            for (const item of items.items) {
+                                const id = Number(item?.id);
+                                if (!Number.isInteger(id) || !item.name) continue;
+                                state.itemsById.set(id, item);
+                                state.itemsByName.set(String(item.name).toLowerCase(), item);
+                            }
+                            state.itemCatalogStatus = 'raw-upstream-catalog';
+                        } else state.itemCatalogStatus = 'unknown';
+                        rebuildNpcLootCatalog();
 
                         state.combatCatalogStatus =
                             'ready';
