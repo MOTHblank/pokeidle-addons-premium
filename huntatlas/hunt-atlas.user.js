@@ -8306,80 +8306,76 @@
         return remember(forecast);
     }
 
-    function rankedUnlockedHunts(
-        speciesResults = null
-    ) {
-        const sourceHunts =
-            speciesResults
-                ? [
-                    ...new Map(
-                        speciesResults
-                            .map(
-                                species => [
-                                    species.hunt.slug,
-                                    species.hunt
-                                ]
-                            )
-                    ).values()
-                ]
-                : state.hunts;
-
-        return sourceHunts
-            .filter(
-                isUnlocked
-            )
-            .map(
-                hunt => ({
-                    hunt,
-                    xp:
-                        huntXpEstimate(
-                            hunt
-                        )
-                })
-            )
-            .sort(
-                (a, b) => {
-                    const av =
-                        Number(
-                            a.xp?.value ||
-                            0
-                        );
-
-                    const bv =
-                        Number(
-                            b.xp?.value ||
-                            0
-                        );
-
-                    if (
-                        av !== bv
-                    ) {
-                        return xpCompareForecasts(a.xp, b.xp);
+    function rankedUnlockedHunts(speciesResults=null) {
+        const metric=HA_RANK_METRICS.includes(state.filters.sort)?
+            state.filters.sort:'xp';
+        const grouped=new Map();
+        if(speciesResults){
+            for(const species of speciesResults){
+                const slug=species.hunt?.slug;
+                if(!slug)continue;
+                if(!grouped.has(slug))grouped.set(slug,[]);
+                grouped.get(slug).push(species);
+            }
+        }
+        const hunts=speciesResults?
+            [...grouped.values()].map(species=>species[0].hunt):state.hunts;
+        const ballId=state.filters.captureBall==='beast'?5:4;
+        const isCapture=['capture','shinyCatch','ballEfficiency'].includes(metric);
+        const objectiveSource='wiki-conditional';
+        const rows=hunts.filter(isUnlocked).map(hunt=>{
+            const xp=huntXpEstimate(hunt);
+            const relevant=grouped.get(hunt.slug)??[];
+            let economy=null,rare=null,capture=null;
+            let target=null;
+            if(['coins','npcLoot','netCoins'].includes(metric))
+                economy=huntEconomyEstimate(hunt,xp);
+            if(metric==='rare')
+                rare=haMetricRare(hunt,state.filters.outlandPreviewTier,
+                    state.playerLevel,xp?.killsH??null,
+                    state.filters.rareSortItem);
+            if(isCapture) {
+                // For search/type/caught filters, rank each eligible hunt by
+                // its best *matching* species. Do not recommend a Pokémon
+                // filtered out of the species results.
+                let best=null,lowest=null;
+                for(const species of relevant){
+                    const model=capturePlanForSpecies(species,
+                        metric==='ballEfficiency'?4:ballId,xp);
+                    if(!model)continue;
+                    const price=captureInfoForBall(4)?.coins;
+                    const value=metric==='capture'?model.catchesH:
+                        metric==='shinyCatch'?model.shinyCaughtH:
+                        Number.isFinite(price)&&model.chance>0?
+                            price/model.chance:null;
+                    if(!Number.isFinite(value))continue;
+                    const pick={...model,coinsPerCapture:
+                        Number.isFinite(price)&&model.chance>0?
+                            price/model.chance:null};
+                    if(metric==='ballEfficiency') {
+                        if(lowest===null||value<lowest){
+                            lowest=value;best=pick;target=species.name;
+                        }
+                    }else if(!best||value>best[metric==='capture'?
+                        'catchesH':'shinyCaughtH']) {
+                        best=pick;target=species.name;
                     }
-
-                    const levelDifference =
-                        Number(
-                            b.hunt.nivel ||
-                            0
-                        ) -
-                        Number(
-                            a.hunt.nivel ||
-                            0
-                        );
-
-                    if (levelDifference) {
-                        return levelDifference;
-                    }
-
-                    return String(
-                        a.hunt.slug || ''
-                    ).localeCompare(
-                        String(
-                            b.hunt.slug || ''
-                        )
-                    );
                 }
-            );
+                capture=best;
+            }
+            const score=haMetricValue(metric,{xp,economy,rare,capture});
+            const source=metric==='xp'||metric==='pokemonXp'?
+                (xp?.observed?'measured':xp?.source??'unknown'):
+                metric==='coins'||metric==='npcLoot'||metric==='netCoins'?
+                    (metric==='coins'?economy?.killSource:
+                        metric==='npcLoot'?economy?.lootSource:
+                        economy?.source)??'unknown':
+                metric==='rare'?rare?.source??'not-eligible':
+                    capture?.source??objectiveSource;
+            return {hunt,xp,score,source,target,rare,capture,
+                economy,metric};
+        });
+        return haRankMetricRows(rows,state.filters.sortDirection,metric);
     }
 
     // ------------------------------------------------------------------
