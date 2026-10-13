@@ -968,6 +968,7 @@
         captureBallRates: new Map(),
         captureRarities: new Map(),
         captureBonusEvidence: {},
+        captureChanceEvidence: {seen:0,min:null,max:null},
         inventoryForCosts: new Map(),
         calibrationEvidence: new Map(),
         hunts: [],
@@ -2819,6 +2820,9 @@
             shinySeen: kind === 'bola' ? event.shiny === true : null,
             shinyCaught: kind === 'capturado'
                 ? event.pokemon?.shiny === true : null,
+            chanceRaw: kind === 'bola' ? farmingFinite(event.chance) : null,
+            successFlag: kind === 'bola' && typeof event.sucesso === 'boolean'
+                ? event.sucesso : null,
             // bola is a server-emitted accepted use, not a click/tick.
             evidence: 'observed-server/event'
         };
@@ -2926,6 +2930,8 @@
                 return false;
             }
             corpse.dead = true;
+            corpse.speciesId = receipt.speciesId !== null
+                ? Number(outlandNormalizeSpeciesId(receipt.speciesId)):null;
             ledger.totals.kills++;
             for (const [field, name] of [
                 ['trainerXp', 'trainerXp'], ['pokemonXp', 'pokemonXp'],
@@ -3775,9 +3781,14 @@
                 const key = String(speciesId);
                 record.speciesKills[key] = (record.speciesKills[key] || 0) + 1;
             }
+            if (state.farmingLedger.slots.has(slot) && speciesId)
+                state.farmingLedger.slots.get(slot).speciesId=Number(speciesId);
             recordTargetHp(record, target);
             state.combatTargets.delete(slot);
         }
+        record.captureWindow = captureAppend(record.captureWindow,
+            receipt,now,state.farmingLedger.slots.get(slot)?.speciesId??
+                receipt.speciesId);
         savePerformance();
 
         if (
@@ -3836,8 +3847,10 @@
                 );
             } else {
                 const receipt = normalizeFarmingEvent(event);
-                if (receipt && acceptFarmingEvent(state.farmingLedger, receipt))
+                if (receipt && acceptFarmingEvent(state.farmingLedger, receipt)) {
                     farmTrackUse(receipt);
+                    captureTrackReceipt(receipt);
+                }
             }
         }
     }
@@ -4513,6 +4526,7 @@
             state.pendingOutlandTier = null;
             state.outlandCatalogTiers = null;
             state.xpBonusState = {};
+            state.captureChanceEvidence = {seen:0,min:null,max:null};
             state.calibrationEvidence.clear();
             state.combatTargets.clear();
             state.lastLeadPokemon = null;
@@ -6026,6 +6040,77 @@
                     state.inventoryForCosts.set(kind+':'+n,count);
             }
         }
+    }
+
+    function captureTrackReceipt(receipt, at=Date.now()) {
+        if(!receipt || !['bola','capturado'].includes(receipt.kind) ||
+            !isHuntHere())return;
+        const record=performanceRecord(state.currentHuntSlug,true);
+        if(!record)return;
+        const species=state.farmingLedger.slots.get(receipt.slot)?.speciesId;
+        record.captureWindow=captureAppend(record.captureWindow,receipt,at,species);
+        if(receipt.kind==='bola' && receipt.chanceRaw!==null){
+            const evidence=state.captureChanceEvidence;
+            evidence.seen++;
+            evidence.min=evidence.min===null?receipt.chanceRaw:
+                Math.min(evidence.min,receipt.chanceRaw);
+            evidence.max=evidence.max===null?receipt.chanceRaw:
+                Math.max(evidence.max,receipt.chanceRaw);
+            // No unit inference: fraction vs percentage and boosted vs
+            // unboosted remain unverified until native capture UI comparison.
+        }
+    }
+
+    function captureObservedForHunt(hunt, now=Date.now()) {
+        if(!hunt||!isHuntHere(hunt.slug))return null;
+        const record=performanceRecord(hunt.slug,false);
+        const rates=observedRates(record,now);
+        if(!rates)return null;
+        return captureObservedWindow(record?.captureWindow,
+            now-rates.windowMs,now);
+    }
+
+    function captureInfoForBall(id) {
+        const standard=CAPTURE_BALLS.find(row=>row.id===id);
+        if(!standard)return null;
+        const runtime=state.captureBallRates.get(id);
+        const catalogPrice=state.ballPrices.get(id);
+        const efficiency=runtime?.efficiency??standard.efficiency;
+        const priceCoins=id===5?null:
+            (runtime?.coins??standard.defaultCoins);
+        return {
+            ...standard,efficiency,
+            coins:priceCoins,diamondPrice:catalogPrice?.diamonds??null,
+            source:runtime?.efficiency?
+                'observed-client-efficiency+wiki-conditional-formula':
+                'wiki-conditional-efficiency',
+            priceSource:runtime?.coins!==null&&runtime?.coins!==undefined?
+                'observed-client':'wiki-reference',
+            stock:state.inventoryForCosts.get('ball:'+id)??null
+        };
+    }
+
+    function capturePlanForHunt(hunt,ballId=4,xp=huntXpEstimate(hunt)) {
+        if(!hunt)return null;
+        const ball=captureInfoForBall(ballId);
+        if(!ball)return null;
+        const observed=captureObservedForHunt(hunt);
+        const fraction=observed&&observed.kills>=6 ?
+            Math.min(1,Math.max(0,observed.throws/observed.kills)):null;
+        const predicted=captureForecast(hunt,state.captureRarities,
+            xp?.killsH??null,ball.efficiency,{
+                mix:observed?.bySpecies??null,
+                acceptedFraction:fraction,
+                coinPrice:ball.coins,
+                diamondPrice:ball.diamondPrice,
+                hypotheticalLure:state.filters.shinyLurePreview
+            });
+        const observedThrowsH=observed?.throwsH??null;
+        const stockHours=observedThrowsH>0 && ball.stock!==null?
+            ball.stock/observedThrowsH:null;
+        return {...predicted,ball,observed,
+            stockHours,rateSource:xp?.observed?'observed-kills':
+                xp?.source??'unknown'};
     }
 
     function farmTrackUse(receipt, at=Date.now()) {
@@ -13078,6 +13163,31 @@
                                 RARE_OUTLAND_DROPS.some(row=>row.id===id)
                                 || id===RARE_EGG_DROP.id)
                         )
+                    };
+                })(),
+                captureEvidence: (() => {
+                    const here=currentHunt();
+                    const ultra=here?capturePlanForHunt(here,4):null;
+                    const beast=here?capturePlanForHunt(here,5):null;
+                    return {
+                        model:'wiki-conditional',
+                        serverFormulaVerified:false,
+                        rawChanceEvidence:{...state.captureChanceEvidence,
+                            unit:'unknown-not-applied'},
+                        observed:ultra?.observed??null,
+                        ultra:ultra?{
+                            chance:ultra.chance,
+                            catchesH:ultra.catchesH,shinySeenH:ultra.shinySeenH,
+                            shinyCaughtH:ultra.shinyCaughtH,
+                            source:ultra.source,
+                            acceptedSource:ultra.acceptedSource
+                        }:null,
+                        beast:beast?{
+                            chance:beast.chance,
+                            catchesH:beast.catchesH,
+                            shinyCaughtH:beast.shinyCaughtH,
+                            source:beast.source
+                        }:null
                     };
                 })(),
                 farmingEvidence: {
