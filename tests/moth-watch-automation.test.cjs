@@ -646,3 +646,118 @@ test('Milestone A: orders remain blocked after uncertain outcome even across lis
     const runner = section('    function runMarketAutomation(', '    function runScan(force)');
     assert.match(runner, /unverifiedOrdersExist\(\)/);
 });
+
+
+test('Milestone B: Pokémon identity requires observed species, form separation, shiny and P', () => {
+    const h = createPokemonValuationHarness();
+    assert.equal(h.pokemonIdentityKey(samplePokemon({shiny:undefined}), 'gold'), null);
+    assert.equal(h.pokemonIdentityKey(samplePokemon({potencia:undefined}), 'gold'), null);
+    assert.equal(h.pokemonIdentityKey(samplePokemon({potencia:5}), 'gold')
+        .includes('|p:5'),true);
+    assert.notEqual(h.pokemonIdentityKey(samplePokemon({formId:'mega'}),'gold'),
+        h.pokemonIdentityKey(samplePokemon({formId:'base'}),'gold'));
+    assert.notEqual(h.pokemonIdentityKey(samplePokemon({formId:undefined}),'gold'),
+        h.pokemonIdentityKey(samplePokemon({formId:'base'}),'gold'));
+    assert.notEqual(h.pokemonIdentityKey(samplePokemon(),'orb'),
+        h.pokemonIdentityKey(samplePokemon(),'gold'));
+    assert.equal(h.pokemonIdentityKey(samplePokemon({shiny:true}),'gold'),null);
+    assert.equal(h.pokemonFacts(samplePokemon({nota:undefined})).score,null);
+    assert.equal(h.pokemonFacts(samplePokemon({ivs:[20,20,20,20,20,20]})).ivs,null);
+    assert.ok(h.pokemonFacts(samplePokemon({potencia:undefined})).missing.includes('potency'));
+});
+
+test('Milestone B: undated or old sales cannot be sold as recent bargains', () => {
+    const h=createPokemonValuationHarness();
+    const undated=new Map();
+    [100,120,140].forEach(bruto=>h.addPokemonHistorySample({
+        tipo:'pokemon',moeda:'gold',bruto,ficha:samplePokemon()
+    },undated));
+    h.finalizePokemonHistory(undated);
+    const ref=h.pokemonReferenceFor(samplePokemon(),'gold');
+    assert.equal(ref.value,120);
+    assert.equal(ref.confidence,'low');
+    assert.equal(ref.actionable,false);
+    assert.equal(ref.ageDays,null);
+    assert.equal(ref.dateCoverage,0);
+    assert.ok(ref.limitations.includes('sale dates missing or stale'));
+
+    const expired=new Map();
+    h.addPokemonHistorySample({tipo:'pokemon',moeda:'gold',bruto:100,
+        vendidoEm:Date.now()-95*86400000,ficha:samplePokemon()},expired);
+    assert.equal(expired.size,0,'explicitly old sale omitted from current window');
+
+    const recent=new Map();
+    [100,120,140].forEach(bruto=>h.addPokemonHistorySample({tipo:'pokemon',
+        moeda:'gold',bruto,vendidoEm:Date.now()-86400000,
+        ficha:samplePokemon()},recent));
+    h.finalizePokemonHistory(recent);
+    assert.equal(h.pokemonReferenceFor(samplePokemon(),'gold').confidence,'high');
+    assert.equal(h.pokemonReferenceFor(samplePokemon(),'gold').actionable,true);
+});
+
+test('Milestone B: broad comps, missing extras and dispersion downgrade confidence', () => {
+    const h=createPokemonValuationHarness(), sales=new Map();
+    [100,120,10000].forEach(bruto=>h.addPokemonHistorySample({
+        tipo:'pokemon',moeda:'gold',bruto,vendidoEm:Date.now()-86400000,
+        ficha:samplePokemon()
+    },sales));
+    h.finalizePokemonHistory(sales);
+    const ref=h.pokemonReferenceFor(samplePokemon(),'gold');
+    assert.equal(ref.actionable,false);
+    assert.ok(ref.p90 > ref.p10);
+    assert.ok(ref.dispersion > 1.75);
+    assert.equal(ref.attemptedStages[0].matches,0,'no imputed refinement vector');
+    assert.ok(ref.samples >= 3);
+    assert.equal(h.pokemonReferenceFor(samplePokemon({nota:4.05}),'gold').actionable,false);
+    assert.equal(h.pokemonReferenceFor(samplePokemon({legendary:undefined}),'gold').actionable,false);
+    assert.equal(h.pokemonReferenceFor(samplePokemon({formId:undefined}),'gold'),null);
+    assert.equal(h.pokemonReferenceFor(samplePokemon({potencia:5}),'gold'),null);
+});
+
+test('Milestone B: combat annotations require equipped moves or observed bases', () => {
+    const h=createPokemonValuationHarness();
+    const physical=h.pokemonCombatRole({equippedMoves:[
+        {categoria:'PHYSICAL'},{categoria:'PHYSICAL'}]});
+    assert.equal(physical.role,'physical');
+    assert.equal(physical.confidence,'observed');
+    assert.deepEqual(physical.focus,['atk','speed']);
+    const mixed=h.pokemonCombatRole({movimentosEquipados:[
+        {categoria:'PHYSICAL'},{categoria:'SPECIAL'}]});
+    assert.equal(mixed.role,'mixed');
+    const unverified=h.pokemonCombatRole({moves:[{name:'Thunder'}]});
+    assert.equal(unverified.role,'unknown');
+    const inferred=h.pokemonCombatRole({baseAtk:100,baseSpAtk:55});
+    assert.equal(inferred.role,'physical');
+    assert.equal(inferred.confidence,'indicative');
+    assert.equal(h.pokemonCombatRole({equippedMoves:[{name:'move only'}]}).role,'unknown');
+});
+
+test('Milestone B: price inspection is read-only and cannot authorize market orders', () => {
+    const inspect=section('    function pokemonRulePreview(', '    function renderCandidate(');
+    assert.doesNotMatch(inspect,/market\.comprar|send\(|tryBuy\(|saveConfig\(/);
+    assert.match(inspect,/Insufficient comparable sales/);
+    assert.match(inspect,/No matching configured Pokémon rule/);
+    assert.match(inspect,/No purchase authorization/);
+    assert.match(script,/data-moth-view="pricing"/);
+    const state={orderJournal:{},pendingBuy:null};
+    const config={enabled:true,fixedRulesEnabled:true,purchasesPaused:false,pokemonBuyRules:[
+        {id:'a',kind:'p5',buyMax:100,currency:'gold',buyEnabled:true},
+        {id:'b',kind:'p5',buyMax:200,currency:'gold',buyEnabled:true}
+    ]};
+    const src=section('    function pokemonRulePreview(', '    function pokemonEvidenceCard(');
+    const preview=new Function('state','config','sanitizePokemonBuyRules','pokemonRuleMatches',
+        'isOwnListing','retentionUntil','serverNow','unverifiedOrdersExist',
+        'remainingBudget','balanceFor','reserveFor',
+        src+'\nreturn pokemonRulePreview;')(
+        state,config,items=>items,
+        (rule,ficha,currency)=>rule.kind==='p5'&&ficha?.potencia===5&&rule.currency===currency,
+        ()=>false,()=>0,Date.now,()=>false,()=>({spend:1000}),()=>1000,()=>0
+    );
+    const listing={id:55,preco:150,qtd:1,ficha:{potencia:5,shiny:false}};
+    assert.deepEqual(preview(listing,'gold').map(r=>r.status),
+        ['Above price ceiling','Matches absolute-price rule']);
+    config.fixedRulesEnabled=false;
+    assert.ok(preview(listing,'gold').every(r=>r.status==='Rule paused'));
+    assert.equal(config.pokemonBuyRules[0].buyEnabled,true,
+        'inspection must not mutate authorization');
+});
