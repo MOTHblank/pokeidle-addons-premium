@@ -4005,6 +4005,8 @@
         if (!delta || typeof delta!=='object') return next;
         const pct=value=>typeof value==='number'&&Number.isFinite(value)&&
             value>=0&&value<=1000?value:null;
+        const until=value=>typeof value==='number'&&Number.isFinite(value)&&
+            value>=1400000000000&&value<=4100000000000?value:null;
         if (Object.hasOwn(delta,'twitch')) {
             const t=delta.twitch;
             next.twitch=t&&typeof t==='object'?{
@@ -4022,11 +4024,31 @@
         }
         if (Object.hasOwn(delta,'guildBonusPct'))
             next.guildBonusPct=pct(delta.guildBonusPct);
+        if (Object.hasOwn(delta,'guild'))
+            next.guild=delta.guild&&typeof delta.guild==='object'?{
+                boostUntil:until(delta.guild.boostAte)
+            }:null;
+        if (Object.hasOwn(delta,'tiposBoost')) {
+            const rows=Array.isArray(delta.tiposBoost)?delta.tiposBoost:[];
+            const catalog={};
+            for(const b of rows.slice(0,60)) {
+                if(!['xp','pokexp'].includes(b?.chave))continue;
+                const mult=b.mult;
+                if(typeof mult==='number'&&Number.isFinite(mult)&&
+                    mult>=1&&mult<=100)catalog[b.chave]=mult;
+            }
+            next.tiposBoost=catalog;
+        }
         if (Object.hasOwn(delta,'loja')) {
             const shop=delta.loja;
             const boosts=shop?.boosts;
             const catchup=shop?.atrasados;
             next.loja=shop&&typeof shop==='object'?{
+                vipUntil:until(shop.vipAte),
+                boosts:boosts&&typeof boosts==='object'&&!Array.isArray(boosts)
+                    ?Object.fromEntries(Object.entries(boosts).slice(0,60)
+                        .filter(([key])=>/^[a-zA-Z]{1,20}$/.test(key))
+                        .map(([key,value])=>[key,until(value)])):{},
                 boostKeys:boosts&&typeof boosts==='object'&&!Array.isArray(boosts)
                     ?Math.min(50,Object.keys(boosts).length):0,
                 catchup:catchup&&typeof catchup==='object'?{
