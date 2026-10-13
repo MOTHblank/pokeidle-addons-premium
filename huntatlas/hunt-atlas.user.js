@@ -905,6 +905,9 @@
         farmingSessionToken: Math.random().toString(36).slice(2),
         farmingLedger: makeFarmingLedger(),
         farmingSnapshot: {},
+        outlandTierSeen: false,
+        pendingOutlandTier: null,
+        outlandCatalogTiers: null,
         xpBonusState: {},
         itemCatalogStatus: 'idle',
         itemsByName: new Map(),
@@ -1037,6 +1040,7 @@
             availability: 'unlocked',
             captured: 'all',
             sort: 'xp',
+            outlandPreviewTier: 1,
             sortDirection: 'desc'
         };
     }
@@ -1057,6 +1061,9 @@
                 ...defaults,
                 ...saved
             };
+            const preview=Number(next.outlandPreviewTier);
+            next.outlandPreviewTier=Number.isInteger(preview)&&preview>=1&&
+                preview<=8?preview:1;
 
             if (typeof next.weakness === 'string') {
                 next.weakness =
@@ -2752,9 +2759,9 @@
 
     function normalizeFarmingSnapshot(snapshot) {
         if (!snapshot || typeof snapshot !== 'object') return null;
-        const tierRaw = snapshot.tierOutland ?? snapshot.outlandTier;
+        const tierRaw = snapshot.tierOutland ?? snapshot.outlandTier ?? snapshot.outland_tier;
         const tierPresent = Object.hasOwn(snapshot, 'tierOutland') ||
-            Object.hasOwn(snapshot, 'outlandTier');
+            Object.hasOwn(snapshot, 'outlandTier') || Object.hasOwn(snapshot, 'outland_tier');
         const revision = snapshot.catalogRevision ?? snapshot.catalogoVersao;
         const boosts = snapshot.bonuses;
         const boostSignature = boosts && typeof boosts === 'object'
@@ -2975,6 +2982,91 @@
     // HA MILESTONE A PURE END.
 
 
+
+
+    // HA MILESTONE D PURE BEGIN — base probabilities; no inferred boosts.
+    const RARE_OUTLAND_DROPS = Object.freeze([
+        {id:70000,key:'token',name:'Bronze Boss Token',base:.0005,craft:1,
+            source:'wiki+upstream-shared'},
+        {id:70011,key:'key',name:'Key Fragment',base:.000005,craft:10,
+            source:'wiki+upstream-shared'},
+        {id:70012,key:'stone',name:'Shiny Stone Fragment',base:.000005,
+            craft:10,source:'wiki+upstream-shared'},
+        {id:70013,key:'bicycle',name:'Bicycle Fragment',base:.000005,
+            craft:10,source:'wiki-reported;server-hook-unverified'}
+    ]);
+    const RARE_EGG_DROP = Object.freeze({
+        id:70017,key:'egg',name:'Shiny Egg Fragment',craft:10,
+        source:'upstream-shared-frozen-ladder'});
+    function outlandNativeTier(tier,level) {
+        const requested=Number(tier);
+        const choice=Number.isInteger(requested) && requested>=1 &&
+            requested<=8 ? requested : 1;
+        for(let i=choice;i>=1;i--)
+            if(farmingTier(i,level))return i;
+        for(let i=8;i>=1;i--)
+            if(farmingTier(i,level))return i;
+        // The upstream default is 1 even before trainer level 150, but the
+        // map remains LOCKED. Never advertise tier 1 as unlocked below 150.
+        return 1;
+    }
+    function outlandNormalizeSpeciesId(value) {
+        const n=Number(value);
+        return Number.isInteger(n) && n>=10501 && n<10548 ?
+            n-8500 : value;
+    }
+    function outlandTierSnapshot(source) {
+        if(!source || typeof source!=='object') return null;
+        const keys=['tierOutland','outlandTier','outland_tier'];
+        for(const key of keys)if(Object.hasOwn(source,key)){
+            const n=Number(source[key]);
+            return Number.isInteger(n)&&n>=1&&n<=8?n:null;
+        }
+        return null;
+    }
+    function rareForHunt(hunt,tier,trainerLevel,killsH) {
+        if(!hunt || !Number.isFinite(killsH)||killsH<0)
+            return {drops:[],reason:'unknown-kill-rate'};
+        const area=String(hunt.area||'').toLowerCase();
+        const isOutland=area==='outland';
+        if(isOutland && !farmingTier(tier,trainerLevel))
+            return {drops:[],reason:'locked-tier'};
+        const available=isOutland?
+            RARE_OUTLAND_DROPS.map(row=>({...row,
+                probability:Math.min(1,row.base*farmingTier(tier,trainerLevel).rareMultiplier)})):
+            [RARE_EGG_DROP].map(row=>({...row,
+                probability:farmingShinyEggChance(hunt.nivel,false)}));
+        const drops=available.filter(row=>row.probability>0)
+            .map(row=>rareHorizon(row,killsH));
+        return {drops,reason:!drops.length?'ineligible-hunt':null,
+            source:'unboosted-wiki/upstream-shared',tier:isOutland?tier:null,
+            eggIncubationHours:isOutland?null:168};
+    }
+    function rareHorizon(item,killsH) {
+        const p=item.probability,unitsH=killsH*p;
+        return {...item,unitsH,
+            meanKills:p>0?1/p:null,
+            meanHours:unitsH>0?1/unitsH:null,
+            craftHours:unitsH>0?item.craft/unitsH:null,
+            chance1h:farmingChanceAtLeastOne(p,killsH),
+            chance24h:farmingChanceAtLeastOne(p,24*killsH),
+            assumption:'independent-stationary-rolls-unboosted'};
+    }
+    function rareMarketEvidence(item,sale) {
+        // Only age/samples/currency-verifiable COMPLETED trades may supply
+        // an OPTIONAL reference. Ordinary asking prices are not proceeds.
+        if(!item || !sale || sale.source!=='completed-sale' ||
+            !['gold','orb'].includes(sale.currency) ||
+            !(Number.isFinite(sale.price)&&sale.price>0) ||
+            !(Number.isInteger(sale.samples)&&sale.samples>=3) ||
+            !(Number.isFinite(sale.sampledAt)&&sale.sampledAt>0))
+            return null;
+        return {units:item.unitsH,currency:sale.currency,
+            expectedMarketValueH:item.unitsH*sale.price,
+            referenceSamples:sale.samples,sampledAt:sale.sampledAt,
+            source:'historical-completed-sale-not-realized'};
+    }
+    // HA MILESTONE D PURE END.
 
     // HA MILESTONE C PURE BEGIN: economy amounts in Coins, not XP or Gems.
     const FARM_SEEDS={NORMAL:'Luck Medallion',FIRE:'Magma Foot',
@@ -3764,6 +3856,14 @@
         const beforeFarmingScope = farmingSnapshotScope();
         const farmSnapshot = normalizeFarmingSnapshot(gameState);
         if (farmSnapshot) Object.assign(state.farmingSnapshot, farmSnapshot);
+        if (Object.hasOwn(gameState,'tierOutland') ||
+            Object.hasOwn(gameState,'outlandTier') ||
+            Object.hasOwn(gameState,'outland_tier')) {
+            state.outlandTierSeen=true;
+            if(state.pendingOutlandTier &&
+                state.farmingSnapshot.outlandTier === state.pendingOutlandTier.tier)
+                state.pendingOutlandTier=null;
+        }
         const incomingXpBonuses = xpBonusSnapshot(gameState);
         if (incomingXpBonuses) Object.assign(state.xpBonusState, incomingXpBonuses);
         if (beforeFarmingScope !== farmingSnapshotScope()) {
@@ -4170,6 +4270,9 @@
             state.rateGeneration++;
             state.farmingLedger = makeFarmingLedger();
             state.farmingSnapshot = {};
+            state.outlandTierSeen = false;
+            state.pendingOutlandTier = null;
+            state.outlandCatalogTiers = null;
             state.xpBonusState = {};
             state.calibrationEvidence.clear();
             state.combatTargets.clear();
@@ -4214,6 +4317,15 @@
                 );
             }
 
+            const publishedTiers=message.catalogoOutlandTiers ??
+                message.outlandTiers;
+            if(Array.isArray(publishedTiers) && publishedTiers.length===8 &&
+                publishedTiers.every((t,i)=>Number(t?.tier)===i+1 &&
+                    Number(t?.nivel)===FARM_OUTLAND_TIERS[i][0] &&
+                    Number(t?.mult)===FARM_OUTLAND_TIERS[i][1]))
+                state.outlandCatalogTiers=publishedTiers.map(t=>({
+                    tier:Number(t.tier),nivel:Number(t.nivel),mult:Number(t.mult)
+                }));
             farmApplyRuntimeCatalog(message);
             mergeState(
                 message.estado,
