@@ -1,3 +1,5 @@
+> **Atualização v1.9.14:** não existe mais ranking por Moedas/captura; o Top 5 é exibido sem botão de expansão. As observações sobre eficiência abaixo descrevem a interface histórica da v1.9.12.
+
 # HuntAtlas v1.9.12 — rare event rate and visual UI audit
 
 Reviewed 2026-10-13. Code: `huntatlas/hunt-atlas.user.js` premium branch. Source inspection and deterministic helper tests only; live game and actual rendered Firefox layouts remain owner-led.
