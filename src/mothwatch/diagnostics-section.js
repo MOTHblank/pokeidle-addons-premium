@@ -64,7 +64,7 @@
         return {
             format: 'mothwatch-redacted-v1',
             generatedAt: new Date().toISOString(),
-            addonVersion: '0.6.0',
+            addonVersion: '0.7.0',
             enabled: !!stats.enabled,
             sessionSeconds: Math.max(0, Math.floor((Date.now() - stats.since) / 1000)),
             inboundPackets: stats.count,
