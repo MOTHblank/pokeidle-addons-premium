@@ -1124,7 +1124,7 @@ test('MothWatch v0.6.1: source sections match the single distributable userscrip
         const moduleSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'mothwatch', name), 'utf8').trimEnd();
         assert.equal(script.slice(a + begin.length, b), moduleSource, 'generated parity: ' + id);
     }
-    assert.match(script, /@version\s+0\.6\.1/);
+    assert.match(script, /@version\s+0\.7\.0/);
     assert.doesNotMatch(script, /\bimport\s*\(|\brequire\s*\(/,
         'one Violentmonkey userscript must not require runtime module loading');
 });
@@ -1336,4 +1336,21 @@ test('Snatch: stale pre-release quotes fail closed and server backoff is observe
     h.api.snatchTick();
     assert.equal(h.purchaseCalls.length,0,'no speculative purchase from expired quote');
     assert.ok(Math.abs(h.state.snatchObserved.get(h.key).retryAt - (Date.now()+1000)) < 20);
+});
+
+
+test('Snatch: first 30 explicitly refused orders retry in 400ms, then taper gracefully', () => {
+    const source=fs.readFileSync(path.join(__dirname,'..','src','mothwatch',
+        'snatch-section.js'),'utf8');
+    const body=section('    function snatchRetryDelay(', '    function snatchReleaseQuote(');
+    const retry=new Function('SNATCH_RETRY_MS',body+'\nreturn snatchRetryDelay;')(400);
+    assert.equal(retry(0),400);
+    assert.equal(retry(29),400);
+    assert.equal(retry(30),1500);
+    assert.equal(retry(89),1500);
+    assert.equal(retry(90),5000);
+    assert.equal(retry(250),5000);
+    assert.match(source,/snatchRetryDelay\(entry\.attempts\)/);
+    assert.doesNotMatch(source,/SNATCH_ATTEMPT_LIMIT/);
+    assert.match(source,/releaseAt-now < 3200/);
 });
