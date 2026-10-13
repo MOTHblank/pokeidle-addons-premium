@@ -214,7 +214,6 @@
                 quantity:'Quantity',feeUnit:'Unit price',feeQuantity:'Sale quantity',holdingDays:'Holding days'
             }[key] || key)) + '</span><input type="number" data-moth-economy-field="' + key + '" min="' + min +
             '" step="1" value="' + escapeHtml(value) + '"></label>';
-        const live = readEconomyTelemetry();
         const ledgerRow = code => {
             const row = orders[code];
             return '<p>' + escapeHtml(tr(code === 'orb' ? 'Gems' : 'Coins')) +
@@ -222,61 +221,36 @@
                 ' · ' + num(row.uncertain) + ' ' +
                 escapeHtml(tr('unverified reserved exposure')) + '</p>';
         };
-        const entries = holdings.entries.map(row =>
-            '<div class="moth-mw-economy-entry"><b>' + escapeHtml(catalogName(row.itemId)) + '</b> ' +
-            '×' + num(row.quantity) + ' · ' + escapeHtml(tr(row.currency === 'orb' ? 'Gems' : 'Coins')) +
-            ' · ' + (row.estimated == null ? escapeHtml(tr('Unknown value (insufficient recent sales)'))
-                : num(row.estimated) + ' ' + escapeHtml(tr('estimated asking-independent gross'))) +
-            ' · ' + escapeHtml(tr('Catalog: {category}', {
-                category: row.provenance.category || tr('unknown')
-            })) + ' · ' + escapeHtml(tr('RMT sale eligibility: {status}', {
-                status: tr(row.provenance.marketEligible === true ? 'verified from catalog' :
-                    row.provenance.marketEligible === false ? 'excluded by catalog' : 'unverified')
-            })) + ' · ' + escapeHtml(tr('NPC resale: {status}', {
-                status: tr(row.provenance.npcSellable === true ? 'verified from catalog' :
-                    row.provenance.npcSellable === false ? 'excluded by catalog' : 'unverified')
-            })) + '<button class="moth-mw-btn" type="button" data-moth-holding-remove="' +
-            row.itemId + '">' + escapeHtml(tr('Remove')) + '</button></div>'
-        ).join('');
-        const options = [...state.catalog.keys()].filter(id => Number.isSafeInteger(id) && id > 0)
-            .slice(0, 1500).sort((a,b) => catalogName(a).localeCompare(catalogName(b), currentLocale()))
-            .map(id => '<option value="' + id + '"' + (id === input.itemId ? ' selected' : '') +
-                '>' + escapeHtml(catalogName(id)) + ' (#' + id + ')</option>').join('');
-        const telemetry = !live ? '<p>' + escapeHtml(tr('No fresh versioned session telemetry connected. Farming profit remains unknown.')) + '</p>' :
-            '<p>' + escapeHtml(tr('Observed {minutes} min session window · {age} min old', {
-                minutes: num(live.minutes), age: num(live.ageMinutes)
-            })) + '</p><p>' + escapeHtml(tr('Hunt Coins: {amount}', {
-                amount: live.huntCoins == null ? '?' : num(live.huntCoins)
-            })) + ' · ' + escapeHtml(tr('NPC auto-sales: {amount}', {
-                amount: live.npcSaleCoins == null ? '?' : num(live.npcSaleCoins)
-            })) + '</p><p>' + escapeHtml(tr('Consumables (balls/potions/revives): {amounts}', {
-                amounts: live.costs.map(v => v == null ? '?' : num(v)).join(' / ')
-            })) + ' · ' + escapeHtml(tr('Observed net: {amount} Coins', {
-                amount: live.netCoins == null ? '?' : num(live.netCoins)
-            })) + '</p><p>' + escapeHtml(tr('Observed rare drops: {count} units · Modeled EV: {rate} units/h', {
-                count: live.observedRareDrops == null ? '?' : num(live.observedRareDrops),
-                rate: live.rareExpectedPerHour == null ? '?' : live.rareExpectedPerHour.toFixed(2)
-            })) + '</p>';
+        // Catalog membership and seller authorization are separate facts.
+        // Inspect special categories without inventing eligibility from names.
+        const catalogRows = Array.from(state.catalog.keys())
+            .filter(id => Number.isSafeInteger(id) && id > 0)
+            .sort((a,b) => a-b).slice(0, 1500);
+        const eligibilityCount = { yes: 0, no: 0, unknown: 0 };
+        const categoryCount = new Map();
+        for (const id of catalogRows) {
+            const p = itemProvenance(id);
+            eligibilityCount[p.marketEligible === true ? 'yes' : p.marketEligible === false ? 'no' : 'unknown']++;
+            const category = p.category || tr('unknown');
+            categoryCount.set(category, (categoryCount.get(category) || 0) + 1);
+        }
+        const eligibilityHtml = '<section class="moth-mw-economy-card"><h5>' +
+            escapeHtml(tr('Item eligibility evidence')) + '</h5><p>' +
+            escapeHtml(tr('Catalog presence does not authorize resale. Only an explicit server eligibility flag verifies it.')) +
+            '</p><p>' + escapeHtml(tr('Explicitly eligible')) + ': ' + num(eligibilityCount.yes) +
+            ' · ' + escapeHtml(tr('Explicitly excluded')) + ': ' + num(eligibilityCount.no) +
+            ' · ' + escapeHtml(tr('Unverified')) + ': ' + num(eligibilityCount.unknown) +
+            '</p><p>' + Array.from(categoryCount).sort((a,b) => b[1]-a[1]).slice(0,12)
+                .map(([name,count]) => escapeHtml(name) + ': ' + num(count)).join(' · ') +
+            '</p><p>' + escapeHtml(tr('Diamond provenance: first-party purchases require server confirmation; reward and secondary-market Diamonds are not verified for resale.')) +
+            '</p></section>';
         const html = (state.economyNotice ? '<p class="moth-mw-rule-notice">' +
             escapeHtml(state.economyNotice) + '</p>' : '') +
             '<section class="moth-mw-economy-card"><h5>' +
             escapeHtml(tr('Recorded purchase exposure (not sale revenue)')) +
             '</h5>' + ledgerRow('gold') + ledgerRow('orb') +
             '<p>' + escapeHtml(tr('Confirmed means an authoritative buy acknowledgement; booked spend is the quoted maximum, not verified settlement.')) + '</p></section>' +
-            '<section class="moth-mw-economy-card"><h5>' + escapeHtml(tr('User-entered holdings (optional)')) +
-            '</h5><p>' + escapeHtml(tr('Manual quantities only. No inventory sync or automatic sale. Choose ONE valuation currency per item.')) +
-            '</p><div class="moth-mw-economy-fields"><select id="moth-mw-holding-item">' +
-            '<option value="0">' + escapeHtml(tr('Choose an item in the game market catalog')) + '</option>' +
-            options + '</select>' + field('quantity',input.quantity,1) +
-            '<select id="moth-mw-holding-currency">' + currencyChoice(input.holdingCurrency) + '</select>' +
-            '<button type="button" class="moth-mw-btn" id="moth-mw-holding-save">' + escapeHtml(tr('Record quantity')) +
-            '</button></div>' + (entries || '<p>' + escapeHtml(tr('No holdings entered.')) + '</p>') +
-            '<p><b>' + num(holdings.gold) + '</b> ' + escapeHtml(tr('Coins')) + ' · <b>' +
-            num(holdings.orb) + '</b> ' + escapeHtml(tr('Gems')) + ' · ' +
-            escapeHtml(tr('{count} unknown-value assets', {count:holdings.unknown})) + '</p>' +
-            '<p>' + escapeHtml(tr('Diamond resale is not inferred: purchased-from-player and reward Diamonds are not equivalent to server-verified eligible first-party Diamonds.')) + '</p>' +
-            '<p>' + escapeHtml(tr('Separate hypothetical 7-day sold-price averages; NOT wallet balance, proceeds, NPC value or instant liquidity. Only live references with 3+ sold units and under 24h age qualify.')) +
-            '</p></section>' +
+            eligibilityHtml +
             '<section class="moth-mw-economy-card"><h5>' + escapeHtml(tr('Seller fee simulator (read-only)')) +
             '</h5><div class="moth-mw-economy-fields"><select id="moth-mw-fee-kind">' +
             ['item','pokemon','diamond'].map(kind => '<option value="' + kind + '"' +
@@ -296,9 +270,6 @@
                 cost: num(fee.holdingCoins)
             }))) : escapeHtml(tr('Select a valid positive integer sale total'))) + '</p>' +
             '<p>' + escapeHtml(tr('Fees are deducted from seller proceeds, never added to the buyer price. Holding is paid up front in Coins. No sale is simulated or executed.')) +
-            '</p></section>' +
-            '<section class="moth-mw-economy-card"><h5>' + escapeHtml(tr('Farming context (optional telemetry)')) +
-            '</h5>' + telemetry + '<p>' + escapeHtml(tr('Observed and modeled quantities are separate; no rare-drop EV, inventory value or NPC auto-sale is silently added to realized profit.')) +
             '</p></section>';
         state.economyUiCache = { stamp, at: Date.now(), html };
         return html;
