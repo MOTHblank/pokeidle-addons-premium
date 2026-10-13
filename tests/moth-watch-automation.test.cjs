@@ -275,7 +275,7 @@ test('Rule lookup gets a chance to send before general background requests', () 
 function createPokemonValuationHarness() {
     const state = { pokemonReference: { version: 3, capturedAt: 0, values: {} } };
     const config = { minPokemonSamples: 3 };
-    const src = section('    function pokemonIdentityKey(', '    function requestHistoryPage()');
+    const src = section('    function pokemonForm(', '    function requestHistoryPage()');
     const api = new Function('state', 'config', 'speciesIdOf', 'levelBand',
         'pokemonCurrencyAllowed', 'savePokemonReference', 'addLog', 'queueRender',
         'POKEMON_SALE_WINDOW_MS', 'POKEMON_HISTORY_FRESH_MS',
