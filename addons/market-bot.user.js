@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.3.0
+// @version      0.3.1
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -15,7 +15,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.3.0');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.3.1');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -25,6 +25,11 @@
     const page = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
     const CONFIG_KEY = 'moth-pokeidle-market-bot-config-v1';
+    const ORDER_JOURNAL_KEY = 'moth-pokeidle-order-journal-v1';
+    const ORDER_SESSION_KEY = 'moth-pokeidle-order-session-v1';
+    const QUOTE_MAX_AGE_MS = 30000;
+    const MAX_DETAIL_QUEUE = 24;
+    const MAX_DETAIL_CACHE = 96;
     const BASELINE_KEY = 'moth-pokeidle-market-item-baseline-v1';
     const POKEMON_REFERENCE_KEY = 'moth-pokeidle-market-pokemon-reference-v2';
     const BACKGROUND_MIN_GAP_MS = 3000;
@@ -61,6 +66,13 @@
         scanPokemon: true,
         scanDiamonds: true,
         fixedRulesEnabled: false,
+        purchasesPaused: false,
+        maxCoinsPerSession: 0,
+        maxGemsPerSession: 0,
+        maxCoinsPerDay: 0,
+        maxGemsPerDay: 0,
+        maxPurchasesPerSession: 0,
+        maxQuantityPerSession: 0,
         fixedItemRules: [],
         anyItemRules: [],
         pokemonBuyRules: [],
@@ -111,6 +123,9 @@
         itemOfferDetails: new Map(),
         sellRecommendationKey: null,
         pendingBuy: null,
+        lastPurchaseOutcome: 'idle',
+        marketReply: null,
+        orderJournal: null,
         automationLastRunAt: 0,
         itemSummaryAt: 0,
         automationNotice: null,
@@ -152,6 +167,7 @@
     };
 
     let config = loadConfig();
+    state.orderJournal = loadOrderJournal();
 
     function q(selector, root) {
         return (root || document).querySelector(selector);
@@ -505,6 +521,19 @@
     }
 
 
+    function sanitizeRuleCaps(rule) {
+        const number = key => {
+            const n = Number(rule?.[key]);
+            return Number.isSafeInteger(n) && n > 0 ? n : 0;
+        };
+        return {
+            maxSpendSession: number('maxSpendSession'),
+            maxSpendDay: number('maxSpendDay'),
+            maxPurchasesSession: number('maxPurchasesSession'),
+            maxQuantitySession: number('maxQuantitySession')
+        };
+    }
+
     function sanitizeFixedItemRules(value) {
         if (!Array.isArray(value)) return [];
         return value.map((rule, index) => {
@@ -516,6 +545,7 @@
                 currency: rule?.currency === 'orb' ? 'orb' : 'gold',
                 buyEnabled: rule?.buyEnabled !== false && Number(rule?.buyMax) > 0,
                 buyMax: Math.max(0, Math.floor(Number(rule?.buyMax) || 0)),
+                ...sanitizeRuleCaps(rule),
             };
         }).filter(Boolean);
     }
@@ -528,7 +558,7 @@
             if (!Number.isSafeInteger(buyMax) || buyMax <= 0) return null;
             return { id: String(rule?.id || 'any-item-' + index),
                 currency: rule?.currency === 'orb' ? 'orb' : 'gold',
-                buyMax, buyEnabled: rule?.buyEnabled === true };
+                buyMax, buyEnabled: rule?.buyEnabled === true, ...sanitizeRuleCaps(rule) };
         }).filter(Boolean);
     }
 
@@ -541,7 +571,7 @@
             if (!Number.isSafeInteger(buyMax) || buyMax <= 0 || !kind ||
                 (kind === 'shiny' && currency !== 'orb')) return null;
             return { id: String(rule?.id || 'pokemon-' + index), kind, currency,
-                buyMax, buyEnabled: rule?.buyEnabled === true };
+                buyMax, buyEnabled: rule?.buyEnabled === true, ...sanitizeRuleCaps(rule) };
         }).filter(Boolean);
     }
 
@@ -559,6 +589,182 @@
         return config.enabled && config.fixedRulesEnabled &&
             (sanitizeFixedItemRules(config.fixedItemRules).some(rule => rule.buyEnabled && rule.buyMax > 0) ||
                 activeAnyItemRules().length > 0 || activePokemonRules().length > 0);
+    }
+
+
+    // Account-profile-local journal; unknown orders are retained after reload.
+    // Never infer success from a send(), an inventory delta, or a timeout.
+    function orderSessionId() {
+        try {
+            let id = sessionStorage.getItem(ORDER_SESSION_KEY);
+            if (!id) {
+                id = String(Date.now()) + '-' + Math.random().toString(36).slice(2);
+                sessionStorage.setItem(ORDER_SESSION_KEY, id);
+            }
+            return id;
+        } catch { return null; }
+    }
+
+    function loadOrderJournal() {
+        let rows = [];
+        try {
+            const data = JSON.parse(localStorage.getItem(ORDER_JOURNAL_KEY) || 'null');
+            if (data?.version === 1 && Array.isArray(data.orders)) rows = data.orders;
+        } catch {}
+        const now = Date.now();
+        const orders = rows.filter(o =>
+            o && Number.isSafeInteger(o.listingId) && o.listingId > 0 &&
+            ['gold', 'orb'].includes(o.currency) &&
+            Number.isSafeInteger(o.sentAt) && o.sentAt > 0 && o.sentAt <= now + 60000 &&
+            Number.isSafeInteger(o.qty) && o.qty > 0 &&
+            Number.isSafeInteger(o.spend) && o.spend > 0 &&
+            ['prepared', 'submitted', 'confirmed', 'refused', 'unknown'].includes(o.status) &&
+            (o.status !== 'refused' && o.status !== 'confirmed' || now - o.sentAt < 3 * 86400000)
+        ).map(o => ({
+            listingId: o.listingId, currency: o.currency, sentAt: o.sentAt,
+            qty: o.qty, spend: o.spend, ruleId: String(o.ruleId || ''),
+            kind: String(o.kind || ''), sessionId: String(o.sessionId || ''),
+            day: String(o.day || ''),
+            status: ['prepared', 'submitted'].includes(o.status) ? 'unknown' : o.status
+        })).slice(-2500);
+        return { version: 1, sessionId: orderSessionId(), orders };
+    }
+
+    function saveOrderJournal() {
+        if (!state.orderJournal?.sessionId) return false;
+        try {
+            localStorage.setItem(ORDER_JOURNAL_KEY, JSON.stringify(state.orderJournal));
+            return true;
+        } catch { return false; }
+    }
+
+    function orderDay(timestamp) {
+        return new Date(timestamp).toISOString().slice(0, 10); // UTC day
+    }
+
+    function unresolvedListing(id) {
+        return !!state.orderJournal?.orders.some(order =>
+            order.listingId === id && order.status === 'unknown');
+    }
+
+    // Confirmed orders are charged at the quoted maximum for safety when
+    // the acknowledgement omits actual settlement price or filled quantity.
+    function orderExposure(scope, currency = null, ruleId = '') {
+        let spent = 0, count = 0, quantity = 0;
+        for (const o of state.orderJournal?.orders || []) {
+            if (o.status === 'refused' || currency && o.currency !== currency ||
+                ruleId && o.ruleId !== ruleId ||
+                scope === 'day' && o.day !== orderDay(Date.now()) ||
+                scope === 'session' && o.sessionId !== state.orderJournal.sessionId) continue;
+            spent += o.spend; count++; quantity += o.qty;
+        }
+        return { spent, count, quantity };
+    }
+
+    function activeRuleById(id) {
+        if (!id || !config.enabled || !config.fixedRulesEnabled || config.purchasesPaused) return null;
+        const fixed = sanitizeFixedItemRules(config.fixedItemRules).find(r => r.id === id);
+        if (fixed?.buyEnabled) return { ...fixed, type: 'fixed' };
+        const any = sanitizeAnyItemRules(config.anyItemRules).find(r => r.id === id);
+        if (any?.buyEnabled) return { ...any, type: 'any' };
+        const pokemon = sanitizePokemonBuyRules(config.pokemonBuyRules).find(r => r.id === id);
+        return pokemon?.buyEnabled ? { ...pokemon, type: 'pokemon' } : null;
+    }
+
+    function remainingBudget(currency, ruleId = '') {
+        const limits = [
+            [currency === 'orb' ? config.maxGemsPerSession : config.maxCoinsPerSession,
+                orderExposure('session', currency).spent],
+            [currency === 'orb' ? config.maxGemsPerDay : config.maxCoinsPerDay,
+                orderExposure('day', currency).spent]
+        ];
+        const rule = ruleId ? activeRuleById(ruleId) : null;
+        if (ruleId && !rule) return { spend: 0, quantity: 0 };
+        if (rule) {
+            limits.push([rule.maxSpendSession, orderExposure('session', currency, ruleId).spent],
+                [rule.maxSpendDay, orderExposure('day', currency, ruleId).spent]);
+        }
+        let spend = Infinity;
+        for (const [cap, used] of limits) {
+            if (Number(cap) > 0) spend = Math.min(spend, Math.max(0, cap - used));
+        }
+        const session = orderExposure('session'), own = rule && orderExposure('session', null, ruleId);
+        const maxCount = Math.min(
+            Number(config.maxPurchasesPerSession) > 0
+                ? Math.max(0, config.maxPurchasesPerSession - session.count) : Infinity,
+            rule?.maxPurchasesSession > 0
+                ? Math.max(0, rule.maxPurchasesSession - own.count) : Infinity
+        );
+        const quantity = Math.min(
+            Number(config.maxQuantityPerSession) > 0
+                ? Math.max(0, config.maxQuantityPerSession - session.quantity) : Infinity,
+            rule?.maxQuantitySession > 0
+                ? Math.max(0, rule.maxQuantitySession - own.quantity) : Infinity
+        );
+        return { spend: maxCount > 0 ? spend : 0, quantity };
+    }
+
+    function reserveOrder(order) {
+        if (!state.orderJournal?.sessionId || state.orderJournal.orders.length >= 2500) return false;
+        state.orderJournal.orders.push(order);
+        if (saveOrderJournal()) return true;
+        state.orderJournal.orders.pop();
+        return false;
+    }
+
+    function settleOrder(order, status) {
+        if (!order || !['confirmed', 'refused', 'unknown'].includes(status) ||
+            ['confirmed', 'refused'].includes(order.status)) return false;
+        order.status = status;
+        saveOrderJournal();
+        state.lastPurchaseOutcome = status;
+        if (status === 'confirmed') {
+            state.attemptedListings.set(order.listingId, Date.now() + 30 * 60000);
+            addLog('Purchase confirmed · listing #' + order.listingId);
+        } else if (status === 'refused') {
+            state.attemptedListings.set(order.listingId, Date.now() + 5000);
+        } else {
+            state.attemptedListings.set(order.listingId, Number.MAX_SAFE_INTEGER);
+            addLog('Purchase outcome unverified · listing #' + order.listingId);
+        }
+        queueRender();
+        return true;
+    }
+
+    function resolveOrder(listingId, status) {
+        if (state.pendingBuy?.listingId === listingId) {
+            finishPendingBuy(status === 'confirmed' ? 'server-confirmed' : 'refused');
+            return true;
+        }
+        const order = [...(state.orderJournal?.orders || [])].reverse().find(o =>
+            o.listingId === listingId && o.status === 'unknown');
+        if (order) return settleOrder(order, status);
+        return false;
+    }
+
+    function currentRuleMatches(rule, candidate, price) {
+        if (!rule || rule.currency !== candidate.currency || price > rule.buyMax) return false;
+        if (rule.type === 'fixed') return candidate.kind === 'item' && candidate.itemId === rule.itemId;
+        if (rule.type === 'any') return candidate.kind === 'item';
+        return candidate.kind === 'pokemon' &&
+            pokemonRuleMatches(rule, candidate.ficha, candidate.currency);
+    }
+
+    function freshQuote(candidate, manual) {
+        const id = Number(candidate?.listingId), price = Number(candidate?.unitPrice || candidate?.price);
+        const qty = Number(candidate?.qty), age = Date.now() - Number(candidate?.seenAt);
+        return Number.isSafeInteger(id) && id > 0 &&
+            ['gold', 'orb'].includes(candidate.currency) &&
+            Number.isSafeInteger(price) && price > 0 &&
+            Number.isSafeInteger(qty) && qty > 0 &&
+            Number.isFinite(age) && age >= 0 && age <= QUOTE_MAX_AGE_MS &&
+            !!state.nick && typeof candidate.seller === 'string' &&
+            !!candidate.seller.trim() && candidate.seller !== '—' &&
+            !isOwnListing({ vendedor: candidate.seller }) &&
+            !(candidate.retainedUntil > serverNow()) && !unresolvedListing(id) &&
+            (manual || candidate.kind !== 'pokemon' ||
+                candidate.ficha && typeof candidate.ficha.shiny === 'boolean' &&
+                Number.isSafeInteger(Number(candidate.ficha.potencia)));
     }
 
     function loadConfig() {
