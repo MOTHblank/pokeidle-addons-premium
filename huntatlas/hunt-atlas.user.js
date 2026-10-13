@@ -872,6 +872,13 @@
         farmingLedger: makeFarmingLedger(),
         farmingSnapshot: {},
         xpBonusState: {},
+        itemCatalogStatus: 'idle',
+        itemsByName: new Map(),
+        itemsById: new Map(),
+        npcLootBySpecies: new Map(),
+        ballPrices: new Map(),
+        itemPrices: new Map(),
+        inventoryForCosts: new Map(),
         calibrationEvidence: new Map(),
         hunts: [],
         playerLevel: 0,
@@ -1664,6 +1671,7 @@
             trainerXp: 0,
             pokemonXp: 0,
             gold: 0,
+            rateUseWindow: null,
 
             killIntervals: [],
             sameTargetIntervals: [],
@@ -2911,6 +2919,180 @@
     }
     // HA MILESTONE A PURE END.
 
+
+
+    // HA MILESTONE C PURE BEGIN: economy amounts in Coins, not XP or Gems.
+    const FARM_SEEDS={NORMAL:'Luck Medallion',FIRE:'Magma Foot',
+        WATER:'Air Tank',GRASS:'Massive Vines',ELECTRIC:'Electric Tail',
+        ICE:'Ski Poles',FIGHTING:'Belt of Champion',POISON:'Female Ear',
+        GROUND:'Horn Drill',FLYING:'Colored Feather',PSYCHIC:'Fox Tail',
+        BUG:'Pinsir Horn',ROCK:'Solid Rock Paw',GHOST:'Traces of Ghost',
+        DRAGON:'Dragon Tooth',DARK:'Dark Moon',STEEL:'Steelix Tail',
+        FAIRY:'Luck Medallion'};
+    const FARM_DEAD=new Set(['strange pheromone','10000 carat emerald','moon stone']);
+    const farmNum = n => n===null||n===undefined||n===''||
+        !Number.isFinite(Number(n))||Number(n)<0 ? null : Number(n);
+    function farmNpcPrice(item, shopIds=new Set(),specialIds=new Set()) {
+        if (!item || !Number.isInteger(Number(item.id))) return null;
+        const name=String(item.name||'').toLowerCase().replace(/\./g,'');
+        if (item.category==='stone'&&name!=='rough gemstone') return 0;
+        if (['heal','revive'].includes(item.category)||shopIds.has(Number(item.id))||
+            specialIds.has(Number(item.id))||FARM_DEAD.has(name)) return 0;
+        const price=farmNum(item.npcPrice);
+        return item.category==='loot' ? price : null;
+    }
+    function farmLootValue(lines,priceOf) {
+        if (!Array.isArray(lines)) return {perKill:null,unknown:1,lines:0};
+        let value=0,unknown=0,seen=0;
+        for(const line of lines.slice(0,80)) {
+            const p=farmingLootChance(line?.chance);
+            const lo=farmNum(line?.minCount??1),hi=farmNum(line?.maxCount??1);
+            if(p===null||lo===null||hi===null||lo>hi){unknown++;continue;}
+            if(p===0)continue;
+            const price=priceOf(line?.name);
+            if(price===null||price===undefined){unknown++;continue;}
+            value+=p*(lo+hi)/2*price;seen++;
+        }
+        return {perKill:unknown?null:value,knownSubtotal:value,unknown,lines:seen};
+    }
+    // Reconstruct the shared economy-drop adjustments from the raw catalog.
+    // This is labeled "reconstructed", NOT the deployed server's final table.
+    function farmRebalanceLoot(species,priceOf) {
+        if(!species||!Array.isArray(species.loot)) return null;
+        const rows=species.loot.slice(0,80).map(x=>({...x}));
+        const n=farmNum(species.huntLevel);
+        if(!(n>=1))return null;
+        const gold=farmingGoldForLevel(n);
+        const base=n<=25000?gold:farmingGoldForLevel(25000)*(n/25000)**.30;
+        const target=Math.max(0,Math.round(base*1.15)-gold);
+        const paying=()=>rows.filter(x=>farmNum(x.chance)>0&&(priceOf(x.name)??0)>0);
+        if(!paying().length) {
+            const name=FARM_SEEDS[String(species.type1||'').toUpperCase()]||FARM_SEEDS.NORMAL;
+            const price=priceOf(name);
+            if(price>0)rows.push({name,chance:Math.max(1,
+                Math.round(Math.min(60,target/price*100)*1000)),
+                minCount:1,maxCount:1});
+        }
+        const lines=paying().filter(x=>x.name!=='Rare Pokémon Picture');
+        const ev=farmLootValue(lines,priceOf).perKill;
+        if(ev>0)for(const row of lines){
+            const scale=target/ev;
+            const min=Math.max(1,Math.min(20,Math.round((row.minCount??1)*scale)));
+            row.maxCount=Math.max(min,Math.min(20,Math.round((row.maxCount??1)*scale)));
+            row.minCount=min;
+        }
+        const after=farmLootValue(lines,priceOf).perKill;
+        const missing=after===null?0:target-after;
+        const rarePrice=priceOf('Rare Pokémon Picture');
+        const quantity=rarePrice>0?Math.round(missing/(.05*rarePrice)):0;
+        const rare=rows.find(x=>x.name==='Rare Pokémon Picture');
+        if(missing>0&&quantity>=1){
+            if(rare)Object.assign(rare,{chance:5000,minCount:quantity,maxCount:quantity});
+            else rows.push({name:'Rare Pokémon Picture',chance:5000,
+                minCount:quantity,maxCount:quantity});
+        }else if(rare)rows.splice(rows.indexOf(rare),1);
+        return rows;
+    }
+    function farmGoldPrediction(hunt,killsH){
+        if(!Number.isFinite(killsH)||killsH<0||
+            !Array.isArray(hunt?.especies)||!hunt.especies.length)return null;
+        const rows=hunt.especies.map(x=>({weight:Math.max(1,Number(x.pontos)||1),
+            level:farmNum(x.level??x.nivel??hunt.nivel)}));
+        if(rows.some(x=>!x.level))return null;
+        const total=rows.reduce((sum,x)=>sum+x.weight,0);
+        return killsH*rows.reduce((sum,x)=>sum+
+            x.weight*farmingGoldForLevel(x.level),0)/total;
+    }
+    function farmLootPrediction(hunt,known,killsH) {
+        if(!Number.isFinite(killsH)||killsH<0||
+            !Array.isArray(hunt?.especies)||!hunt.especies.length)
+            return {perHour:null,coverage:0,source:'unknown'};
+        let total=0,covered=0,weighted=0;
+        for(const x of hunt.especies){
+            const w=Math.max(1,Number(x.pontos)||1);
+            total+=w;
+            const row=known.get(Number(x.pokeId));
+            if(row&&Number.isFinite(row.perKill)){covered+=w;weighted+=row.perKill*w;}
+        }
+        return {perHour:covered===total?killsH*weighted/total:null,
+            coverage:total?Math.round(100*covered/total):0,
+            source:'reconstructed-upstream-catalog'};
+    }
+    function farmNormalizePrices(data,kind){
+        const rows=Array.isArray(data)?data:
+            data&&typeof data==='object'?Object.entries(data).map(([id,row])=>
+                row&&typeof row==='object'?{id,...row}:{id}):[];
+        const out=new Map();
+        for(const row of rows.slice(0,200)){
+            const id=Number(row?.id??row?.itemId??row?.ballId);
+            if(!Number.isInteger(id)||id<0)continue;
+            const coins=kind==='ball'?
+                farmNum(row.priceGold??row.precoGold??row.goldPrice):
+                farmNum(row.npcPrice??row.precoGold??row.priceGold);
+            const diamonds=farmNum(row.priceDiamond??row.precoDiamantes??row.diamondPrice);
+            out.set(id,{coins,diamonds,kind,source:'observed-client-catalog'});
+        }
+        return out;
+    }
+    function farmAppendUse(win,receipt,at){
+        if(!Number.isFinite(at)||!receipt)return win;
+        const rows=!win||at<win.lastAt||at-win.lastAt>900000?[]:
+            win.rows.filter(x=>x.at>=at-930000);
+        const bucket=Math.floor(at/30000);
+        let row=rows[rows.length-1];
+        if(!row||row.bucket!==bucket){row={bucket,at,uses:{}};rows.push(row);}
+        const type=receipt.kind==='bola'?'ball':
+            ['cura','revive'].includes(receipt.kind)?'item':null;
+        if(type&&receipt.itemId!==null){
+            const key=type+':'+receipt.itemId;
+            row.uses[key]=(row.uses[key]||0)+1;
+        }
+        if(rows.length>33)rows.splice(0,rows.length-33);
+        return {rows,lastAt:at};
+    }
+    function farmCostRates(win,from,to,catalogs,inventory){
+        if(!(to>from))return null;
+        const counts=new Map();
+        for(const row of win?.rows||[]){
+            if(row.at<from-30000||row.at>to)continue;
+            for(const [key,count] of Object.entries(row.uses))
+                counts.set(key,(counts.get(key)||0)+count);
+        }
+        let coins=0,diamonds=0,unknown=0;
+        const items=[];
+        for(const [key,count] of counts){
+            const [type,idText]=key.split(':');const id=Number(idText);
+            const price=(type==='ball'?catalogs.balls:catalogs.items)?.get(id);
+            if(price?.coins===null||price?.coins===undefined){
+                // Diamond-priced supplies are not free Coins; keep currency separate.
+                if(price?.diamonds===null||price?.diamonds===undefined)unknown+=count;
+            }else coins+=price.coins*count;
+            if(price?.diamonds!==null&&price?.diamonds!==undefined)
+                diamonds+=price.diamonds*count;
+            items.push({type,id,count,remaining:inventory?.get(key)??null,
+                priceSource:price?.source??'unknown'});
+        }
+        const hours=(to-from)/3600000;
+        return {coinsH:unknown?null:coins/hours,diamondsH:diamonds/hours,
+            unknown,items,source:'replacement-cost-not-spend'};
+    }
+    function farmFinancialSummary(killsH,modeledKillH,observedKillH,
+        observedAutoSaleH,npcLootEvH,cost){
+        const ok=x=>typeof x==='number'&&Number.isFinite(x)&&x>=0;
+        const killH=ok(observedKillH)?observedKillH:ok(modeledKillH)?
+            modeledKillH:null;
+        const realizedH=ok(observedKillH)&&ok(observedAutoSaleH)?
+            observedKillH+observedAutoSaleH:null;
+        // No unsold loot EV and no second copy of already-realized auto sales.
+        const netH=ok(realizedH)&&ok(cost?.coinsH)?
+            realizedH-cost.coinsH:null;
+        return {killsH,killCoinsH:killH,
+            killSource:ok(observedKillH)?'observed-server/event':'upstream-shared-model',
+            npcLootEvH:ok(npcLootEvH)?npcLootEvH:null,realizedH,netH,
+            replacementCostH:cost?.coinsH??null,diamondsH:cost?.diamondsH??null,
+            source:netH===null?'incomplete':'replacement-cost-adjusted'};
+    }
+    // HA MILESTONE C PURE END.
 
     // HA MILESTONE B PURE BEGIN: no live bonus is inferred from a prior kill.
     const XP_BONUS_FIELDS = Object.freeze([
