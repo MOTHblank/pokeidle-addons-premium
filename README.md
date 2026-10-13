@@ -2,6 +2,10 @@
 
 Moth Watch **v0.6.1** lives in this repository. The standard `pokeidle-addons` controller does not install or update it automatically.
 
+## Upstream scraper & exporter
+
+The [PokéIdle Upstream Scraper & Exporter](addons/scraper-exporter.user.js) (**v1.2.0**) is maintained here. Install it manually in Violentmonkey while signed into PokéIdle; it captures publicly served client assets and lets you export an archive with a manifest. It is not installed or updated automatically by the standard controller. The script limits total downloaded data, reports unresolved dynamic paths, and supports cancellation.
+
 ## Development roadmap
 
 See [**Moth Watch roadmap**](docs/MOTHWATCH_ROADMAP.md) for the prioritized, 20-task implementation queue: purchase safety and protocol validation first, Pokémon pricing second, economy analysis third, and UI/distribution improvements throughout. The roadmap explicitly separates implemented v0.6.1 behavior from proposed work and unverified live-server assumptions.
