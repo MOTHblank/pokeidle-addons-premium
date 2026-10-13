@@ -417,3 +417,15 @@ test('Pokémon categories honor price, currency, retention, owner and repeated a
     state.pokemonAutoOffers.get('gold').updatedAt=now-50000;
     assert.equal(api.pokemonRuleCandidate({kind:'any',currency:'gold',buyMax:1000000}),null);
 });
+
+test('Category rules have UI editors and respect the master enable switch', () => {
+    const ui = section('    function categoryRuleStatus(', '    function renderWatch(');
+    assert.match(ui, /data-moth-remove-/);
+    assert.match(ui, /buyEnabled/);
+    assert.match(ui, /buyMax/);
+    assert.match(ui, /moth-pokemon-kind/);
+    assert.match(script, /categoryRulesHtml\('any'\) \+ categoryRulesHtml\('pokemon'\)/);
+    assert.match(script, /function hasAnyBuyingRules/);
+    assert.match(script, /maxGemsPerBuy/);
+    assert.doesNotMatch(script, /market\.criar/);
+});
