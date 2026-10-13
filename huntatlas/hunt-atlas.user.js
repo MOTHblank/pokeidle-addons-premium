@@ -5683,7 +5683,13 @@
             lootSource:loot.source,
             sampleCount:rates?.samples??0,
             windowMs:rates?.windowMs??null,
-            useEvidence:costs?.items??[],
+            useEvidence:(costs?.items??[]).map(entry=>{
+                const hours=rates?.windowMs / 3600000;
+                const perHour=hours>0 ? entry.count/hours : null;
+                return {...entry,perHour,
+                    hoursRemaining:perHour>0 &&
+                        entry.remaining!==null ? entry.remaining/perHour : null};
+            }),
             unknownCosts:costs?.unknown??null,
             unboosted:!xp?.observed};
     }
@@ -7311,6 +7317,7 @@
                 pokemonKnown: observed.pokemonKnown,
                 goldValue:
                     observed.goldH,
+                goldSource: 'observed-server/combined-receipt',
                 killsH:
                     observed.killsH,
                 killMs:
@@ -7469,7 +7476,8 @@
             pokemonValue:
                 pokemonXpPerKill *
                 killsH,
-            goldValue: null,
+            goldValue: farmGoldPrediction(hunt,killsH),
+            goldSource: 'upstream-shared-model',
             killGoldH: null,
             autoSaleH: null,
             warmingUp: Boolean(record && record.rateWindow?.rows?.length &&
@@ -12391,6 +12399,17 @@
                         xp?.source ||
                         'learning'
                     ),
+                    economy: (() => {
+                        const econ=huntEconomyEstimate(hunt,xp);
+                        return {
+                            killCoinsH:econ.killCoinsH,killSource:econ.killSource,
+                            npcLootEvH:econ.npcLootEvH,
+                            lootCoverage:econ.lootCoverage,
+                            realizedCoinsH:econ.realizedH,netCoinsH:econ.netH,
+                            replacementCoinsH:econ.replacementCostH,
+                            diamondCostH:econ.diamondsH
+                        };
+                    })(),
                     confidence: String(xp?.confidence || 'low'),
                     samples: Number(
                         xp?.samples || 0
