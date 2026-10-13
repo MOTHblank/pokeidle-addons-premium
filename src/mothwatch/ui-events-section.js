@@ -7,6 +7,19 @@
             event.stopPropagation();
             const target = event.target instanceof Element ? event.target : null;
             if (!target) return;
+            const button = target.closest('[data-moth-snatch]');
+            if (button) {
+                const parts = String(button.dataset.mothSnatch || '').split(':');
+                if (parts.length !== 3) return;
+                const [kind,currency,rawId] = parts;
+                const ok = snatchMark(kind,currency,Number(rawId),
+                    Number(button.dataset.mothSnatchItem || 0));
+                if (ok) addLog('Snatch queue updated · listing #' + rawId);
+                else addLog('Snatch not armed · load the listing again');
+                state.itemInventoryMemo = null;
+                state.pokemonEvidenceMemo = null;
+                renderWatch(true); return;
+            }
             const tab = target.closest('[data-moth-view]');
             if (tab) {
                 const view = tab.dataset.mothView;
