@@ -215,6 +215,19 @@
         "Scan now": "Escanear agora",
         "Moth Watch views": "Seções do Moth Watch",
         "Economy & holdings": "Economia e patrimônio",
+        "RMT sale eligibility: {status}": "Apto para RMT: {status}",
+        "NPC resale: {status}": "Revenda NPC: {status}",
+        "verified from catalog": "verificado no catálogo",
+        "excluded by catalog": "excluído pelo catálogo",
+        "unverified": "não verificado",
+        "Holding removed.": "Bem removido.",
+        "Could not remove holding.": "Não foi possível remover o bem.",
+        "Holding quantity recorded.": "Quantidade registrada.",
+        "Select a catalog item and a valid quantity.": "Escolha um item do catálogo e uma quantidade válida.",
+        "Enter a valid positive price and quantity; Pokémon are indivisible.": "Informe preço e quantidade inteiros positivos; cada Pokémon é indivisível.",
+        "Seller fee estimate updated.": "Estimativa de taxa atualizada.",
+        "Diamond resale is not inferred: purchased-from-player and reward Diamonds are not equivalent to server-verified eligible first-party Diamonds.": "Não presumimos revenda de diamantes: diamantes adquiridos de jogadores ou prêmios não equivalem aos diamantes de primeira compra elegíveis e confirmados pelo servidor.",
+
         "Read-only estimates and user-entered holdings; never realized proceeds.": "Estimativas somente de leitura e bens informados manualmente; nunca receitas realizadas.",
         "Quantity": "Quantidade",
         "Unit price": "Preço unitário",
@@ -4118,7 +4131,10 @@
                 count: live.observedRareDrops == null ? '?' : num(live.observedRareDrops),
                 rate: live.rareExpectedPerHour == null ? '?' : live.rareExpectedPerHour.toFixed(2)
             })) + '</p>';
-        const html = '<section class="moth-mw-economy-card"><h5>' + escapeHtml(tr('Recorded purchase exposure (not sale revenue)')) +
+        const html = (state.economyNotice ? '<p class="moth-mw-rule-notice">' +
+            escapeHtml(state.economyNotice) + '</p>' : '') +
+            '<section class="moth-mw-economy-card"><h5>' +
+            escapeHtml(tr('Recorded purchase exposure (not sale revenue)')) +
             '</h5>' + ledgerRow('gold') + ledgerRow('orb') +
             '<p>' + escapeHtml(tr('Confirmed means an authoritative buy acknowledgement; booked spend is the quoted maximum, not verified settlement.')) + '</p></section>' +
             '<section class="moth-mw-economy-card"><h5>' + escapeHtml(tr('User-entered holdings (optional)')) +
@@ -4132,6 +4148,7 @@
             '<p><b>' + num(holdings.gold) + '</b> ' + escapeHtml(tr('Coins')) + ' · <b>' +
             num(holdings.orb) + '</b> ' + escapeHtml(tr('Gems')) + ' · ' +
             escapeHtml(tr('{count} unknown-value assets', {count:holdings.unknown})) + '</p>' +
+            '<p>' + escapeHtml(tr('Diamond resale is not inferred: purchased-from-player and reward Diamonds are not equivalent to server-verified eligible first-party Diamonds.')) + '</p>' +
             '<p>' + escapeHtml(tr('Separate hypothetical 7-day sold-price averages; NOT wallet balance, proceeds, NPC value or instant liquidity. Only live references with 3+ sold units and under 24h age qualify.')) +
             '</p></section>' +
             '<section class="moth-mw-economy-card"><h5>' + escapeHtml(tr('Seller fee simulator (read-only)')) +
