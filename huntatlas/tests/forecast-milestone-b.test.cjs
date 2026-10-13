@@ -16,7 +16,7 @@ function extract(begin, end) {
 const a = extract('// HA MILESTONE A PURE BEGIN.', '// HA MILESTONE A PURE END.');
 const b = extract('// HA MILESTONE B PURE BEGIN:', '// HA MILESTONE B PURE END.');
 const names = [
-    'xpBonusSnapshot', 'xpBonusScope', 'xpRewardReceipt',
+    'xpBonusSnapshot', 'xpBonusScope', 'xpBonusTimeScope', 'xpRewardReceipt',
     'xpGlobalAttackFloor', 'xpCooldownFromPower', 'xpMoveCooldown',
     'xpPredictionBand', 'xpCompareForecasts', 'xpForecastResidual',
     'observeXpTransition', 'appendFarmingKill', 'farmingObservedRates'
@@ -123,4 +123,14 @@ test('model path no longer multiplies generic per-lead observed XP bonuses', () 
     assert.doesNotMatch(section,/baseXp\s*\*\s*\(\s*Number\(profile\?\.trainerXpMult/);
     assert.match(section,/recordForecastResidual/);
     assert.match(section,/bonusSource: 'unboosted-upstream-shared'/);
+});
+
+test('verified millisecond expiration transitions profile scope without a new packet', () => {
+    const snapshot={vip:{expiresAt:1790000000000,active:true}};
+    const before=helpers.xpBonusTimeScope(snapshot,1789999999000);
+    const after=helpers.xpBonusTimeScope(snapshot,1790000001000);
+    assert.notEqual(before,after);
+    assert.equal(helpers.xpBonusTimeScope({vip:{expiresAt:1234}},10000),
+        helpers.xpBonusTimeScope({vip:{expiresAt:1234}},20000));
+    // Unknown timestamp units do not get interpreted as a trusted expiry.
 });
