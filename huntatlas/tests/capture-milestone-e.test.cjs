@@ -202,3 +202,16 @@ test('confirmed capture can be linked to the accepted Ultra/Beast ball separatel
     assert.equal(stats.shinySeen,0);
     assert.equal(stats.shinyCaught,0);
 });
+
+test('current hunt chance can use fully attributed accepted species throws, not just kill mixture',()=>{
+    const hunt={area:'kanto',nivel:100,especies:[
+        {pokeId:1,pontos:9},{pokeId:2,pontos:1}]};
+    const value=new Map([[1,100],[2,10000]]);
+    const mix={1:{kills:90,throws:10},2:{kills:10,throws:90}};
+    const byKills=h.captureHuntChance(hunt,value,4,mix);
+    const byThrows=h.captureHuntChance(hunt,value,4,mix,'throws');
+    assert.ok(byKills.chance>byThrows.chance);
+    near(byThrows.chance,.1*h.captureWikiChance(100,4)+
+        .9*h.captureWikiChance(10000,4));
+    assert.match(source,/mixThrows===observed.throws/);
+});
