@@ -177,3 +177,28 @@ test('absent shiny fields stay unknown, not falsely counted as non-shiny rolls',
     assert.equal(obs.shinySeen,null);
     assert.equal(obs.shinyCaught,null);
 });
+
+test('confirmed capture can be linked to the accepted Ultra/Beast ball separately',()=>{
+    const ledger=h.makeFarmingLedger();
+    h.farmingSpawn(ledger,'unique');
+    assert.ok(h.acceptFarmingEvent(ledger,h.normalizeFarmingEvent({
+        k:'morte',quem:'selvagem',slot:'unique',pokeId:1
+    })));
+    assert.ok(h.acceptFarmingEvent(ledger,h.normalizeFarmingEvent({
+        k:'bola',slot:'unique',ballId:5,shiny:false
+    })));
+    assert.equal(ledger.slots.get('unique').ballId,5);
+    let window=null;
+    for(let i=0;i<6;i++)
+        window=h.captureAppend(window,{kind:'morte'},100000+i*25000,1);
+    window=h.captureAppend(window,{
+        kind:'bola',itemId:5,shinySeen:false},230000,1);
+    window=h.captureAppend(window,{
+        kind:'capturado',confirmedBallId:5,shinyCaught:false},230100,1);
+    const stats=h.captureObservedWindow(window,90000,231000);
+    assert.equal(stats.byBall[5],1);
+    assert.equal(stats.byBallCaught[5],1);
+    assert.equal(stats.byBall[4]??0,0);
+    assert.equal(stats.shinySeen,0);
+    assert.equal(stats.shinyCaught,0);
+});
