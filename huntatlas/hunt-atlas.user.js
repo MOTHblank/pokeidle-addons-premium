@@ -12384,10 +12384,17 @@
             if(row.kind==='event')return tr('xp.native.event',{
                 trainer:nativePct(row.trainer),
                 pokemon:nativePct(row.pokemon)});
+            if(row.kind==='vip')return tr('xp.native.vip');
+            if(row.kind==='guildBank')return tr('xp.native.guildBank');
+            if(row.kind==='shopTrainer'||row.kind==='shopPokemon')
+                return tr('xp.native.'+row.kind,{
+                    mult:nativePct(row.mult)});
             return '';
         }).filter(Boolean);
         for(const kind of nativeBonus.unknown) {
             const key=kind==='shop'?'xp.native.shop':
+                kind==='shopTrainer'||kind==='shopPokemon'
+                    ?'xp.native.shopUnknown':
                 kind==='catchup'?'xp.native.catchup':
                 kind==='twitchAvailable'?'xp.native.twitchAvailable':
                 'xp.native.unknownTwitch';
