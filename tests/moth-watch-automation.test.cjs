@@ -365,3 +365,24 @@ test('Category rule defaults and currency constraints', () => {
     ]);
     assert.deepEqual(poke.map(r => r.kind), ['any','shiny']);
 });
+
+test('Any-item summary gating uses currency-specific price ceiling', () => {
+    const state = {itemSummary:{
+        106:{anuncios:2,minGold:8000,minOrb:3},
+        107:{anuncios:1,minGold:15000,minOrb:1},
+        108:{anuncios:0,minGold:1,minOrb:1}
+    }};
+    const src = section('    function anyItemRuleTargets(', '    function runMarketAutomation(');
+    const helpers = new Function('state','fixedRuleCandidate','pokemonCurrencyAllowed',
+        'isOwnListing','retentionUntil','serverNow','pokemonListingName',
+        src + '\nreturn {anyItemRuleTargets,anyItemRuleCandidate};')(
+        state, rule => rule.itemId === 106 && rule.buyMax >= 9500
+            ? {listingId:99,price:9500,currency:rule.currency} : null,
+        () => true, () => false, () => 0, Date.now, () => 'Pokémon'
+    );
+    const targets = helpers.anyItemRuleTargets([{currency:'gold',buyMax:10000}]);
+    assert.deepEqual(targets.map(v=>v.key),['106:gold']);
+    assert.equal(helpers.anyItemRuleCandidate({currency:'gold',buyMax:10000},targets).listingId,99);
+    assert.equal(helpers.anyItemRuleCandidate({currency:'gold',buyMax:9000},targets),null);
+    assert.deepEqual(helpers.anyItemRuleTargets([{currency:'orb',buyMax:2}]).map(v=>v.key),['107:orb']);
+});
