@@ -1837,13 +1837,13 @@
         return true;
     }
 
-    function recentPokemonRequest(currency, page = 0) {
+    function recentPokemonRequest(currency, page = 0, order = 'recentes') {
         return {
             t: 'market.listar',
             tipo: 'pokemon',
             moeda: currency,
             busca: '',
-            ordem: 'recentes',
+            ordem: order,
             criterios: [],
             elemento: '',
             categoria: '',
@@ -1913,7 +1913,8 @@
             return;
         }
 
-        if (!sendBackground(recentPokemonRequest(job.currency, job.page))) {
+        if (!sendBackground(recentPokemonRequest(job.currency, job.page,
+            activePokemonRules().length ? 'baratos' : 'recentes'))) {
             setTimeout(pumpPokemonScan, BACKGROUND_MIN_GAP_MS);
             return;
         }
