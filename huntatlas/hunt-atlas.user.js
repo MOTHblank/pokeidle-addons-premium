@@ -427,7 +427,7 @@
             'catch.ultra': 'Ultra Ball · ×4 (default)',
             'catch.beast': 'Beast Ball · ×8 (Diamonds)',
             'catch.lure': 'Simulate Shiny Secret Lure ×2 (hypothetical, not verified active)',
-            'catch.current': 'Current hunt: {hunt}',
+            'catch.current': 'Compared hunt: {hunt}',
             'catch.unknown': '— (species rarity or kill rate unavailable)',
             'catch.percent': '{chance}% per accepted throw',
             'catch.expected': '{count} captures/h · {balls} accepted balls/capture on average',
@@ -447,7 +447,7 @@
             'catch.card': 'Ultra {ultra}% · Beast {beast}% (wiki-conditional)',
             'catch.levelCap': 'Caught level cap: {level} (wild rewards unchanged)',
             'catch.cardUnknown': 'Capture chance unavailable (rarity unresolved)',
-            'catch.targetRate': 'Target {captures} captures/h · {shiny} shiny caught/h ({source})',
+            'catch.targetRate': 'Target {captures} captures/h · {shiny} shiny caught/h · mean {hours}h/shiny ({source})',
             'catch.targetObserved': 'observed throw coverage',
             'catch.targetCeiling': 'upper bound if all bodies targeted',
             'catch.shinyMean': 'Mean wait for shiny caught: {hours}h · ≈{throws} accepted attempts/shiny caught',
@@ -733,7 +733,7 @@
             'catch.card': 'Ultra {ultra}% · Beast {beast}% (condicional da wiki)',
             'catch.levelCap': 'Teto do nível ao capturar: {level} (recompensas do selvagem não mudam)',
             'catch.cardUnknown': 'Chance de captura indisponível (raridade não verificada)',
-            'catch.targetRate': 'Alvo {captures} capturas/h · {shiny} shinies capturados/h ({source})',
+            'catch.targetRate': 'Alvo {captures} capturas/h · {shiny} shinies capturados/h · média {hours}h/shiny ({source})',
             'catch.targetObserved': 'cobertura medida de arremessos',
             'catch.targetCeiling': 'teto se todos os corpos receberem bola',
             'catch.shinyMean': 'Espera média por shiny capturado: {hours}h · ≈{throws} bolas aceitas/shiny capturado',
@@ -6260,11 +6260,15 @@
             .reduce((sum,row)=>sum+row.kills,0):0;
         const mix=observed&&mixKills===observed.kills &&
             mixKills>=30?observed.bySpecies:null;
+        const target=observed?.bySpecies?.[
+            outlandNormalizeSpeciesId(species.id)];
+        const acceptance=target?.kills>=6?
+            Math.min(1,target.throws/target.kills):
+            observed?Math.min(1,observed.throws/Math.max(1,observed.kills)):null;
         return captureSpeciesForecast(hunt,species.id,
             state.captureRarities.get(Number(outlandNormalizeSpeciesId(species.id))),
             ball.efficiency,estimate?.killsH??null,{
-                mix,acceptedFraction:observed?
-                    Math.min(1,observed.throws/Math.max(1,observed.kills)):null,
+                mix,acceptedFraction:acceptance,
                 hypotheticalLure:state.filters.shinyLurePreview
             });
     }
@@ -12024,7 +12028,12 @@
         const shinyCard=chosenSpeciesPlan?
             tr('catch.targetRate',{captures:chosenSpeciesPlan.catchesH.toFixed(2),
                 shiny:chosenSpeciesPlan.shinyCaughtH===null?'—':
-                    chosenSpeciesPlan.shinyCaughtH.toFixed(6),
+                    chosenSpeciesPlan.shinyCaughtH<.000001 &&
+                    chosenSpeciesPlan.shinyCaughtH>0?
+                        chosenSpeciesPlan.shinyCaughtH.toExponential(2):
+                        chosenSpeciesPlan.shinyCaughtH.toFixed(6),
+                hours:chosenSpeciesPlan.meanHoursShiny===null?'—':
+                    formatRate(chosenSpeciesPlan.meanHoursShiny),
                 source:tr(chosenSpeciesPlan.acceptedSource==='observed'
                     ?'catch.targetObserved':'catch.targetCeiling')}) :
             null;
@@ -12593,8 +12602,9 @@
         ].join('');
 
 
-        const captureHunt=current && isUnlocked(current) ? current :
-            best?.hunt??null;
+        const captureHunt=state.filters.search.trim()&&results.length?
+            results[0].hunt : current && isUnlocked(current) ?
+            current : best?.hunt??null;
         const activeCaptureId=state.filters.captureBall==='beast'?5:4;
         const capXp=captureHunt?huntXpEstimate(captureHunt):null;
         const ultra=captureHunt?capturePlanForHunt(captureHunt,4,capXp):null;
