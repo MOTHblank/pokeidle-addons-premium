@@ -13016,6 +13016,95 @@
             '<div class="mha-xp-note">'+escapeHtml(tr('catch.mystic'))+'</div>'
         ].join('');
 
+        // Reference inputs are explicit manual scenarios, not detected buffs.
+        // They never modify the actual model, measured rates, or rankings.
+        const referenceBooleanFields=[
+            ['referenceShinyBoost','reference.shinyBoost'],
+            ['referenceCatchBoost','reference.catchBoost'],
+            ['referenceKickShiny','reference.kickShiny'],
+            ['referenceKickCatch','reference.kickCatch']
+        ];
+        const referenceNumericFields=[
+            ['referenceShinyEvent','reference.shinyEvent',0],
+            ['referenceCatchEvent','reference.catchEvent',0],
+            ['referenceLoot','reference.loot',1],
+            ['referenceGuild','reference.guild',1],
+            ['referenceDropEvent','reference.dropEvent',1],
+            ['referenceDropKick','reference.dropKick',1]
+        ];
+        const referenceControl=(key,label,kind='checkbox',minimum=0)=>
+            '<label>'+escapeHtml(tr(label))+' <input type="'+
+            (kind==='checkbox'?'checkbox':'number')+'" '+
+            'data-mha-reference-setting="'+key+'" '+
+            (kind==='checkbox' ? (state.filters[key]?'checked':'') :
+                'min="'+minimum+'" max="1000" step="0.1" value="'+
+                state.filters[key]+'"')+
+            ((!state.filters.referenceEnabled&&key!=='referenceEnabled')?
+                ' disabled':'')+' /></label>';
+        const refActive=state.filters.referenceEnabled;
+        const refCatch=refActive && chosen ? referenceCapturePreview(
+            chosen.chance,chosen.acceptedH,
+            chosen.shinyEligible===null?null:chosen.shinyP,{
+                shinyBoost:state.filters.referenceShinyBoost,
+                catchBoost:state.filters.referenceCatchBoost,
+                kickShiny:state.filters.referenceKickShiny,
+                kickCatch:state.filters.referenceKickCatch,
+                shinyEvent:state.filters.referenceShinyEvent,
+                catchEvent:state.filters.referenceCatchEvent
+            }):null;
+        const refRareModel=state.filters.rareSortItem===RARE_EGG_DROP.id
+            ?eggModel:outlandModel;
+        const refRareItem=refRareModel?.drops?.find(item=>
+            item.id===state.filters.rareSortItem);
+        const refRare=refActive && refRareItem ? referenceRarePreview(
+            refRareItem.probability,refRareModel.killsH,{
+                loot:state.filters.referenceLoot,
+                guild:state.filters.referenceGuild,
+                event:state.filters.referenceDropEvent,
+                kick:state.filters.referenceDropKick
+            }):null;
+        // Small percentages (e.g. 1 in 200,000) must not print as 0.00%.
+        const refPct=p=>p===null||!Number.isFinite(p)?'—':
+            p>0&&p*100<0.000001?'<0.000001%':
+            (p*100).toFixed(p*100<0.01?6:p*100<1?4:2)+'%';
+        const refCount=v=>Number.isFinite(v)?
+            v.toFixed(v<1?5:2):'—';
+        const refCaptureText=refCatch ? tr('reference.captureStats',{
+            catchChance:refPct(refCatch.catchChance),
+            catches:refCount(refCatch.catchesH),
+            seen:refCount(refCatch.shinySeenH),
+            caught:refCount(refCatch.shinyCaughtH),
+            day:refPct(refCatch.shinyCaught24hChance),
+            none:refPct(refCatch.shinyNotCaught24hChance)
+        }):tr('reference.unknown');
+        const refRareText=refRare ? tr('reference.rareStats',{
+            chance:refPct(refRare.chance),
+            units:refCount(refRare.unitsH),
+            day:refPct(refRare.chance24h),
+            none:refPct(refRare.noDrop24h)
+        }):tr('reference.unknown');
+        const referenceHtml='<details data-mha-reference '+
+            (state.filters.referenceOpen?'open':'')+'><summary>'+
+            escapeHtml(tr('reference.title'))+'</summary>'+
+            '<div class="mha-xp-note">'+escapeHtml(tr('reference.note'))+'</div>'+
+            '<div class="mha-xp-note">'+
+            '<label><input type="checkbox" data-mha-reference-setting="referenceEnabled" '+
+            (refActive?'checked':'')+' />'+
+            escapeHtml(tr('reference.enable'))+'</label></div>'+
+            (refActive ? '<div class="mha-xp-note">'+
+                referenceBooleanFields.map(([key,label])=>
+                    referenceControl(key,label)).join(' · ')+
+                '</div><div class="mha-xp-note">'+
+                referenceNumericFields.map(([key,label,min])=>
+                    referenceControl(key,label,'number',min)).join(' · ')+
+                '</div><div class="mha-xp-note"><strong>'+
+                escapeHtml(tr('reference.catchResult'))+'</strong> · '+
+                escapeHtml(refCaptureText)+'</div>'+
+                '<div class="mha-xp-note"><strong>'+
+                escapeHtml(tr('reference.rareResult'))+
+                (refRareItem?' ('+escapeHtml(refRareItem.name)+')':'')+
+                '</strong> · '+escapeHtml(refRareText)+'</div>' : '')+
+            '</details>';
         const html = `
             <div class="mha-xp-heading">
                 <strong>${escapeHtml(
@@ -13157,6 +13246,7 @@
                 ${captureHtml}
                 ${economyHtml}
                 ${rareHtml}
+                ${referenceHtml}
                 <div class="mha-xp-note"><label><input type="checkbox"
                     data-mha-local-diagnostics
                     ${state.diagnosticsEnabled?'checked':''}/>
@@ -13186,6 +13276,31 @@
         if (host.innerHTML === html) return;
         host.innerHTML = html;
 
+        q('[data-mha-reference]',host)?.addEventListener('toggle',event=>{
+            state.filters.referenceOpen=event.target.open;
+            saveFilters();
+        });
+        for(const control of qa('[data-mha-reference-setting]',host)){
+            control.addEventListener('change',()=>{
+                const key=control.dataset.mhaReferenceSetting;
+                const bools=['referenceEnabled',...referenceBooleanFields.map(row=>row[0])];
+                const numeric=referenceNumericFields.find(row=>row[0]===key);
+                if(bools.includes(key)) state.filters[key]=control.checked;
+                else if(numeric){
+                    // Empty, invalid, or out-of-range input is rejected; keep last good value.
+                    const value=Number(control.value);
+                    if(!control.value.trim()||!Number.isFinite(value)||
+                        value<numeric[2]||value>1000){
+                        control.value=state.filters[key];
+                        return;
+                    }
+                    state.filters[key]=value;
+                }else return;
+                state.filters.referenceOpen=true;
+                saveFilters();
+                renderXpSummary(drawer,results);
+            });
+        });
         q('[data-mha-sort-outland-tier]',host)?.addEventListener('change',event=>{
             const tier=Number(event.target.value);
             if(!Number.isInteger(tier)||tier<1||tier>8)return;
