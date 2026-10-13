@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/huntatlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.9
+// @version      1.9.10
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.9');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.10');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -477,6 +477,24 @@
             'rank.unknown': 'No data',
             'rank.learning': 'Learning',
             'rank.unverified': 'Unverified',
+            'reference.title': 'Third-party boost scenarios (optional)',
+            'reference.note': 'Read-only what-if from PokeIdle Tools, NOT verified active game boosts. Existing rankings, measured rates and default predictions stay unboosted. No Kick integration is started.',
+            'reference.enable': 'Enable reference preview (off by default)',
+            'reference.shinyBoost': 'Shiny boost ×1.5',
+            'reference.catchBoost': 'Capture boost ×1.5',
+            'reference.kickShiny': 'Kick shiny boost ×1.15 (hypothetical)',
+            'reference.kickCatch': 'Kick capture boost ×1.15 (hypothetical)',
+            'reference.shinyEvent': 'Shiny event (%)',
+            'reference.catchEvent': 'Catch event (%)',
+            'reference.loot': 'Loot multiplier',
+            'reference.guild': 'Guild multiplier',
+            'reference.dropEvent': 'Drop event multiplier',
+            'reference.dropKick': 'Kick drop multiplier (hypothetical)',
+            'reference.catchResult': 'Scenario for chosen hunt and ball',
+            'reference.rareResult': 'Scenario for selected rare item and hunt',
+            'reference.rareStats': '{chance} per kill · {units}/h expected · ≥1 in 24h {day} · none in 24h {none}',
+            'reference.captureStats': 'Catch {catchChance} per accepted throw · {catches}/h expected · shiny seen {seen}/h · shiny caught {caught}/h · ≥1 shiny caught in 24h {day} · none {none}',
+            'reference.unknown': 'Unknown; cannot infer missing odds, eligibility or rate',
             'diag.toggle': 'Local estimate diagnostics (off by default)',
             'diag.title': 'Redacted evidence · local only',
             'diag.source': 'source: {source} · sample window: {window} · model coverage: {coverage}%',
@@ -795,6 +813,24 @@
             'rank.unknown': 'Sem dados',
             'rank.learning': 'Aprendendo',
             'rank.unverified': 'Não verificado',
+            'reference.title': 'Cenários de bônus de referência externa (opcional)',
+            'reference.note': 'Simulação somente leitura do PokeIdle Tools, NÃO bônus ativos confirmados no jogo. Rankings, taxas medidas e projeções padrão continuam sem bônus. Não inicia integração com Kick.',
+            'reference.enable': 'Ativar simulação de referência (padrão desligado)',
+            'reference.shinyBoost': 'Bônus shiny ×1,5',
+            'reference.catchBoost': 'Bônus captura ×1,5',
+            'reference.kickShiny': 'Bônus shiny Kick ×1,15 (hipotético)',
+            'reference.kickCatch': 'Bônus captura Kick ×1,15 (hipotético)',
+            'reference.shinyEvent': 'Evento shiny (%)',
+            'reference.catchEvent': 'Evento captura (%)',
+            'reference.loot': 'Multiplicador de loot',
+            'reference.guild': 'Multiplicador de guilda',
+            'reference.dropEvent': 'Multiplicador de evento (drops)',
+            'reference.dropKick': 'Multiplicador Kick para drops (hipotético)',
+            'reference.catchResult': 'Cenário da hunt e bola escolhidas',
+            'reference.rareResult': 'Cenário do item raro e hunt escolhidos',
+            'reference.rareStats': '{chance} por abate · {units}/h esperados · ≥1 em 24h {day} · nenhum em 24h {none}',
+            'reference.captureStats': 'Captura {catchChance} por bola aceita · {catches}/h esperadas · shiny visto {seen}/h · capturado {caught}/h · ≥1 shiny capturado em 24h {day} · nenhum {none}',
+            'reference.unknown': 'Indisponível; sem inferir chance, elegibilidade ou taxa ausente',
             'diag.toggle': 'Diagnóstico local da estimativa (desligado por padrão)',
             'diag.title': 'Evidências resumidas · somente local',
             'diag.source': 'origem: {source} · janela de amostras: {window} · cobertura do modelo: {coverage}%',
@@ -1230,6 +1266,18 @@
             shinyLurePreview: false,
             rareSortItem: 70000,
             detailOpen: false,
+            referenceOpen: false,
+            referenceEnabled: false,
+            referenceShinyBoost: false,
+            referenceCatchBoost: false,
+            referenceKickShiny: false,
+            referenceKickCatch: false,
+            referenceShinyEvent: 0,
+            referenceCatchEvent: 0,
+            referenceLoot: 1,
+            referenceGuild: 1,
+            referenceDropEvent: 1,
+            referenceDropKick: 1,
             sortDirection: 'desc'
         };
     }
@@ -1259,6 +1307,21 @@
             next.rareSortItem=[70000,70011,70012,70013,70017].includes(
                 Number(next.rareSortItem))?Number(next.rareSortItem):70000;
             next.detailOpen=next.detailOpen===true;
+            for(const key of ['referenceOpen','referenceEnabled',
+                'referenceShinyBoost','referenceCatchBoost',
+                'referenceKickShiny','referenceKickCatch'])
+                next[key]=next[key]===true;
+            for(const key of ['referenceShinyEvent','referenceCatchEvent']) {
+                const value=Number(next[key]);
+                next[key]=Number.isFinite(value)&&value>=0&&value<=1000
+                    ?value:0;
+            }
+            for(const key of ['referenceLoot','referenceGuild',
+                'referenceDropEvent','referenceDropKick']) {
+                const value=Number(next[key]);
+                next[key]=Number.isFinite(value)&&value>=1&&value<=1000
+                    ?value:1;
+            }
 
             if (typeof next.weakness === 'string') {
                 next.weakness =
@@ -2907,6 +2970,55 @@
         if (p === 1) return 1;
         return -Math.expm1(n * Math.log1p(-p));
     }
+
+    // POKEIDLE-TOOLS REFERENCE SCENARIOS BEGIN.
+    // Optional what-if assumptions from the public third-party calculator;
+    // NEVER assume that these are active/stack on the deployed game server.
+    function referenceCapturePreview(chance,acceptedH,shinyBase,options={}) {
+        const valid=p=>typeof p==='number'&&Number.isFinite(p)&&p>=0&&p<=1;
+        const eventShiny=Number(options.shinyEvent??0);
+        const eventCatch=Number(options.catchEvent??0);
+        if(!valid(chance)||!Number.isFinite(acceptedH)||acceptedH<0||
+            (shinyBase!==null&&!valid(shinyBase))||
+            !Number.isFinite(eventShiny)||eventShiny<0||eventShiny>1000||
+            !Number.isFinite(eventCatch)||eventCatch<0||eventCatch>1000)
+            return null;
+        const catchMultiplier=(options.catchBoost?1.5:1)*
+            (1+eventCatch/100)*(options.kickCatch?1.15:1);
+        const shinyMultiplier=(options.shinyBoost?1.5:1)*
+            (1+eventShiny/100)*(options.kickShiny?1.15:1);
+        const catchChance=Math.min(1,chance*catchMultiplier);
+        // Null eligibility (e.g. Outland) must remain unknown, not zero.
+        const shinyChance=shinyBase===null?null:
+            Math.min(1,shinyBase*shinyMultiplier);
+        const success=shinyChance===null?null:catchChance*shinyChance;
+        const trials24=24*acceptedH; // forecast rate, not counted integer throws
+        const oneDay=success===null?null:
+            farmingChanceAtLeastOne(success,trials24);
+        return {catchChance,shinyChance,
+            catchesH:acceptedH*catchChance,
+            shinySeenH:shinyChance===null?null:acceptedH*shinyChance,
+            shinyCaughtH:success===null?null:acceptedH*success,
+            shinyCaught24hChance:oneDay,
+            shinyNotCaught24hChance:oneDay===null?null:1-oneDay,
+            assumption:'third-party-what-if-not-server-observed'};
+    }
+    function referenceRarePreview(probability,killsH,options={}) {
+        const multipliers=['loot','guild','event','kick'].map(key=>
+            Number(options[key]??1));
+        if(typeof probability!=='number'||!Number.isFinite(probability)||
+            probability<0||probability>1||
+            !Number.isFinite(killsH)||killsH<0||
+            multipliers.some(v=>!Number.isFinite(v)||v<1||v>1000))
+            return null;
+        const chance=Math.min(1,multipliers.reduce((a,b)=>a*b,probability));
+        const oneDay=farmingChanceAtLeastOne(chance,24*killsH);
+        return {chance,unitsH:killsH*chance,
+            expected24h:24*killsH*chance,
+            chance24h:oneDay,noDrop24h:oneDay===null?null:1-oneDay,
+            assumption:'third-party-what-if-not-server-observed'};
+    }
+    // POKEIDLE-TOOLS REFERENCE SCENARIOS END.
 
     function farmingConfidence(sampleCount, elapsedMs, stale) {
         if (stale) return 'stale';
@@ -13826,7 +13938,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.9 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.10 experimental loaded'
         );
     }
 
