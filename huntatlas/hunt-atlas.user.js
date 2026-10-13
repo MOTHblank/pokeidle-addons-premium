@@ -445,7 +445,12 @@
             'catch.shiny': 'Shiny is rolled per eligible accepted throw (1/24,000 base; 1/12,000 with applicable Lure), NOT per kill. Caught shiny needs both rolls to succeed. No guarantee or saleable specimen implied.',
             'catch.outland': 'Outland shiny capture eligibility unresolved; shiny estimates withheld.',
             'catch.clamp': 'Beast ×8 does not always double Ultra ×4 after the 10% cap.',
-            'catch.mystic': 'Mystic Arena uses a separate ball table and consumes one ticket per attempt; never included in ordinary hunt odds.',
+            'catch.mystic': 'Mystic Arena uses a separate capture table',
+            'catch.mysticTitle': 'Mystic Arena',
+            'catch.mysticRate': '{ball}: {chance} per attempt',
+            'catch.mysticTicket': 'One MysticTicket per encounter; one accepted throw',
+            'catch.mysticStock': 'MysticTickets: {count}',
+            'catch.mysticNote': 'Unverified Capture Boost not applied',
             'catch.card': 'Ultra {ultra} · Beast {beast} (wiki-conditional)',
             'catch.levelCap': 'Caught level cap: {level} (wild rewards unchanged)',
             'catch.cardUnknown': 'Capture chance unavailable (rarity unresolved)',
@@ -766,7 +771,12 @@
             'catch.shiny': 'O shiny é sorteado por arremesso aceito elegível (1/24.000 normal; 1/12.000 com Lure aplicável), NÃO por abate. Capturar shiny exige sucesso em ambos os sorteios. Sem garantia de drop ou Pokémon vendável.',
             'catch.outland': 'Elegibilidade de shiny na Outland não verificada; projeção de shiny omitida.',
             'catch.clamp': 'Beast ×8 nem sempre dobra a chance da Ultra ×4 após o teto de 10%.',
-            'catch.mystic': 'A Arena Mística usa tabela especial de bolas e consome um ticket por tentativa; não entra nas odds das hunts comuns.',
+            'catch.mystic': 'A Arena Mística tem tabela própria de captura',
+            'catch.mysticTitle': 'Arena Mística',
+            'catch.mysticRate': '{ball}: {chance} por tentativa',
+            'catch.mysticTicket': 'Um MysticTicket por encontro; uma bola aceita',
+            'catch.mysticStock': 'MysticTickets: {count}',
+            'catch.mysticNote': 'Bônus de captura não verificado, não aplicado',
             'catch.card': 'Ultra {ultra} · Beast {beast} (condicional da wiki)',
             'catch.levelCap': 'Teto do nível ao capturar: {level} (recompensas do selvagem não mudam)',
             'catch.cardUnknown': 'Chance de captura indisponível (raridade não verificada)',
@@ -12516,7 +12526,20 @@
             observedCapture?.byBallCaught?.[activeCaptureId]??0);
         const capEvidence=chosen?
             tr('catch.source',{coverage:chosen.coverage}):tr('catch.unknown');
-        const captureHtml=[
+        const mysticArena = state.currentHuntSlug === 'arena_mistica';
+        const mysticTickets = state.inventoryForCosts.get('item:70090');
+        const mysticBallName = activeCaptureId===5?'Beast Ball':'Ultra Ball';
+        const mysticHtml = [
+            '<div class="mha-xp-list-title">'+escapeHtml(tr('catch.mysticTitle'))+'</div>',
+            captureLine(tr('catch.mysticRate',{
+                ball:mysticBallName,
+                chance:formatProbability(captureMysticChance(activeCaptureId))})),
+            '<div class="mha-xp-note">'+escapeHtml(tr('catch.mysticTicket'))+'</div>',
+            Number.isSafeInteger(mysticTickets) ? '<div class="mha-xp-note">'+
+                escapeHtml(tr('catch.mysticStock',{count:mysticTickets}))+'</div>':'',
+            '<div class="mha-xp-note">'+escapeHtml(tr('catch.mysticNote'))+'</div>'
+        ].join('');
+        const captureHtml= mysticArena ? mysticHtml : [
             '<div class="mha-xp-list-title">'+escapeHtml(tr('catch.title'))+'</div>',
             '<div class="mha-xp-note"><label>'+escapeHtml(tr('catch.ball'))+
                 ' <select data-mha-capture-ball>'+
