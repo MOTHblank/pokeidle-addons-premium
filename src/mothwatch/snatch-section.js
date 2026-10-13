@@ -5,7 +5,11 @@
     const SNATCH_ACTIVE_MS = 30 * 60000;
     const SNATCH_RETRY_MS = 400;
     const SNATCH_MAX_QUOTE_AGE_MS = 3 * 60000;
-    const SNATCH_ATTEMPT_LIMIT = 120;
+    // Fast initial attempts, then progressive backoff on repeated refusals.
+    // Do not silently abandon an existing listing after only 120 refusals.
+    function snatchRetryDelay(attempts) {
+        return attempts < 30 ? SNATCH_RETRY_MS : attempts < 90 ? 1500 : 5000;
+    }
     function snatchKey(kind, currency, id) {
         return kind + ':' + currency + ':' + id;
     }
@@ -262,7 +266,10 @@
                 entry.retryAt = Number(state.rateLimitedUntil);
                 continue;
             }
-            if (entry.attempts >= SNATCH_ATTEMPT_LIMIT) { snatchStop(key,'attempt limit'); continue; }
+            if (!manual && entry.releaseAt > 0 &&
+                server - entry.releaseAt > SNATCH_ACTIVE_MS) {
+                snatchStop(key,'rule target expired'); continue;
+            }
             if (entry.ruleId && !manual && (!rule || !currentRuleMatches(rule,c,c.price))) {
                 state.snatchObserved.delete(key); continue;
             }
@@ -292,7 +299,7 @@
                 activeRuleById(entry.ruleId)) &&
                 entry.releaseAt > 0 && entry.releaseAt-now < 1500 &&
                 entry.releaseAt-now > -10000 &&
-                entry.attempts < SNATCH_ATTEMPT_LIMIT) return true;
+                (!state.pendingBuy || state.pendingBuy.listingId === entry.candidate.listingId)) return true;
         }
         return false;
     }
@@ -321,7 +328,7 @@
             if (status === 'confirmed' || status === 'unknown') {
                 snatchStop(key,status); continue;
             }
-            entry.retryAt = Date.now() + SNATCH_RETRY_MS;
+            entry.retryAt = Date.now() + snatchRetryDelay(entry.attempts);
             state.attemptedListings.set(listingId,entry.retryAt);
             // Retry on the next release timer, not on a bulk market scan.
             // Targeted listing reconciliation happens separately, when idle.
