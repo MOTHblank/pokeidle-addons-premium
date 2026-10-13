@@ -29,7 +29,7 @@
 - Filters and recommendation details scroll independently; results retain their own scroll container.
 - Buttons remain visible and keyboard-focusable where useful; disabled state is conveyed by adjacent text, not color alone.
 - Measured XP/h, modelled XP/h, conditional catches/h and **unverified** third-party boost what-if projections remain separate. No “live boost applied” badge, imaginary catch probability or fake realized Coins was added.
-- The version check becomes **1.9.11** while retaining the same Controller Bridge contract; no changes to MothWatch, Auto Catch+, normal-release HuntAtlas, or Parcel Panic.
+- The version check becomes **1.9.11** while retaining the same Controller Bridge contract; no changes to MothWatch, Auto Catch+ or normal-release HuntAtlas.
 - The only new timer is a 160 ms *interaction-scoped* search debounce. It is cleared on further input/reset. No new network requests, market polling, browser observers, socket connections or scheduled scans.
 
 ## Deterministic QA
@@ -53,3 +53,7 @@ New `huntatlas/tests/ui-ux-audit.test.cjs` extracts the live search helpers to t
 - Native server `outland.tier` acknowledgment/cooldown semantics remain partially unverified; tool cannot fix a field the deployed server does not expose.
 - Full WCAG review with screen reader is separate from these keyboard/semantic improvements.
 - Future component extraction would make the 14k-line userscript easier to maintain, but this review avoids a large rewrite and preserves the single userscript distribution.
+
+## Follow-up cleanup — v1.9.13
+
+The independent delivery game was removed, including its UI toggle, canvas, animations, input handlers, CSS, localization, storage keys and game-only test. Pokémon XP/h and net Coins/h were removed from both sort menus and ranking objectives without deleting their calculations or hunt-detail/telemetry fields. The supported-sort allowlist now maps saved obsolete selections back to trainer XP/h, and regression coverage protects this reduction. The v1.9.12 rate display refinements remain intact.
