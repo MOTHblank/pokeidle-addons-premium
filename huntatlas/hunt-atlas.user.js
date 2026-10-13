@@ -482,6 +482,7 @@
             'diag.source': 'source: {source} · sample window: {window} · model coverage: {coverage}%',
             'diag.noWindow': 'no measured window',
             'diag.caveat': 'No raw messages, token, name or account ID is exported or uploaded.',
+            'diag.counts': 'kills {kills}, accepted balls {throws}, captures {captures}, boosts keys {boosts}, render attempts {renders}',
             'sort.coins': 'Kill Coins/hour',
             'sort.netCoins': 'Net Coins/hour (measured)',
             'econ.title': 'Farming economy · {hunt}',
@@ -799,6 +800,7 @@
             'diag.source': 'origem: {source} · janela de amostras: {window} · cobertura do modelo: {coverage}%',
             'diag.noWindow': 'sem janela medida',
             'diag.caveat': 'Nenhuma mensagem bruta, token, nome ou ID de conta é exportado ou enviado.',
+            'diag.counts': 'abates {kills}, bolas aceitas {throws}, capturas {captures}, campos de bônus {boosts}, renderizações {renders}',
             'sort.coins': 'Moedas/h por abate',
             'sort.netCoins': 'Moedas líquidas/h (medido)',
             'econ.title': 'Economia da hunt · {hunt}',
@@ -10532,6 +10534,29 @@
                 color: #93898e;
                 font-size: 8px;
             }
+            .mha-hunt-detail { margin-top: 3px; }
+            .mha-hunt-detail summary,
+            .mha-xp-summary [data-mha-more] > summary {
+                cursor: pointer;
+                color: #a9d2ff;
+                font-size: 9px;
+            }
+            .mha-hunt-detail[open] {
+                max-width: min(100%, 720px);
+                padding-bottom: 3px;
+            }
+            .mha-xp-summary [data-mha-more] {
+                margin-top: 6px;
+                border-top: 1px solid rgba(255,255,255,.07);
+                padding-top: 6px;
+            }
+            .mha-xp-summary select {
+                max-width: 100%;
+                color: inherit;
+                background-color: #201e29;
+                border: 1px solid rgba(255,255,255,.15);
+                border-radius: 4px;
+            }
 
             .mha-go {
                 min-width: 58px;
@@ -13057,6 +13082,12 @@
                             Math.round(currentXp.windowMs/1000)+' s':
                             tr('diag.noWindow'),
                         coverage:currentXp?.coverage??0
+                    }))+' · '+escapeHtml(tr('diag.counts',{
+                        kills:Math.max(0,state.farmingLedger.totals.kills),
+                        throws:Math.max(0,state.farmingLedger.totals.acceptedThrows),
+                        captures:Math.max(0,state.farmingLedger.totals.captures),
+                        boosts:Object.keys(state.xpBonusState).length,
+                        renders:state.renderStats.attempts
                     }))+' · '+escapeHtml(tr('diag.caveat'))+
                     '</div>':''}
             </details>
@@ -13182,7 +13213,8 @@
         drawer.hidden =
             false;
         state.lastDrawerRenderAt=Date.now();
-        state.renderStats.attempts++;
+        state.renderStats.attempts=Math.min(1000000000,
+            state.renderStats.attempts+1);
         arcadeRender(drawer);
         if (arcade.open) return;
 
@@ -13415,7 +13447,8 @@
         // the user has switched back to the native map / minigame.
         if(!state.drawerOpen || !state.atlasEnabled || arcade.open ||
             !isMapModalOpen()) {
-            state.renderStats.skipped++;
+            state.renderStats.skipped=Math.min(1000000000,
+                state.renderStats.skipped+1);
             return;
         }
         if(state.renderQueued)return;
