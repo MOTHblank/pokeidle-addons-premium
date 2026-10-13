@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.4.0
+// @version      0.5.0
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -15,7 +15,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.4.0');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.5.0');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -34,6 +34,9 @@
     const MAX_FIRST_SEEN = 1800;
     const BASELINE_KEY = 'moth-pokeidle-market-item-baseline-v1';
     const POKEMON_REFERENCE_KEY = 'moth-pokeidle-market-pokemon-reference-v3';
+    const ECONOMY_HOLDINGS_KEY = 'moth-pokeidle-economy-holdings-v1';
+    const ECONOMY_REFERENCE_FRESH_MS = 24 * 3600000;
+    const ECONOMY_TELEMETRY_FRESH_MS = 10 * 60000;
     const POKEMON_SALE_WINDOW_MS = 90 * 86400000;
     const POKEMON_HISTORY_FRESH_MS = 30 * 86400000;
     const BACKGROUND_MIN_GAP_MS = 3000;
@@ -112,6 +115,10 @@
         anyItemTargetsCache: null,
         pokemonAutoOffers: new Map(),
         pokemonEvidenceMemo: null,
+        economyHoldings: [],
+        economyInput: { itemId: 0, quantity: 1, holdingCurrency: 'gold', feeCurrency: 'gold', feeKind: 'item', feeUnit: 100, feeQuantity: 1, holdingDays: 1 },
+        economyUiCache: null,
+        economyNotice: '',
         liveDiamondAverages: null,
         diamondStatus: 'waiting',
         diamondPendingCurrency: null,
@@ -141,7 +148,7 @@
         lastScanAt: 0,
         scanTimer: null,
         watchOpen: false,
-        watchView: (() => { try { const value = localStorage.getItem('moth-pokeidle-market-watch-view-v1'); return ['opportunities', 'inventory', 'pricing', 'automation', 'activity'].includes(value) ? value : 'opportunities'; } catch { return 'opportunities'; } })(),
+        watchView: (() => { try { const value = localStorage.getItem('moth-pokeidle-market-watch-view-v1'); return ['opportunities', 'inventory', 'pricing', 'economy', 'automation', 'activity'].includes(value) ? value : 'opportunities'; } catch { return 'opportunities'; } })(),
         opportunitySearch: (() => { try { return localStorage.getItem('moth-pokeidle-market-watch-search-v1') || ''; } catch { return ''; } })(),
         firstSeenCache: new Map(),
         itemInventoryCollapsed: (() => {
@@ -207,6 +214,57 @@
         "Underpriced listings and market sniper settings": "Ofertas abaixo do preço e configurações de compra no mercado",
         "Scan now": "Escanear agora",
         "Moth Watch views": "Seções do Moth Watch",
+        "Economy & holdings": "Economia e patrimônio",
+        "RMT sale eligibility: {status}": "Apto para RMT: {status}",
+        "NPC resale: {status}": "Revenda NPC: {status}",
+        "verified from catalog": "verificado no catálogo",
+        "excluded by catalog": "excluído pelo catálogo",
+        "unverified": "não verificado",
+        "Holding removed.": "Bem removido.",
+        "Could not remove holding.": "Não foi possível remover o bem.",
+        "Holding quantity recorded.": "Quantidade registrada.",
+        "Select a catalog item and a valid quantity.": "Escolha um item do catálogo e uma quantidade válida.",
+        "Enter a valid positive price and quantity; Pokémon are indivisible.": "Informe preço e quantidade inteiros positivos; cada Pokémon é indivisível.",
+        "Seller fee estimate updated.": "Estimativa de taxa atualizada.",
+        "Diamond resale is not inferred: purchased-from-player and reward Diamonds are not equivalent to server-verified eligible first-party Diamonds.": "Não presumimos revenda de diamantes: diamantes adquiridos de jogadores ou prêmios não equivalem aos diamantes de primeira compra elegíveis e confirmados pelo servidor.",
+
+        "Read-only estimates and user-entered holdings; never realized proceeds.": "Estimativas somente de leitura e bens informados manualmente; nunca receitas realizadas.",
+        "Quantity": "Quantidade",
+        "Unit price": "Preço unitário",
+        "Sale quantity": "Quantidade na venda",
+        "Holding days": "Dias de anúncio",
+        "Recorded purchase exposure (not sale revenue)": "Exposição em compras registradas (não é receita de vendas)",
+        "quoted confirmed purchase exposure": "gastos máximos cotados de compras confirmadas",
+        "unverified reserved exposure": "gastos reservados de resultado incerto",
+        "Confirmed means an authoritative buy acknowledgement; booked spend is the quoted maximum, not verified settlement.": "Confirmada significa que o servidor reconheceu a compra; o gasto registrado é o teto cotado, não o valor liquidado verificado.",
+        "User-entered holdings (optional)": "Bens informados manualmente (opcional)",
+        "Manual quantities only. No inventory sync or automatic sale. Choose ONE valuation currency per item.": "Quantidades informadas pelo usuário. Sem sincronizar o inventário ou vender. Escolha UMA moeda de referência por item.",
+        "Choose an item in the game market catalog": "Escolha um item do catálogo do mercado",
+        "Record quantity": "Registrar quantidade",
+        "No holdings entered.": "Nenhum bem cadastrado.",
+        "Remove": "Remover",
+        "Unknown value (insufficient recent sales)": "Valor desconhecido (vendas recentes insuficientes)",
+        "estimated asking-independent gross": "valor bruto histórico estimado",
+        "Catalog: {category}": "Catálogo: {category}",
+        "{count} unknown-value assets": "{count} ativos sem preço confiável",
+        "Separate hypothetical 7-day sold-price averages; NOT wallet balance, proceeds, NPC value or instant liquidity. Only live references with 3+ sold units and under 24h age qualify.": "Médias hipotéticas de vendas em 7 dias, separadas por moeda; NÃO representam saldo, receita, preço NPC nem liquidez imediata. Exigem ao menos 3 unidades vendidas e referência com menos de 24h.",
+        "Seller fee simulator (read-only)": "Simulador de taxas de venda (somente leitura)",
+        "Calculate fee": "Calcular taxa",
+        "Buyer gross: {gross} · Seller fee: {fee} · Seller net: {net}": "Gasto bruto do comprador: {gross} · Comissão do vendedor: {fee} · Líquido do vendedor: {net}",
+        "Coin rounding unverified": "Arredondamento de moedas não verificado",
+        "Optional upfront Pokémon holding: {cost} Coins": "Custo antecipado opcional do anúncio Pokémon: {cost} moedas",
+        "Select a valid positive integer sale total": "Escolha um total de venda inteiro e positivo",
+        "Fees are deducted from seller proceeds, never added to the buyer price. Holding is paid up front in Coins. No sale is simulated or executed.": "As comissões reduzem o líquido do vendedor, não aumentam o preço do comprador. O anúncio antecipado é pago em moedas. Nenhuma venda é executada.",
+        "Farming context (optional telemetry)": "Contexto de caça (telemetria opcional)",
+        "No fresh versioned session telemetry connected. Farming profit remains unknown.": "Sem telemetria recente de sessão com versão compatível. Lucro de caça permanece desconhecido.",
+        "Observed {minutes} min session window · {age} min old": "Janela observada de {minutes} min · registrada há {age} min",
+        "Hunt Coins: {amount}": "Moedas de caça: {amount}",
+        "NPC auto-sales: {amount}": "Vendas automáticas NPC: {amount}",
+        "Consumables (balls/potions/revives): {amounts}": "Consumíveis (bolas/poções/revives): {amounts}",
+        "Observed net: {amount} Coins": "Líquido observado: {amount} moedas",
+        "Observed rare drops: {count} units · Modeled EV: {rate} units/h": "Drops raros observados: {count} unidades · expectativa modelada: {rate} unidades/h",
+        "Observed and modeled quantities are separate; no rare-drop EV, inventory value or NPC auto-sale is silently added to realized profit.": "Quantidades observadas e modeladas ficam separadas; expectativa de drops, valor do inventário e vendas NPC não são acrescentados silenciosamente ao lucro realizado.",
+
         "Opportunities": "Oportunidades",
         "Market inventory": "Estoque do mercado",
         "Automation & budget": "Automação e orçamento",
@@ -3257,6 +3315,8 @@
             state.nick = String(message.estado?.nick || '');
             mergePlayer(message.estado, true);
             state.orderJournal = loadOrderJournal();
+            state.economyHoldings = loadEconomyHoldings();
+            state.economyNotice = '';
             state.exposureCache.clear();
             if (previousAccount !== state.orderJournal?.accountKey) {
                 state.attemptedListings.clear();
@@ -3667,6 +3727,14 @@
             '.moth-mw-range-scale{display:flex;justify-content:space-between;color:var(--sobre-mad-dim,#888);font-size:9px}',
             '.moth-mw-reference-tools{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:9px;padding:10px;border-radius:8px;background:var(--vao,#21191d)}',
             '.moth-mw-reference-tools .moth-mw-reference-info{flex:1;min-width:230px;font-size:10px;color:var(--sobre-mad-dim,#aaa);line-height:1.5}',
+            '#moth-mw-economy{display:grid;gap:12px;min-width:0}',
+            '.moth-mw-economy-card{padding:13px;border:1px solid var(--mad-linha,#604850);border-radius:9px;background:var(--vao,#21191d);overflow-wrap:anywhere}',
+            '.moth-mw-economy-card h5{font-size:13px;margin:0 0 8px}',
+            '.moth-mw-economy-card p{font-size:11px;line-height:1.5;margin:6px 0}',
+            '.moth-mw-economy-fields{display:flex;align-items:end;gap:7px;flex-wrap:wrap;margin:9px 0}',
+            '.moth-mw-economy-fields select,.moth-mw-economy-fields input{min-width:0;max-width:260px;box-sizing:border-box}',
+            '.moth-mw-economy-field{display:flex;flex-direction:column;min-width:90px;max-width:165px;gap:4px;font-size:10px}',
+            '.moth-mw-economy-entry{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid var(--mad-linha,#604850);font-size:11px}',
             '#moth-mw-pricing-list{display:grid;gap:10px;min-width:0}',
             '.moth-mw-evidence-card{padding:12px;border:1px solid var(--mad-linha,#604850);border-radius:9px;background:var(--vao,#21191d);min-width:0;overflow-wrap:anywhere}',
             '.moth-mw-evidence-card h5{margin:0 0 7px;font-size:13px}',
@@ -3800,6 +3868,314 @@
                     '</span><input type="number" data-moth-cfg="' + escapeHtml(key) + '" value="' +
                     escapeHtml(value) + '" min="' + limit.min + '" max="' + limit.max + '" step="1"></label>';
         return '<div class="moth-mw-setting">' + field + helpMarkup + '</div>';
+    }
+
+    // v0.5 economic calculations are *strictly informational*. No function here
+    // sends a socket packet or grants purchasing / selling authorization.
+    function itemProvenance(itemId) {
+        const id = Number(itemId);
+        const item = Number.isSafeInteger(id) && id > 0 ? state.catalog.get(id) : null;
+        const rawCategory = item && (item.categoria ?? item.category ?? item.tipo);
+        const category = typeof rawCategory === 'string' && rawCategory.trim()
+            ? rawCategory.trim().slice(0, 60) : null;
+        const observed = !!item;
+        const declared = typeof item?.vendavelRmt === 'boolean' ? item.vendavelRmt :
+            typeof item?.marketEligible === 'boolean' ? item.marketEligible : null;
+        // Presence in a catalogue is proof of catalogue membership, not proof
+        // of the game's current seller-side whitelist or NPC sell price.
+        return {
+            id: Number.isSafeInteger(id) && id > 0 ? id : null,
+            category, source: observed ? 'welcome.mercado.catalogo' : 'none',
+            inMarketCatalog: observed,
+            marketEligible: declared === true ? true : declared === false ? false : null,
+            npcSellable: typeof item?.vendavelNpc === 'boolean' ? item.vendavelNpc : null,
+            npcPrice: item?.vendavelNpc === true &&
+                Number.isSafeInteger(Number(item.npcPrice)) && Number(item.npcPrice) > 0
+                ? Number(item.npcPrice) : null
+        };
+    }
+
+    function diamondProvenance(origin) {
+        // In-game eligibility is server-side provenance, not a quantity test.
+        // A diamond purchased from another player is not automatically resellable.
+        return origin === 'pix' || origin === 'card' ?
+            { eligibility: 'server verification required', origin } :
+            { eligibility: 'not established for resale', origin: origin || 'unknown' };
+    }
+
+    function marketplaceFee(gross, currency, kind, days = 0) {
+        if (!Number.isSafeInteger(gross) || gross <= 0 ||
+            !['gold', 'orb'].includes(currency) ||
+            !['item', 'pokemon', 'diamond'].includes(kind)) return null;
+        // Integer basis points, with ONE upward rounding of the entire fee.
+        // BigInt prevents float-off-by-one errors at 500 / 5,000 Gem borders.
+        const amount = BigInt(gross);
+        const ceilBasisPoints = weightedBp => (weightedBp + 9999n) / 10000n;
+        const exact = currency === 'orb';
+        let cost = null;
+        if (currency === 'orb') {
+            if (kind === 'pokemon') {
+                const first = amount < 500n ? amount : 500n;
+                const second = amount > 500n
+                    ? (amount - 500n < 4500n ? amount - 500n : 4500n) : 0n;
+                const third = amount > 5000n ? amount - 5000n : 0n;
+                cost = ceilBasisPoints(first * 1300n + second * 1000n + third * 750n);
+            } else cost = ceilBasisPoints(amount * 1500n);
+        }
+        // Coin fee is 15% but exact server rounding remains unverified.
+        const lowFee = exact ? Number(cost) : Number(amount * 1500n / 10000n);
+        const highFee = exact ? Number(cost) :
+            Number((amount * 1500n + 9999n) / 10000n);
+        const validDays = kind === 'pokemon' && Number.isSafeInteger(days) && days >= 1 && days <= 30
+            ? days : null;
+        return {
+            currency, kind, buyerGross: gross, listingGross: gross,
+            fee: exact ? lowFee : null,
+            feeMin: lowFee, feeMax: highFee,
+            sellerNet: exact ? gross - lowFee : null,
+            netMin: gross - highFee, netMax: gross - lowFee,
+            exact, holdingCoins: validDays === null ? null : 100000 * validDays,
+            holdingDays: validDays
+        };
+    }
+
+    function loadEconomyHoldings() {
+        if (!state.nick || !state.orderJournal?.accountKey) return [];
+        try {
+            const data = JSON.parse(localStorage.getItem(
+                ECONOMY_HOLDINGS_KEY + ':' + state.orderJournal.accountKey) || 'null');
+            if (!data || data.version !== 1 || !Array.isArray(data.items)) return [];
+            return data.items.slice(0, 40).filter(row =>
+                Number.isSafeInteger(row.itemId) && row.itemId > 0 &&
+                Number.isSafeInteger(row.quantity) && row.quantity > 0 &&
+                row.quantity <= 1000000000 && ['gold', 'orb'].includes(row.currency));
+        } catch { return []; }
+    }
+
+    function saveEconomyHoldings() {
+        if (!state.nick || !state.orderJournal?.accountKey) return false;
+        try {
+            localStorage.setItem(ECONOMY_HOLDINGS_KEY + ':' + state.orderJournal.accountKey,
+                JSON.stringify({ version: 1, savedAt: Date.now(),
+                    source: 'user-entered (not game inventory)', items: state.economyHoldings }));
+            return true;
+        } catch { return false; }
+    }
+
+    function setEconomyHolding(itemId, quantity, currency) {
+        const id = Number(itemId), qty = Number(quantity);
+        if (!state.nick || !state.orderJournal?.accountKey ||
+            !Number.isSafeInteger(id) || id <= 0 ||
+            !Number.isSafeInteger(qty) || qty < 0 || qty > 1000000000 ||
+            !['gold', 'orb'].includes(currency)) return false;
+        // No fake price for an item absent from the authenticated market catalog.
+        if (qty > 0 && !itemProvenance(id).inMarketCatalog) return false;
+        state.economyHoldings = state.economyHoldings.filter(row => row.itemId !== id);
+        if (qty > 0) {
+            if (state.economyHoldings.length >= 40) return false;
+            state.economyHoldings.push({itemId:id, quantity:qty, currency});
+        }
+        return saveEconomyHoldings();
+    }
+
+    function heldItemReference(itemId, currency) {
+        const provenance = itemProvenance(itemId);
+        if (!provenance.inMarketCatalog || provenance.marketEligible === false ||
+            !['gold', 'orb'].includes(currency)) return null;
+        const live = itemMediaFor(itemId)?.[currency];
+        const average = Number(live?.media), units = Number(live?.unidades);
+        const age = Date.now() - state.itemSummaryAt;
+        if (!(age >= 0 && age <= ECONOMY_REFERENCE_FRESH_MS) ||
+            !Number.isFinite(average) || average <= 0 ||
+            !Number.isSafeInteger(units) || units < 3) return null;
+        // A completed-sale mean, never an ask or guaranteed liquidation quote.
+        return { average, units, currency, source: 'market.itens.medias (7d completed-sales)',
+            capturedAt: state.itemSummaryAt, ageMinutes: Math.floor(age / 60000) };
+    }
+
+    function economyHoldingsSnapshot() {
+        const result = { gold: 0, orb: 0, estimated: 0, unknown: 0, entries: [] };
+        for (const holding of state.economyHoldings.slice(0, 40)) {
+            const ref = heldItemReference(holding.itemId, holding.currency);
+            const total = ref ? ref.average * holding.quantity : null;
+            const valid = Number.isFinite(total) && total > 0 && total <= Number.MAX_SAFE_INTEGER;
+            const estimated = valid ? Math.round(total) : null;
+            if (estimated == null) result.unknown++;
+            else {
+                result[holding.currency] += estimated;
+                result.estimated++;
+            }
+            result.entries.push({ ...holding, provenance: itemProvenance(holding.itemId),
+                reference: ref, estimated });
+        }
+        return result;
+    }
+
+    function acquisitionLedgerSummary() {
+        const rows = state.orderJournal?.orders || [];
+        const totals = {
+            gold: { confirmed: 0, uncertain: 0, attempts: 0 },
+            orb: { confirmed: 0, uncertain: 0, attempts: 0 }
+        };
+        for (const row of rows) {
+            if (!totals[row.currency] || !Number.isSafeInteger(row.spend) || row.spend <= 0) continue;
+            if (row.status === 'confirmed') {
+                totals[row.currency].confirmed += row.spend;
+                totals[row.currency].attempts++;
+            } else if (['submitted', 'prepared', 'unknown'].includes(row.status)) {
+                totals[row.currency].uncertain += row.spend;
+                totals[row.currency].attempts++;
+            }
+        }
+        // Quoted maximum spend, NOT settlement receipts or realized P&L.
+        return totals;
+    }
+
+    function readEconomyTelemetry() {
+        // Optional versioned bridge *read once on view render*. No observers,
+        // additional socket subscriptions or market polling.
+        let payload;
+        try { payload = page.MOTH_ECONOMY_TELEMETRY_V1; } catch { return null; }
+        if (!payload || payload.version !== 1 || payload.source !== 'session') return null;
+        const age = Date.now() - Number(payload.capturedAt);
+        const minutes = Number(payload.windowMinutes);
+        if (!Number.isFinite(age) || age < 0 || age > ECONOMY_TELEMETRY_FRESH_MS ||
+            !Number.isFinite(minutes) || minutes <= 0 || minutes > 1440) return null;
+        const observed = payload.observed || {};
+        const val = name => Number.isSafeInteger(observed[name]) && observed[name] >= 0
+            ? observed[name] : null;
+        const hunt = val('huntCoins'), npc = val('npcSaleCoins');
+        const costs = ['ballsCoins', 'potionsCoins', 'revivesCoins'].map(val);
+        // If the producer cannot tell whether NPC income is included,
+        // we cannot safely compute a combined net amount.
+        const includesNpc = payload.huntCoinsIncludesNpcSales;
+        const net = hunt != null && costs.every(v => v != null) &&
+            (includesNpc === true || includesNpc === false && npc != null)
+            ? hunt + (includesNpc ? 0 : npc) - costs.reduce((a,b) => a+b,0) : null;
+        const modeled = payload.modeled || {};
+        const rareEv = Number.isFinite(modeled.rareDropExpectedUnitsPerHour) &&
+            modeled.rareDropExpectedUnitsPerHour >= 0
+            ? modeled.rareDropExpectedUnitsPerHour : null;
+        return {
+            source: 'opt-in session telemetry', ageMinutes: Math.floor(age / 60000),
+            minutes, huntCoins:hunt, npcSaleCoins:npc, costs,
+            netCoins:net, observedRareDrops:val('rareDropsUnits'),
+            rareExpectedPerHour:rareEv
+        };
+    }
+
+    function renderEconomyDashboard() {
+        const stamp = JSON.stringify({
+            account: state.orderJournal?.accountKey,
+            updated: state.itemSummaryAt, config: state.economyInput,
+            holdings: state.economyHoldings, orders: state.orderJournal?.orders?.length,
+            language: currentLocale(), catalogSize: state.catalog.size,
+            notice: state.economyNotice
+        });
+        if (state.economyUiCache?.stamp === stamp &&
+            Date.now() - state.economyUiCache.at < 3000) return state.economyUiCache.html;
+        const holdings = economyHoldingsSnapshot();
+        const orders = acquisitionLedgerSummary();
+        const input = state.economyInput;
+        const feeGross = Number(input.feeUnit) * Number(input.feeQuantity);
+        const fee = Number.isSafeInteger(feeGross) ? marketplaceFee(
+            feeGross, input.feeCurrency, input.feeKind, input.holdingDays) : null;
+        const currencyChoice = currency => ['gold','orb'].map(code =>
+            '<option value="' + code + '"' + (code === currency ? ' selected' : '') + '>' +
+            escapeHtml(tr(code === 'orb' ? 'Gems' : 'Coins')) + '</option>').join('');
+        const field = (key,value,min=0) =>
+            '<label class="moth-mw-economy-field"><span>' + escapeHtml(tr({
+                quantity:'Quantity',feeUnit:'Unit price',feeQuantity:'Sale quantity',holdingDays:'Holding days'
+            }[key] || key)) + '</span><input type="number" data-moth-economy-field="' + key + '" min="' + min +
+            '" step="1" value="' + escapeHtml(value) + '"></label>';
+        const live = readEconomyTelemetry();
+        const ledgerRow = code => {
+            const row = orders[code];
+            return '<p>' + escapeHtml(tr(code === 'orb' ? 'Gems' : 'Coins')) +
+                ': ' + num(row.confirmed) + ' ' + escapeHtml(tr('quoted confirmed purchase exposure')) +
+                ' · ' + num(row.uncertain) + ' ' +
+                escapeHtml(tr('unverified reserved exposure')) + '</p>';
+        };
+        const entries = holdings.entries.map(row =>
+            '<div class="moth-mw-economy-entry"><b>' + escapeHtml(catalogName(row.itemId)) + '</b> ' +
+            '×' + num(row.quantity) + ' · ' + escapeHtml(tr(row.currency === 'orb' ? 'Gems' : 'Coins')) +
+            ' · ' + (row.estimated == null ? escapeHtml(tr('Unknown value (insufficient recent sales)'))
+                : num(row.estimated) + ' ' + escapeHtml(tr('estimated asking-independent gross'))) +
+            ' · ' + escapeHtml(tr('Catalog: {category}', {
+                category: row.provenance.category || tr('unknown')
+            })) + ' · ' + escapeHtml(tr('RMT sale eligibility: {status}', {
+                status: tr(row.provenance.marketEligible === true ? 'verified from catalog' :
+                    row.provenance.marketEligible === false ? 'excluded by catalog' : 'unverified')
+            })) + ' · ' + escapeHtml(tr('NPC resale: {status}', {
+                status: tr(row.provenance.npcSellable === true ? 'verified from catalog' :
+                    row.provenance.npcSellable === false ? 'excluded by catalog' : 'unverified')
+            })) + '<button class="moth-mw-btn" type="button" data-moth-holding-remove="' +
+            row.itemId + '">' + escapeHtml(tr('Remove')) + '</button></div>'
+        ).join('');
+        const options = [...state.catalog.keys()].filter(id => Number.isSafeInteger(id) && id > 0)
+            .slice(0, 1500).sort((a,b) => catalogName(a).localeCompare(catalogName(b), currentLocale()))
+            .map(id => '<option value="' + id + '"' + (id === input.itemId ? ' selected' : '') +
+                '>' + escapeHtml(catalogName(id)) + ' (#' + id + ')</option>').join('');
+        const telemetry = !live ? '<p>' + escapeHtml(tr('No fresh versioned session telemetry connected. Farming profit remains unknown.')) + '</p>' :
+            '<p>' + escapeHtml(tr('Observed {minutes} min session window · {age} min old', {
+                minutes: num(live.minutes), age: num(live.ageMinutes)
+            })) + '</p><p>' + escapeHtml(tr('Hunt Coins: {amount}', {
+                amount: live.huntCoins == null ? '?' : num(live.huntCoins)
+            })) + ' · ' + escapeHtml(tr('NPC auto-sales: {amount}', {
+                amount: live.npcSaleCoins == null ? '?' : num(live.npcSaleCoins)
+            })) + '</p><p>' + escapeHtml(tr('Consumables (balls/potions/revives): {amounts}', {
+                amounts: live.costs.map(v => v == null ? '?' : num(v)).join(' / ')
+            })) + ' · ' + escapeHtml(tr('Observed net: {amount} Coins', {
+                amount: live.netCoins == null ? '?' : num(live.netCoins)
+            })) + '</p><p>' + escapeHtml(tr('Observed rare drops: {count} units · Modeled EV: {rate} units/h', {
+                count: live.observedRareDrops == null ? '?' : num(live.observedRareDrops),
+                rate: live.rareExpectedPerHour == null ? '?' : live.rareExpectedPerHour.toFixed(2)
+            })) + '</p>';
+        const html = (state.economyNotice ? '<p class="moth-mw-rule-notice">' +
+            escapeHtml(state.economyNotice) + '</p>' : '') +
+            '<section class="moth-mw-economy-card"><h5>' +
+            escapeHtml(tr('Recorded purchase exposure (not sale revenue)')) +
+            '</h5>' + ledgerRow('gold') + ledgerRow('orb') +
+            '<p>' + escapeHtml(tr('Confirmed means an authoritative buy acknowledgement; booked spend is the quoted maximum, not verified settlement.')) + '</p></section>' +
+            '<section class="moth-mw-economy-card"><h5>' + escapeHtml(tr('User-entered holdings (optional)')) +
+            '</h5><p>' + escapeHtml(tr('Manual quantities only. No inventory sync or automatic sale. Choose ONE valuation currency per item.')) +
+            '</p><div class="moth-mw-economy-fields"><select id="moth-mw-holding-item">' +
+            '<option value="0">' + escapeHtml(tr('Choose an item in the game market catalog')) + '</option>' +
+            options + '</select>' + field('quantity',input.quantity,1) +
+            '<select id="moth-mw-holding-currency">' + currencyChoice(input.holdingCurrency) + '</select>' +
+            '<button type="button" class="moth-mw-btn" id="moth-mw-holding-save">' + escapeHtml(tr('Record quantity')) +
+            '</button></div>' + (entries || '<p>' + escapeHtml(tr('No holdings entered.')) + '</p>') +
+            '<p><b>' + num(holdings.gold) + '</b> ' + escapeHtml(tr('Coins')) + ' · <b>' +
+            num(holdings.orb) + '</b> ' + escapeHtml(tr('Gems')) + ' · ' +
+            escapeHtml(tr('{count} unknown-value assets', {count:holdings.unknown})) + '</p>' +
+            '<p>' + escapeHtml(tr('Diamond resale is not inferred: purchased-from-player and reward Diamonds are not equivalent to server-verified eligible first-party Diamonds.')) + '</p>' +
+            '<p>' + escapeHtml(tr('Separate hypothetical 7-day sold-price averages; NOT wallet balance, proceeds, NPC value or instant liquidity. Only live references with 3+ sold units and under 24h age qualify.')) +
+            '</p></section>' +
+            '<section class="moth-mw-economy-card"><h5>' + escapeHtml(tr('Seller fee simulator (read-only)')) +
+            '</h5><div class="moth-mw-economy-fields"><select id="moth-mw-fee-kind">' +
+            ['item','pokemon','diamond'].map(kind => '<option value="' + kind + '"' +
+                (kind === input.feeKind ? ' selected' : '') + '>' +
+                escapeHtml(tr(kind === 'pokemon' ? 'Pokémon' : kind === 'diamond' ? 'Diamonds' : 'Items')) +
+                '</option>').join('') + '</select><select id="moth-mw-fee-currency">' +
+            currencyChoice(input.feeCurrency) + '</select>' + field('feeUnit',input.feeUnit,1) +
+            field('feeQuantity',input.feeQuantity,1) + field('holdingDays',input.holdingDays,1) +
+            '<button type="button" class="moth-mw-btn" id="moth-mw-fee-calc">' +
+            escapeHtml(tr('Calculate fee')) + '</button></div><p>' +
+            (fee ? escapeHtml(tr('Buyer gross: {gross} · Seller fee: {fee} · Seller net: {net}', {
+                gross: num(fee.buyerGross),
+                fee: fee.exact ? num(fee.fee) : num(fee.feeMin) + '–' + num(fee.feeMax),
+                net: fee.exact ? num(fee.sellerNet) : num(fee.netMin) + '–' + num(fee.netMax)
+            })) + (fee.exact ? '' : ' · ' + escapeHtml(tr('Coin rounding unverified'))) +
+            (fee.holdingCoins == null ? '' : ' · ' + escapeHtml(tr('Optional upfront Pokémon holding: {cost} Coins', {
+                cost: num(fee.holdingCoins)
+            }))) : escapeHtml(tr('Select a valid positive integer sale total'))) + '</p>' +
+            '<p>' + escapeHtml(tr('Fees are deducted from seller proceeds, never added to the buyer price. Holding is paid up front in Coins. No sale is simulated or executed.')) +
+            '</p></section>' +
+            '<section class="moth-mw-economy-card"><h5>' + escapeHtml(tr('Farming context (optional telemetry)')) +
+            '</h5>' + telemetry + '<p>' + escapeHtml(tr('Observed and modeled quantities are separate; no rare-drop EV, inventory value or NPC auto-sale is silently added to realized profit.')) +
+            '</p></section>';
+        state.economyUiCache = { stamp, at: Date.now(), html };
+        return html;
     }
 
     function renderItemInventory() {
@@ -4547,7 +4923,7 @@
             if (panel.dataset.mothWatchShell) delete panel.dataset.mothWatchShell;
             forceViewBuild = true;
         }
-        const views = ['opportunities', 'inventory', 'pricing', 'automation', 'activity'];
+        const views = ['opportunities', 'inventory', 'pricing', 'economy', 'automation', 'activity'];
         if (!views.includes(state.watchView)) state.watchView = 'opportunities';
 
         if (!panel.dataset.mothWatchShell) {
@@ -4559,6 +4935,7 @@
                 '<button type="button" class="moth-mw-tab" data-moth-view="opportunities">' + escapeHtml(tr('Opportunities')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="inventory">' + escapeHtml(tr('Market inventory')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="pricing">' + escapeHtml(tr('Pokémon price evidence')) + '</button>' +
+                '<button type="button" class="moth-mw-tab" data-moth-view="economy">' + escapeHtml(tr('Economy & holdings')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="automation">' + escapeHtml(tr('Automation & budget')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="activity">' + escapeHtml(tr('Activity & references')) + '</button></nav>' +
                 '<div class="moth-mw-workspace"><div id="moth-mw-view-content"></div></div>';
@@ -4632,6 +5009,11 @@
                     escapeHtml(tr('Pokémon price evidence')) + '</h4><span>' +
                     escapeHtml(tr('Read-only completed-sale comparisons. No purchase authorization.')) +
                     '</span></div><div id="moth-mw-pricing-list"></div>';
+            } else if (state.watchView === 'economy') {
+                content.innerHTML = '<div class="moth-mw-section-title"><h4>' +
+                    escapeHtml(tr('Economy & holdings')) + '</h4><span>' +
+                    escapeHtml(tr('Read-only estimates and user-entered holdings; never realized proceeds.')) +
+                    '</span></div><div id="moth-mw-economy"></div>';
             } else if (state.watchView === 'automation') {
                 content.innerHTML =
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Automation status')) + '</h4><span>' +
@@ -4706,6 +5088,10 @@
             const host = q('#moth-mw-pricing-list', content);
             const html = renderPokemonPriceEvidence();
             if (host && host.innerHTML !== html) host.innerHTML = html;
+        } else if (state.watchView === 'economy') {
+            const host = q('#moth-mw-economy', content);
+            const html = renderEconomyDashboard();
+            if (host && host.innerHTML !== html && !host.contains(document.activeElement)) host.innerHTML = html;
         } else if (state.watchView === 'automation') {
             refreshAutomationLive(content);
         } else if (state.watchView === 'activity') {
@@ -4739,11 +5125,52 @@
             const tab = target.closest('[data-moth-view]');
             if (tab) {
                 const view = tab.dataset.mothView;
-                if (!['opportunities', 'inventory', 'pricing', 'automation', 'activity'].includes(view)) return;
+                if (!['opportunities', 'inventory', 'pricing', 'economy', 'automation', 'activity'].includes(view)) return;
                 state.watchView = view;
                 try { localStorage.setItem('moth-pokeidle-market-watch-view-v1', view); } catch {}
                 renderWatch(true);
                 return;
+            }
+            const holdingRemove = target.closest('[data-moth-holding-remove]');
+            if (holdingRemove) {
+                const ok = setEconomyHolding(Number(holdingRemove.dataset.mothHoldingRemove), 0, 'gold');
+                state.economyNotice = ok ? tr('Holding removed.') : tr('Could not remove holding.');
+                renderWatch(true); return;
+            }
+            if (target.closest('#moth-mw-holding-save')) {
+                const itemId = Number(q('#moth-mw-holding-item', panel)?.value);
+                const quantity = Number(q('[data-moth-economy-field="quantity"]', panel)?.value);
+                const currency = q('#moth-mw-holding-currency', panel)?.value;
+                const ok = setEconomyHolding(itemId, quantity, currency);
+                state.economyNotice = ok ? tr('Holding quantity recorded.') : tr('Select a catalog item and a valid quantity.');
+                if (ok) {
+                    state.economyInput.itemId = itemId;
+                    state.economyInput.quantity = quantity;
+                    state.economyInput.holdingCurrency = currency;
+                }
+                renderWatch(true); return;
+            }
+            if (target.closest('#moth-mw-fee-calc')) {
+                const kind = q('#moth-mw-fee-kind', panel)?.value;
+                const currency = q('#moth-mw-fee-currency', panel)?.value;
+                const unit = Number(q('[data-moth-economy-field="feeUnit"]', panel)?.value);
+                const quantity = Number(q('[data-moth-economy-field="feeQuantity"]', panel)?.value);
+                const days = Number(q('[data-moth-economy-field="holdingDays"]', panel)?.value);
+                if (!['item','diamond','pokemon'].includes(kind) ||
+                    !['gold','orb'].includes(currency) ||
+                    !Number.isSafeInteger(unit) || unit <= 0 ||
+                    !Number.isSafeInteger(quantity) || quantity < 1 ||
+                    kind === 'pokemon' && quantity !== 1 ||
+                    !Number.isSafeInteger(unit * quantity) ||
+                    !Number.isSafeInteger(days) || days < 1 || days > 30) {
+                    state.economyNotice = tr('Enter a valid positive price and quantity; Pokémon are indivisible.');
+                    renderWatch(true);
+                    return;
+                }
+                state.economyInput = { ...state.economyInput, feeKind: kind, feeCurrency:currency,
+                    feeUnit: unit, feeQuantity: quantity, holdingDays: days };
+                state.economyNotice = tr('Seller fee estimate updated.');
+                renderWatch(true); return;
             }
             if (target.closest('#moth-mw-scan')) { runScan(true); return; }
             if (target.closest('#moth-mw-refresh-baseline')) {

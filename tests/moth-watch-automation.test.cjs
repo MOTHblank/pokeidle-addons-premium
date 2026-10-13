@@ -783,3 +783,135 @@ test('Milestone B: relevant IV and combat role matches are explanatory only', ()
     assert.equal(context.value,220,'role annotation never adjusts sale price');
     assert.match(script,/Role-comparable sales/);
 });
+
+
+function economyHarness() {
+    const state={nick:'tester',catalog:new Map([[106,{id:106,categoria:'Token'}],
+        [107,{id:107,marketEligible:false}]]),
+        liveItemAverages:{106:{gold:{media:1500,unidades:8},orb:{media:4,unidades:2}}},
+        itemSummaryAt:Date.now(),economyHoldings:[],orderJournal:{accountKey:'one',orders:[]},
+        economyInput:{itemId:106,quantity:1,currency:'gold',feeKind:'item',
+            feeUnit:100,feeQuantity:1,holdingDays:1}};
+    const page={}, kv=new Map();
+    const storage={getItem:key=>kv.get(key)??null,setItem:(key,value)=>kv.set(key,value)};
+    const src=section('    function itemProvenance(', '    function renderItemInventory()');
+    const api=new Function('state','page','localStorage','ECONOMY_HOLDINGS_KEY',
+        'ECONOMY_REFERENCE_FRESH_MS','ECONOMY_TELEMETRY_FRESH_MS','itemMediaFor',
+        src+'\nreturn { itemProvenance, diamondProvenance, marketplaceFee, loadEconomyHoldings,'+
+        'setEconomyHolding, heldItemReference, economyHoldingsSnapshot,'+
+        'acquisitionLedgerSummary, readEconomyTelemetry };')(
+        state,page,storage,'eco',24*3600000,10*60000,
+        id=>state.liveItemAverages[id]||null);
+    return {state,page,storage,kv,...api};
+}
+
+test('Milestone C: Gem fee follows exact marginal 500 and 5000 brackets', () => {
+    const h=economyHarness();
+    for(const [total,kind,commission,net] of [
+        [3,'item',1,2],[500,'pokemon',65,435],[501,'pokemon',66,435],
+        [5000,'pokemon',515,4485],[5001,'pokemon',516,4485],
+        [10000,'pokemon',890,9110]]) {
+        const fee=h.marketplaceFee(total,'orb',kind,1);
+        assert.equal(fee.fee,commission,'commission');
+        assert.equal(fee.sellerNet,net,'seller net');
+        assert.equal(fee.buyerGross,total);
+    }
+    assert.equal(h.marketplaceFee(1200,'orb','diamond').fee,180);
+    assert.equal(h.marketplaceFee(10000,'orb','pokemon',3).holdingCoins,300000);
+    assert.equal(h.marketplaceFee(10000,'orb','item',3).holdingCoins,null);
+});
+
+test('Milestone C: Coin commission is a range until rounding is verified', () => {
+    const h=economyHarness(), fee=h.marketplaceFee(101,'gold','item');
+    assert.equal(fee.exact,false);
+    assert.equal(fee.fee,null);
+    assert.equal(fee.feeMin,15);
+    assert.equal(fee.feeMax,16);
+    assert.equal(fee.netMin,85);
+    assert.equal(fee.netMax,86);
+    assert.equal(h.marketplaceFee(10.5,'orb','pokemon'),null);
+    assert.equal(h.marketplaceFee(-1,'gold','item'),null);
+    assert.equal(h.marketplaceFee(100,'orb','house'),null);
+});
+
+test('Milestone C: market catalog is not proof of NPC or resale eligibility', () => {
+    const h=economyHarness();
+    assert.equal(h.itemProvenance(106).category,'Token');
+    assert.equal(h.itemProvenance(106).source,'welcome.mercado.catalogo');
+    assert.equal(h.itemProvenance(106).marketEligible,null);
+    assert.equal(h.itemProvenance(106).npcSellable,null);
+    assert.equal(h.itemProvenance(106).npcPrice,null);
+    assert.equal(h.itemProvenance(107).marketEligible,false);
+    assert.equal(h.itemProvenance(999).inMarketCatalog,false);
+    assert.equal(h.diamondProvenance('market').eligibility,'not established for resale');
+    assert.equal(h.diamondProvenance('pix').eligibility,'server verification required');
+});
+
+test('Milestone C: manual holdings are scoped to an account and a single currency', () => {
+    const h=economyHarness();
+    assert.equal(h.setEconomyHolding(999,10,'gold'),false);
+    assert.equal(h.setEconomyHolding(106,2.3,'gold'),false);
+    assert.equal(h.setEconomyHolding(106,4,'gold'),true);
+    assert.equal(h.economyHoldingsSnapshot().gold,6000);
+    assert.equal(h.economyHoldingsSnapshot().orb,0);
+    assert.equal(h.setEconomyHolding(106,4,'orb'),true);
+    assert.equal(h.state.economyHoldings.length,1);
+    assert.equal(h.economyHoldingsSnapshot().unknown,1,'too few Gem sales');
+    assert.equal(h.loadEconomyHoldings()[0].currency,'orb');
+    h.state.orderJournal.accountKey='two';
+    assert.deepEqual(h.loadEconomyHoldings(),[]);
+    h.state.orderJournal.accountKey='one';
+    assert.equal(h.setEconomyHolding(106,0,'gold'),true);
+    assert.equal(h.state.economyHoldings.length,0);
+});
+
+test('Milestone C: live completed-sale source expires and cannot infer value', () => {
+    const h=economyHarness();
+    h.setEconomyHolding(106,4,'gold');
+    h.state.itemSummaryAt=Date.now()-25*3600000;
+    assert.equal(h.economyHoldingsSnapshot().unknown,1);
+    h.state.itemSummaryAt=Date.now();
+    h.state.catalog.delete(106);
+    assert.equal(h.economyHoldingsSnapshot().unknown,1);
+});
+
+test('Milestone C: confirmed buy exposure is not realized seller revenue', () => {
+    const h=economyHarness();
+    h.state.orderJournal.orders=[
+        {currency:'gold',spend:1000,status:'confirmed'},
+        {currency:'gold',spend:300,status:'unknown'},
+        {currency:'gold',spend:400,status:'refused'},
+        {currency:'orb',spend:7,status:'confirmed'}];
+    const summary=h.acquisitionLedgerSummary();
+    assert.deepEqual(summary.gold,{confirmed:1000,uncertain:300,attempts:2});
+    assert.deepEqual(summary.orb,{confirmed:7,uncertain:0,attempts:1});
+    assert.equal(Object.hasOwn(summary.gold,'sellerProceeds'),false);
+    assert.doesNotMatch(section('    function itemProvenance(', '    function renderItemInventory()'),
+        /market\.comprar|market\.criar|sendBackground\(/);
+});
+
+test('Milestone C: optional session telemetry avoids duplicate NPC sales', () => {
+    const h=economyHarness();
+    assert.equal(h.readEconomyTelemetry(),null);
+    h.page.MOTH_ECONOMY_TELEMETRY_V1={
+        version:1,source:'session',capturedAt:Date.now(),windowMinutes:60,
+        observed:{huntCoins:10000,npcSaleCoins:3000,ballsCoins:1000,
+            potionsCoins:200,revivesCoins:100,rareDropsUnits:2},
+        huntCoinsIncludesNpcSales:true,
+        modeled:{rareDropExpectedUnitsPerHour:0.5}};
+    assert.equal(h.readEconomyTelemetry().netCoins,8700);
+    assert.equal(h.readEconomyTelemetry().rareExpectedPerHour,0.5);
+    h.page.MOTH_ECONOMY_TELEMETRY_V1.huntCoinsIncludesNpcSales=false;
+    assert.equal(h.readEconomyTelemetry().netCoins,11700);
+    h.page.MOTH_ECONOMY_TELEMETRY_V1.huntCoinsIncludesNpcSales=undefined;
+    assert.equal(h.readEconomyTelemetry().netCoins,null);
+    h.page.MOTH_ECONOMY_TELEMETRY_V1.capturedAt=Date.now()-11*60000;
+    assert.equal(h.readEconomyTelemetry(),null);
+});
+
+test('Milestone C: independent economy UI cannot start selling automation', () => {
+    assert.match(script,/data-moth-view="economy"/);
+    assert.match(script,/Read-only estimates and user-entered holdings/);
+    assert.match(script,/@version\s+0\.5\.0/);
+    assert.doesNotMatch(script,/market\.criar|autoSellRules|sendItemSale/);
+});
