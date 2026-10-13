@@ -5,6 +5,7 @@
         const status = reason === 'server-confirmed' ? 'confirmed' :
             reason === 'refused' ? 'refused' : 'unknown';
         settleOrder(pending.order, status);
+        snatchOutcome(pending.listingId,status);
         diagnosticOutcome(status);
         if (status === 'confirmed') {
             state.candidates.delete(pending.candidateKey);
