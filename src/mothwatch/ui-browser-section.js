@@ -115,7 +115,7 @@
                 status = 'Unverified listing identity';
             else if (isOwnListing(listing)) status = 'Your own listing';
             else if (retentionUntil(listing) > serverNow()) status = 'Listing still held';
-            else if (!state.orderJournal || unverifiedOrdersExist()) status = 'Awaiting reconciliation';
+            else if (!state.orderJournal || unresolvedListing(Number(listing.id))) status = 'Awaiting reconciliation';
             else if (remainingBudget(currency, rule.id).spend < price) status = 'Budget blocked';
             else if (balanceFor(currency) - reserveFor(currency) < price)
                 status = 'Insufficient spendable balance';
