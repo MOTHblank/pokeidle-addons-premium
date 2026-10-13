@@ -189,6 +189,35 @@ versus multipliers, and neutral settings explain why no result changes. No model
 server state, ranking, measured data, or network polling was changed by this UX pass.
 See the README and `huntatlas/tests/pokeidle-tools-reference.test.cjs`.
 
+### v1.9.17 — game-reported XP bonus integration (2026-10-13)
+
+HuntAtlas now consumes the native bonus fields that the public Controller Bridge
+and the Rust Moth Controller already read: `twitch.pctAtual` or `twitch.pct`
+**with** credited `assistindoEm`, `evento.xpTreinadorPct` /
+`xpPokemonPct`, and `guildBonusPct`. It also reproduces the timestamp-gated
+VIP ×1.5, guild-bank ×1.1, trainer-shop `xp`, and Pokémon-shop `pokexp`
+multipliers from `pokeidle-upstream/hunt-analyser.mjs` and
+`shared/guild-boost.mjs`, provided their native state and shop
+`tiposBoost` catalog are available. The producer's data is never copied from
+another account; no new sockets or polling are introduced.
+
+**HA-05 advances to partially source-implemented:** model-only trainer XP/h
+and Pokémon XP/h now use the independently known, game-reported active factors.
+Measured native XP receipts are never re-multiplied, absent/uncategorized
+shop boosts are not guessed, and unknown expiration/threshold semantics remain
+honest. Timed statuses invalidate model cache at expiry; missing delta fields
+remain unchanged, explicit full snapshots and reconnects reset state. Only
+aggregate Twitch channel counts and allowed multipliers are kept.
+
+The separate **Simular bônus** third-party what-if remains an off-by-default
+capture/shiny/rare-drop experiment. The Controller's XP detection is **not**
+evidence that live capture/loot boost stacking has been verified.
+
+Added regression coverage in `huntatlas/tests/native-xp-bonuses.test.cjs`;
+updated old HA-05 and third-party label assertions to reflect this new native
+model. Owner-led verification against the deployed game's receipts is still
+needed before claiming full-server parity.
+
 ## Key deterministic regression scenarios
 
 1. **Core math:** XP at levels 1 and 150 is 8 and 13,508. Gold at levels 1/5,000/25,000/160,300 is 36/6,000/15,776/15,776. Two XP streams never combine into one player rate.
