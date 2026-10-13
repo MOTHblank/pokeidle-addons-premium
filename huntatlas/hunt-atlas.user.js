@@ -1124,6 +1124,7 @@
         outlandTierLastOutcome: null,
         outlandCatalogTiers: null,
         xpBonusState: {},
+        nativeXpContext: {},
         itemCatalogStatus: 'idle',
         itemsByName: new Map(),
         itemsById: new Map(),
@@ -1924,7 +1925,8 @@
         return [state.farmingSnapshot.outlandTier ?? '?',
             state.farmingSnapshot.catalogRevision ?? '?',
             state.farmingSnapshot.boostSignature ?? '?',
-            xpBonusScope(state.xpBonusState)].join('|');
+            xpBonusScope(state.xpBonusState),
+            nativeXpBonusScope(state.nativeXpContext)].join('|');
     }
 
     function performanceKey(
@@ -1950,7 +1952,8 @@
             '|tier:' + (state.farmingSnapshot.outlandTier ?? '?') +
             '|catalog:' + (state.farmingSnapshot.catalogRevision ?? '?') +
             '|boost:' + (state.farmingSnapshot.boostSignature ?? '?') +
-            '|xpBonus:' + xpBonusScope(state.xpBonusState)
+            '|xpBonus:' + xpBonusScope(state.xpBonusState) +
+            '|nativeXp:' + nativeXpBonusScope(state.nativeXpContext)
         );
     }
 
@@ -4720,7 +4723,10 @@
             }
         }
         const incomingXpBonuses = xpBonusSnapshot(gameState);
+        if (fullSnapshot) state.xpBonusState = {};
         if (incomingXpBonuses) Object.assign(state.xpBonusState, incomingXpBonuses);
+        state.nativeXpContext = nativeXpBonusDelta(
+            state.nativeXpContext,gameState,fullSnapshot);
         if (beforeFarmingScope !== farmingSnapshotScope()) {
             state.farmingLedger = makeFarmingLedger();
             state.combatRevision++;
@@ -5130,6 +5136,7 @@
             state.outlandTierLastOutcome = null;
             state.outlandCatalogTiers = null;
             state.xpBonusState = {};
+            state.nativeXpContext = {};
             state.captureChanceEvidence = {seen:0,min:null,max:null};
             state.calibrationEvidence.clear();
             state.combatTargets.clear();
@@ -5778,6 +5785,7 @@
                     state.farmingLedger = makeFarmingLedger();
                     state.farmingSnapshot = {};
                     state.xpBonusState = {};
+                    state.nativeXpContext = {};
                     state.calibrationEvidence.clear();
                     state.combatTargets.clear();
                     state.lastLeadPokemon = null;
