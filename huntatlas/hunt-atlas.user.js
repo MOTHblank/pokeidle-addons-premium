@@ -12287,7 +12287,7 @@
             state.outlandTierLastOutcome?.status==='timeout'&&
                 state.outlandTierLastOutcome.tier===selectedTier?
                     tr('outland.quickTimedOut'):
-                tr('outland.quickPreview');
+                '';
         const quickOutlandHtml=previewHunt?'<div class="mha-outland-quick">'+
             '<strong class="mha-outland-title">'+
                 escapeHtml(tr('outland.quickLabel'))+'</strong>'+
@@ -12312,9 +12312,6 @@
                 ' <select data-mha-outland-preview aria-label="'+
                 escapeHtml(tr('rare.preview'))+'">'+previewOptions+
                 '</select></label></div>',
-            '<div class="mha-xp-note">'+escapeHtml(nativeTier!==null
-                ? tr('rare.active',{tier:nativeTier}):
-                tr('rare.activeUnknown'))+' · '+escapeHtml(tr('rare.previewOnly'))+'</div>',
             !tierInfo ? '<div class="mha-xp-note">'+escapeHtml(
                 tr('rare.locked',{level:tierGate}))+'</div>' : '',
             reportedTier!==null && nativeTier!==reportedTier ?
@@ -12326,7 +12323,7 @@
                     escapeHtml(tr('rare.select'))+'</button>' :
                 escapeHtml(state.pendingOutlandTier?tr('rare.pending'):
                     !state.outlandTierSeen?tr('rare.noCommand'):
-                    nativeTier===selectedTier?'':tr('rare.previewOnly')))+'</div>',
+                    ''))+'</div>',
             '<div class="mha-xp-note"><strong>'+
                 escapeHtml(tr('rare.outland'))+'</strong> · '+
                 escapeHtml(previewHunt?
