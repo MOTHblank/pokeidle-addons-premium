@@ -429,3 +429,26 @@ test('Category rules have UI editors and respect the master enable switch', () =
     assert.match(script, /maxGemsPerBuy/);
     assert.doesNotMatch(script, /market\.criar/);
 });
+
+test('Broad item purchasing refreshes summaries even if passive item watch is disabled', () => {
+    const config = {
+        enabled:true, scanItems:false, scanPokemon:false, scanDiamonds:false,
+        fixedRulesEnabled:true, scanSeconds:5
+    };
+    const state = {socket:{readyState:1}, watchOpen:false,
+        lastScanAt:0, ruleItemKeys:new Set()};
+    const requested=[];
+    const runner = new Function('state','config','Date','BACKGROUND_SCAN_WITH_RULES_MS',
+        'gameIsLoading','requestItemSummary','ensurePokemonHistory',
+        'startPokemonScan','requestDiamondListings','pruneCandidates','queueRender',
+        'hasAnyBuyingRules','activeAnyItemRules','activePokemonRules',
+        section('    function runScan(force)', '    function pruneCandidates(') +
+        '\nreturn runScan;')(
+        state, config, {now:()=>100000}, 30000,
+        ()=>false, forced=>requested.push(forced),
+        ()=>{}, ()=>{}, ()=>{}, ()=>{}, ()=>{},
+        ()=>true, ()=>[{buyEnabled:true,buyMax:10000,currency:'gold'}], ()=>[]
+    );
+    runner(true);
+    assert.deepEqual(requested, [true]);
+});
