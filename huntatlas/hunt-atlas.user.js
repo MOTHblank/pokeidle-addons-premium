@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/huntatlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.10
+// @version      1.9.11
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.10');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.11');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -518,6 +518,13 @@
             'econ.unlinked': 'Net unavailable: {count} throw event(s) could not be reconciled to a unique corpse',
             'econ.stock': 'Stock {count} · runway {hours}h at observed use rate',
             'econ.unknown': '— (insufficient evidence)',
+            'filter.panelTitle': 'Search and filters',
+            'filter.showPanel': 'Show filters',
+            'filter.hidePanel': 'Hide filters',
+            'filter.emptyReset': 'Clear filters and show Pokémon',
+            'outland.quickPreview': 'Selecting a tier only previews it; use Switch to apply.',
+            'outland.quickDisconnected': 'Game connection unavailable. Reconnect to change the tier.',
+            'outland.quickWaiting': 'Waiting for the game to report the active tier.',
             'outland.quickLabel': 'Outland tier (quick change)',
             'outland.quickActive': 'Active: {tier}',
             'outland.quickUnknown': 'Current tier not reported by game',
@@ -859,6 +866,13 @@
             'econ.unlinked': 'Líquido indisponível: {count} evento(s) de bola sem associação confiável a um corpo',
             'econ.stock': 'Estoque {count} · duração {hours}h no ritmo observado',
             'econ.unknown': '— (evidência insuficiente)',
+            'filter.panelTitle': 'Busca e filtros',
+            'filter.showPanel': 'Mostrar filtros',
+            'filter.hidePanel': 'Ocultar filtros',
+            'filter.emptyReset': 'Limpar filtros e mostrar Pokémon',
+            'outland.quickPreview': 'Escolher o tier apenas mostra a prévia; use Mudar para aplicar.',
+            'outland.quickDisconnected': 'Sem conexão com o jogo. Reconecte para mudar o tier.',
+            'outland.quickWaiting': 'Aguardando o jogo informar o tier ativo.',
             'outland.quickLabel': 'Tier Outland (troca rápida)',
             'outland.quickActive': 'Ativo: {tier}',
             'outland.quickUnknown': 'Jogo não informou o tier atual',
@@ -1216,6 +1230,8 @@
         nativeMapTitle: null,
         lastLocale: null,
         resultLimit: 120,
+        filtersExpanded: null,
+        searchRenderTimer: null,
         xpDetailsOpen: false,
         diagnosticsEnabled: false,
         openHuntDetails:new Set(),
@@ -1477,31 +1493,19 @@
         }
     }
 
+    // Count only search restrictions, not optional models or open panels.
+    const SEARCH_FILTER_KEYS=Object.freeze([
+        'search','region','minLevel','maxLevel','type',
+        'weakness','weaknessMatchAll','availability','captured'
+    ]);
     function activeFilterCount() {
-        const defaults =
-            defaultFilters();
-
-        return Object.keys(
-            defaults
-        ).filter(
-            key => {
-                if (key === 'sort' || key === 'sortDirection') {
-                    return false;
-                }
-
-                if (key === 'weakness') {
-                    return Array.isArray(state.filters.weakness) &&
-                        state.filters.weakness.length > 0;
-                }
-
-                if (key === 'weaknessMatchAll') {
-                    return Boolean(state.filters.weaknessMatchAll);
-                }
-
-                return String(state.filters[key] ?? '') !==
-                    String(defaults[key] ?? '');
-            }
-        ).length;
+        const defaults=defaultFilters();
+        return SEARCH_FILTER_KEYS.filter(key=>{
+            if(key==='weakness')return state.filters.weakness?.length>0;
+            if(key==='weaknessMatchAll')
+                return state.filters.weaknessMatchAll===true;
+            return String(state.filters[key]??'')!==String(defaults[key]??'');
+        }).length;
     }
 
     function saveFilters() {
@@ -11456,8 +11460,17 @@
         drawer.hidden =
             true;
 
+        if(state.filtersExpanded===null)
+            state.filtersExpanded=window.innerWidth>620;
         drawer.innerHTML = `
-            <div class="mha-filters">
+            <div class="mha-filter-toolbar">
+                <button type="button" data-mha-filter-toggle
+                    aria-controls="mha-filter-grid"
+                    aria-expanded="${state.filtersExpanded?'true':'false'}"></button>
+                <span class="mha-filter-glance" data-mha-filter-glance></span>
+            </div>
+            <div class="mha-filters" id="mha-filter-grid"
+                ${state.filtersExpanded?'':'hidden'}>
                 <label class="mha-field mha-search">
                     <span>${tr('filter.search')}</span>
                     <input data-mha-filter="search" type="search" placeholder="${escapeHtml(tr('filter.searchPlaceholder'))}">
@@ -11601,6 +11614,10 @@
         modalBody.appendChild(
             drawer
         );
+        q('[data-mha-filter-toggle]',drawer)?.addEventListener('click',()=>{
+            state.filtersExpanded=!state.filtersExpanded;
+            renderFilterControls(drawer);
+        });
         q('[data-mha-arcade-toggle]', drawer)?.addEventListener('click', () => {
             if (arcade.open) arcadeClose();
             else arcade.open = true;
@@ -11632,18 +11649,11 @@
         ).addEventListener(
             'click',
             () => {
-                const sort =
-                    state.filters.sort;
-
-                const sortDirection =
-                    state.filters
-                        .sortDirection;
-
-                state.filters = {
-                    ...defaultFilters(),
-                    sort,
-                    sortDirection
-                };
+                // Clearing the list filters must not change the selected
+                // Outland tier, capture ball, sorting or manual scenarios.
+                const defaults=defaultFilters();
+                for(const key of SEARCH_FILTER_KEYS)
+                    state.filters[key]=key==='weakness'?[]:defaults[key];
                 state.resultLimit =
                     120;
                 saveFilters();
@@ -12078,10 +12088,17 @@
                 drawer
             );
 
-        if (clearButton) {
-            clearButton.disabled =
-                activeCount === 0;
+        if (clearButton) clearButton.disabled = activeCount === 0;
+        const toggle=q('[data-mha-filter-toggle]',drawer);
+        if(toggle){
+            toggle.textContent=tr(state.filtersExpanded?
+                'filter.hidePanel':'filter.showPanel');
+            toggle.setAttribute('aria-expanded',String(state.filtersExpanded));
         }
+        const grid=q('#mha-filter-grid',drawer);
+        if(grid)grid.hidden=!state.filtersExpanded;
+        const glance=q('[data-mha-filter-glance]',drawer);
+        if(glance)glance.textContent=filterState?.textContent??'';
     }
 
 
@@ -14092,7 +14109,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.10 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.11 experimental loaded'
         );
     }
 
