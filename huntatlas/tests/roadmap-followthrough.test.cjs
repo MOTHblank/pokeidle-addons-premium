@@ -121,3 +121,13 @@ test('HA-23: Mystic probability stays isolated from ordinary wiki capture',()=>{
     assert.equal(catchModel.captureMysticChance(1),.001);
     assert.equal(catchModel.captureMysticChance(5),.005);
 });
+
+test('HA-19: the UI requires complete ball and outcome attribution',()=>{
+    assert.match(source,/attributedThrows===observedCapture\.throws/);
+    assert.match(source,/attributedCaptures===observedCapture\.captures/);
+});
+test('HA-23: the Mystic planner activates only with the arena slug',()=>{
+    assert.match(source,/state\.currentHuntSlug === 'arena_mistica'/);
+    assert.match(source,/CAPTURE_BALLS\.map\(ball=>/);
+    assert.match(source,/item:70090/);
+});
