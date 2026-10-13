@@ -6,7 +6,10 @@
             reason === 'refused' ? 'refused' : 'unknown';
         settleOrder(pending.order, status);
         diagnosticOutcome(status);
-        if (status === 'confirmed') state.candidates.delete(pending.candidateKey);
+        if (status === 'confirmed') {
+            state.candidates.delete(pending.candidateKey);
+            state.itemInventoryMemo = null;
+        }
         requestItemSummary(activeAnyItemRules().length > 0);
         setTimeout(startPokemonScan, 250);
         queueRender();
@@ -310,7 +313,10 @@
         const nowServer = serverNow();
         for (const [key, candidate] of state.candidates) {
             if (candidate.retainedUntil && candidate.retainedUntil > nowServer) continue;
-            if (candidate.seenAt < cutoff) state.candidates.delete(key);
+            if (candidate.seenAt < cutoff) {
+                state.candidates.delete(key);
+                state.itemInventoryMemo = null;
+            }
         }
         pruneDetailCache();
         for (const [id, until] of state.attemptedListings) {
