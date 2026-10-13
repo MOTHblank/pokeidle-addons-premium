@@ -30,7 +30,7 @@ test('event rates choose hours/days/years without rounded 0/h',()=>{
     assert.equal(h.formatEventRate(.05),'1.2/d');
     assert.match(h.formatEventRate(.01),/^~1 \/ 4\.17 d$/);
     assert.match(h.formatEventRate(.0001),/^~1 \/ 1\.14 yr$/);
-    assert.match(h.formatEventRate(.000001),/^~1 \/ 114\.16 yr$/);
+    assert.match(h.formatEventRate(.000001),/^~1 \/ 114 yr$/);
 });
 
 test('long expected waits use appropriate units in either locale',()=>{
