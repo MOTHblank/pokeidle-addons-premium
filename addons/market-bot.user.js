@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.1.51
-// @description  Community Market opportunities, inventory, and guarded purchase automation.
+// @version      0.2.0
+// @description  Community Market, evidence-aware Pokémon valuations, and guarded item-buy rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/market-bot.user.js
@@ -15,7 +15,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.1.51');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.2.0');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -26,7 +26,7 @@
 
     const CONFIG_KEY = 'moth-pokeidle-market-bot-config-v1';
     const BASELINE_KEY = 'moth-pokeidle-market-item-baseline-v1';
-    const POKEMON_REFERENCE_KEY = 'moth-pokeidle-market-pokemon-reference-v1';
+    const POKEMON_REFERENCE_KEY = 'moth-pokeidle-market-pokemon-reference-v2';
     const BACKGROUND_MIN_GAP_MS = 3000;
     const BACKGROUND_SCAN_WITH_RULES_MS = 30000;
     const RULE_DETAIL_REFRESH_MS = 30000;
@@ -348,6 +348,20 @@
         "Waiting for market data…": "Aguardando dados do mercado…",
         "No reliable recommendation yet.": "Ainda não há dados suficientes para uma recomendação confiável.",
         "Based on completed sales first; unusually cheap active listings are treated as possible dumps.": "Prioriza vendas concluídas; anúncios ativos excepcionalmente baratos são tratados como possíveis liquidações.",
+        "comparable completed sales · {count}": "vendas comparáveis concluídas · {count}",
+        "Grade, level, quality, IVs and refinement": "Nota, nível, qualidade, IVs e refino",
+        "Grade, level, quality and IVs": "Nota, nível, qualidade e IVs",
+        "Grade, level and quality": "Nota, nível e qualidade",
+        "Grade and level only": "Somente nota e nível",
+        "Wider grade neighborhood": "Faixa de nota ampliada",
+        "Broad species history only": "Apenas histórico geral da espécie",
+        "N={grade} · Q={quality} · {confidence} confidence": "N={grade} · Q={quality} · confiança {confidence}",
+        "sold-price middle range {low}–{high}": "faixa central das vendas {low}–{high}",
+        "IV details unavailable": "IVs individuais indisponíveis",
+        "high": "alta",
+        "medium": "média",
+        "low": "baixa",
+        "context": "contextual",
         "Fixed item rules": "Regras fixas por item",
         "Buy at or below": "Comprar por até",
         "Add fixed rule": "Adicionar regra fixa",
@@ -537,9 +551,10 @@
     function loadPokemonReference() {
         try {
             const raw = JSON.parse(localStorage.getItem(POKEMON_REFERENCE_KEY) || 'null');
-            if (raw && raw.values && typeof raw.values === 'object') return raw;
+            if (raw && raw.version === 2 && raw.values && typeof raw.values === 'object') return raw;
         } catch {}
-        return { version: 1, capturedAt: 0, values: {} };
+        // v1 pooled grades and IV distributions. Never reuse it for actionable valuations.
+        return { version: 2, capturedAt: 0, values: {} };
     }
 
     function savePokemonReference() {
@@ -1465,28 +1480,73 @@
         return currency === 'orb' || !ficha?.shiny;
     }
 
-    function pokemonBucketKeys(ficha, currency) {
-        if (!pokemonCurrencyAllowed(ficha, currency)) return [];
+    // Valuation v2: preserve only non-identifying traits of completed sales.
+    // The authoritative N comes from ficha.nota; do not approximate N from IV totals.
+    function pokemonIdentityKey(ficha, currency) {
+        if (!pokemonCurrencyAllowed(ficha, currency)) return null;
         const speciesId = speciesIdOf(ficha);
-        if (!speciesId) return [];
-        const shiny = ficha && ficha.shiny ? 1 : 0;
-        const power = Math.max(1, Number(ficha && ficha.potencia || 1));
-        const band = levelBand(ficha && ficha.level);
-        const root = currency + '|s:' + speciesId + '|sh:' + shiny;
+        if (!speciesId) return null;
+        const potency = Number(ficha?.potencia);
+        const power = Number.isInteger(potency) && potency >= 1 && potency <= 5 ? potency : 1;
+        return currency + '|s:' + speciesId + '|sh:' + (ficha?.shiny ? 1 : 0) + '|p:' + power;
+    }
 
-        return [
-            root + '|p:' + power + '|lv:' + band,
-            root + '|p:' + power
+    function pokemonScore(ficha) {
+        const raw = ficha?.nota;
+        if (raw == null || raw === '') return null;
+        const score = Number(raw);
+        return Number.isFinite(score) && score >= 0 && score <= 10
+            ? Math.round(score * 1000) / 1000 : null;
+    }
+
+    function pokemonQuality(ficha) {
+        const raw = ficha?.qualidade ?? ficha?.quality;
+        if (raw == null || raw === '') return null;
+        const quality = Number(raw);
+        return Number.isFinite(quality) && quality >= 0.8 && quality <= 1.8
+            ? quality : null;
+    }
+
+    function pokemonIVs(ficha) {
+        const raw = ficha?.ivs ?? ficha?.IVs;
+        // An array without a documented ordering is NOT a six-stat IV vector.
+        if (!raw || Array.isArray(raw) || typeof raw !== 'object') return null;
+        const aliases = [
+            ['hp', 'HP'], ['atk', 'attack', 'ataque'], ['def', 'defense', 'defesa'],
+            ['spAtk', 'spa', 'sp_atk', 'specialAttack', 'atkEsp'],
+            ['spDef', 'spd', 'sp_def', 'specialDefense', 'defEsp'],
+            ['speed', 'spe', 'velocidade']
         ];
+        const values = aliases.map(names => {
+            const name = names.find(key => Object.prototype.hasOwnProperty.call(raw, key));
+            return name == null ? NaN : Number(raw[name]);
+        });
+        return values.every(iv => Number.isInteger(iv) && iv >= 1 && iv <= 32) ? values : null;
+    }
+
+    function pokemonRefinement(ficha) {
+        const raw = ficha?.refino;
+        if (!raw || Array.isArray(raw) || typeof raw !== 'object') return null;
+        const keys = ['hp', 'atk', 'def', 'spAtk', 'spDef'];
+        if (!keys.every(key => Number.isFinite(Number(raw[key])) && Number(raw[key]) >= 0)) return null;
+        return keys.map(key => Number(raw[key]));
+    }
+
+    function pokemonFacts(ficha) {
+        return {
+            levelBand: levelBand(ficha?.level),
+            score: pokemonScore(ficha),
+            quality: pokemonQuality(ficha),
+            ivs: pokemonIVs(ficha),
+            refinement: pokemonRefinement(ficha)
+        };
     }
 
     function median(values) {
         if (!values.length) return 0;
         const sorted = values.slice().sort((a, b) => a - b);
         const mid = Math.floor(sorted.length / 2);
-        return sorted.length % 2
-            ? sorted[mid]
-            : (sorted[mid - 1] + sorted[mid]) / 2;
+        return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
     }
 
     function percentile(values, p) {
@@ -1499,39 +1559,26 @@
     function addPokemonHistorySample(line, working) {
         if (!line || line.tipo !== 'pokemon' || !line.ficha) return;
         const currency = line.moeda === 'orb' ? 'orb' : 'gold';
-        if (!pokemonCurrencyAllowed(line.ficha, currency)) return;
+        const key = pokemonIdentityKey(line.ficha, currency);
+        if (!key) return;
         const price = Number(line.bruto != null ? line.bruto : line.preco);
         if (!Number.isFinite(price) || price <= 0) return;
-
-        for (const key of pokemonBucketKeys(line.ficha, currency)) {
-            let values = working.get(key);
-            if (!values) {
-                values = [];
-                working.set(key, values);
-            }
-            if (values.length < 200) values.push(price);
+        let sales = working.get(key);
+        if (!sales) {
+            sales = [];
+            working.set(key, sales);
         }
+        // Cap historical storage. No nicknames, sellers, owners or Pokémon IDs.
+        if (sales.length < 200) sales.push({ price, ...pokemonFacts(line.ficha) });
     }
 
     function finalizePokemonHistory(working) {
         const values = {};
-        for (const [key, samples] of working) {
-            if (!samples.length) continue;
-            const sum = samples.reduce((a, b) => a + b, 0);
-            values[key] = {
-                count: samples.length,
-                average: sum / samples.length,
-                median: median(samples),
-                lowQuartile: percentile(samples, 0.25),
-                min: Math.min.apply(null, samples),
-                max: Math.max.apply(null, samples)
-            };
-        }
-
+        for (const [key, sales] of working) if (sales.length) values[key] = sales;
         state.pokemonReference = {
-            version: 1,
+            version: 2,
             capturedAt: Date.now(),
-            values: values
+            values
         };
         savePokemonReference();
         state.pokemonStatus = 'history ready';
@@ -1539,21 +1586,76 @@
         queueRender();
     }
 
-    function pokemonReferenceFor(ficha, currency) {
-        if (!pokemonCurrencyAllowed(ficha, currency)) return null;
-        const minSamples = Math.max(1, Number(config.minPokemonSamples || 1));
-        const values = state.pokemonReference.values || {};
-
-        for (const key of pokemonBucketKeys(ficha, currency)) {
-            const row = values[key];
-            if (row && Number(row.count) >= minSamples && Number(row.median) > 0) {
-                return {
-                    value: Number(row.median),
-                    average: Number(row.average || row.median),
-                    samples: Number(row.count),
-                    key: key
-                };
+    function pokemonComparableSales(sales, listing, options) {
+        const { level = true, grade = true, quality = false, ivs = false, refinement = false,
+            gradeTolerance = 0.125, qualityTolerance = 0.15 } = options;
+        return sales.filter(sale => {
+            if (level && sale.levelBand !== listing.levelBand) return false;
+            if (grade) {
+                if (listing.score == null || sale.score == null) return false;
+                // Never cross the N=3.5 / 4.0 boundary (or any half-point grade boundary).
+                if (Math.floor(listing.score * 2) !== Math.floor(sale.score * 2)) return false;
+                if (Math.abs(listing.score - sale.score) > gradeTolerance) return false;
             }
+            if (quality) {
+                if (listing.quality == null || sale.quality == null ||
+                    Math.abs(listing.quality - sale.quality) > qualityTolerance) return false;
+            }
+            if (ivs) {
+                if (!listing.ivs || !sale.ivs ||
+                    sale.ivs.some((iv, index) => Math.abs(iv - listing.ivs[index]) > 5)) return false;
+            }
+            if (refinement) {
+                if (!listing.refinement || !sale.refinement ||
+                    sale.refinement.some((value, index) => value !== listing.refinement[index])) return false;
+            }
+            return true;
+        });
+    }
+
+    function pokemonReferenceFor(ficha, currency) {
+        const key = pokemonIdentityKey(ficha, currency);
+        if (!key) return null;
+        const sales = state.pokemonReference?.version === 2
+            ? state.pokemonReference.values?.[key] : null;
+        if (!Array.isArray(sales) || !sales.length) return null;
+        const minSamples = Math.max(1, Number(config.minPokemonSamples || 3));
+        const listing = pokemonFacts(ficha);
+        const stages = [
+            { name: 'Grade, level, quality, IVs and refinement', confidence: 'high',
+                options: { quality: true, ivs: true, refinement: true } },
+            { name: 'Grade, level, quality and IVs', confidence: 'high',
+                options: { quality: true, ivs: true } },
+            { name: 'Grade, level and quality', confidence: 'medium',
+                options: { quality: true } },
+            { name: 'Grade and level only', confidence: 'low',
+                options: {} },
+            { name: 'Wider grade neighborhood', confidence: 'low',
+                options: { level: false, gradeTolerance: 0.25 }, actionable: false },
+            { name: 'Broad species history only', confidence: 'context',
+                options: { level: false, grade: false }, actionable: false }
+        ];
+        for (const stage of stages) {
+            const matches = pokemonComparableSales(sales, listing, stage.options);
+            if (matches.length < minSamples) continue;
+            const prices = matches.map(sale => sale.price).filter(value => Number.isFinite(value) && value > 0);
+            if (prices.length < minSamples) continue;
+            const value = median(prices);
+            if (!(value > 0)) continue;
+            return {
+                value,
+                average: prices.reduce((sum, price) => sum + price, 0) / prices.length,
+                low: percentile(prices, 0.25),
+                high: percentile(prices, 0.75),
+                samples: prices.length,
+                key,
+                confidence: stage.confidence,
+                comparison: stage.name,
+                // Broadened context is visible to callers but cannot generate bargain alerts.
+                actionable: stage.actionable !== false && listing.score != null,
+                missingScore: listing.score == null,
+                missingIVs: !listing.ivs
+            };
         }
         return null;
     }
@@ -1845,7 +1947,8 @@
             if (!Number.isFinite(price) || price <= 0) continue;
 
             const ref = pokemonReferenceFor(listing.ficha, currency);
-            if (!ref || !(ref.value > 0)) continue;
+            // An ungraded or overly broad comparator is context, never a bargain signal.
+            if (!ref || !(ref.value > 0) || !ref.actionable) continue;
 
             const ratio = price / ref.value;
             if (ratio > scanRatio) continue;
@@ -1863,6 +1966,7 @@
                 average: ref.value,
                 arithmeticAverage: ref.average,
                 samples: ref.samples,
+                pokemonValuation: ref,
                 ratio: ratio,
                 qty: Math.max(1, Number(listing.qtd || 1)),
                 seller: String(listing.vendedor || '—'),
@@ -3107,7 +3211,8 @@
                 ? tr(candidate.referenceSource === 'active-median' ? 'active market median' : 'completed-sale reference') + ' · ' +
                     tr(candidate.samples === 1 ? '1 sale' : '{count} sales', { count: num(candidate.samples) })
                 : tr('no completed-sale reference');
-        } else referenceLabel = tr('sales median · {count} sales', { count: num(candidate.samples) });
+        } else referenceLabel = tr('comparable completed sales · {count}', { count: num(candidate.samples) }) +
+            ' · ' + tr(candidate.pokemonValuation?.comparison || 'Broad species history only');
 
         const kind = candidate.kind === 'pokemon' ? tr('Pokémon') : candidate.kind === 'diamond' ? tr('Diamonds') : tr('Items');
         const quantityLabel = candidate.kind === 'diamond' ? tr('diamonds') : tr('units');
@@ -3118,7 +3223,15 @@
             '<div class="moth-mw-name"><b><span class="moth-mw-kind">' + escapeHtml(kind) + '</span>' + escapeHtml(candidate.name) + '</b><span>' +
             ((candidate.kind === 'item' || candidate.kind === 'diamond')
                 ? num(candidate.qty) + ' ' + escapeHtml(quantityLabel) + ' · ' + escapeHtml(tr('total')) + ' ' + num(total)
-                : escapeHtml(tr('completed-sale reference'))) + '</span></div>' +
+                : escapeHtml(tr('N={grade} · Q={quality} · {confidence} confidence', {
+                    grade: pokemonScore(candidate.ficha) == null ? '?' : pokemonScore(candidate.ficha).toFixed(3),
+                    quality: pokemonQuality(candidate.ficha) == null ? '?' : pokemonQuality(candidate.ficha).toFixed(3),
+                    confidence: tr(candidate.pokemonValuation?.confidence || 'low')
+                })) + ' · ' + escapeHtml(tr('sold-price middle range {low}–{high}', {
+                    low: num(Math.round(candidate.pokemonValuation?.low || 0)),
+                    high: num(Math.round(candidate.pokemonValuation?.high || 0))
+                })) + (candidate.pokemonValuation?.missingIVs ? ' · ' + escapeHtml(tr('IV details unavailable')) : ''))
+            + '</span></div>' +
             '<div><div>' + money(candidate.price, candidate.currency) + '</div><div class="moth-mw-meta">' + escapeHtml(tr('listed')) +
             ((candidate.kind === 'item' || candidate.kind === 'diamond') && candidate.qty > 1 ? escapeHtml(tr(' / unit')) : '') + '</div></div>' +
             '<div class="moth-mw-ref"><div>' + money(Math.round(candidate.average), candidate.currency) + '</div><div class="moth-mw-meta">' + escapeHtml(referenceLabel) + '</div></div>' +
