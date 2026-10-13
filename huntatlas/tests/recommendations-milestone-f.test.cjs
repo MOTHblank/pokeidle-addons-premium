@@ -17,13 +17,13 @@ const row=(slug,score,level=100)=>({hunt:{slug,nivel:level},score});
 test('explicit multiple real ranking dimensions, no implicit trainer XP substitution',()=>{
     assert.deepEqual(Array.from(h.HA_RANK_METRICS),[
         'xp','pokemonXp','coins','npcLoot','netCoins','rare',
-        'capture','shinyCatch','ballEfficiency']);
+        'capture','shinyCatch']);
     const data={xp:{value:100,pokemonValue:75},
         economy:{killCoinsH:4,npcLootEvH:20,netH:-2},
         rare:{unitsH:.04},
         capture:{catchesH:3,shinyCaughtH:.001,coinsPerCapture:200}};
     const expected={xp:100,pokemonXp:75,coins:4,npcLoot:20,
-        netCoins:-2,rare:.04,capture:3,shinyCatch:.001,ballEfficiency:200};
+        netCoins:-2,rare:.04,capture:3,shinyCatch:.001};
     for(const [key,value] of Object.entries(expected))
         assert.equal(h.haMetricValue(key,data),value,key);
     assert.equal(h.haMetricValue('rare',{xp:{value:9999}}),null);
@@ -44,11 +44,11 @@ test('ranking respects selected direction and null last without allowing missing
     assert.deepEqual(asc,['rare-weak','rare-strong',
         'high-xp-no-rare','unknown']);
 });
-test('Coins/capture efficiency defaults cheapest known positive ratio, reverse on ascending',()=>{
-    const candidates=[row('expensive',3000),row('cheap',1500),row('missing',null)];
-    assert.equal(h.haRankMetricRows(candidates,'desc','ballEfficiency')[0].hunt.slug,'cheap');
-    assert.equal(h.haRankMetricRows(candidates,'asc','ballEfficiency')[0].hunt.slug,'expensive');
-    assert.equal(h.haRankMetricRows(candidates,'desc','ballEfficiency').at(-1).hunt.slug,'missing');
+test('removed Coins/capture ranking is not a valid recommendation metric',()=>{
+    assert.equal(h.HA_RANK_METRICS.includes('ballEfficiency'),false);
+    assert.equal(h.haMetricValue('ballEfficiency',{
+        capture:{coinsPerCapture:200,catchesH:4}
+    }),null);
 });
 test('stable ties use level and slug, do not mutate input order or state',()=>{
     const rows=[row('z',10,200),row('a',10,200),row('x',10,300)];
@@ -76,8 +76,11 @@ test('UI selection, top five and species list use the real chosen metric',()=>{
     assert.match(src,/data-mha-sort-outland-tier/);
     assert.match(src,/data-mha-sort-capture-ball/);
     assert.match(src,/const objectiveLabel=tr\('sort\.'\+objective\)/);
-    assert.match(src,/value:formatObjectiveValue\(row.score,objective,/);
-    assert.match(src,/sort==='ballEfficiency'/);
+    assert.match(src,/value:formatObjectiveValue\(row.score,objective\)/);
+    assert.doesNotMatch(src,/value="ballEfficiency"/);
+    assert.doesNotMatch(src,/'sort\.ballEfficiency'/);
+    assert.match(src,/if\(next.sort==='ballEfficiency'\)/);
+    assert.match(src,/next.sort='capture'/);
     assert.match(src,/capturePlanForSpecies\(species,/);
     assert.match(src,/data-mha-hunt-detail/);
 });
