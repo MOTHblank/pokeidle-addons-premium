@@ -103,6 +103,8 @@ test('Multiple fixed rules are checked fairly, including after an unaffordable r
     const requested = [], bought = [];
     const fn = new Function('config', 'state', 'gameIsLoading', 'q', 'sanitizeFixedItemRules',
         'automationDetail', 'fixedRuleCandidate', 'purchaseQuantity', 'tryBuy',
+        'hasAnyBuyingRules', 'activeAnyItemRules', 'activePokemonRules',
+        'anyItemRuleTargets', 'anyItemRuleCandidate', 'pokemonRuleCandidate',
         section('    function runMarketAutomation(', '    function runScan(force)') + '\nreturn runMarketAutomation;')(
         config, state, () => false, () => null, v => v,
         id => { requested.push(id); }, rule => ({ listingId: rule.itemId, name: String(rule.itemId) }),
