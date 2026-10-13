@@ -430,8 +430,8 @@
             'catch.current': 'Compared hunt: {hunt}',
             'catch.unknown': '— (species rarity or kill rate unavailable)',
             'catch.percent': '{chance}% per accepted throw',
-            'catch.expected': '{count} captures/h · {balls} accepted balls/capture on average',
-            'catch.seen': 'Shinies seen: {count}/h · shinies caught: {caught}/h',
+            'catch.expected': '{count} captures · {balls} accepted balls/capture on average',
+            'catch.seen': 'Shinies seen: {count} · shinies caught: {caught}',
             'catch.oneDay': '≥1 shiny caught in 24h: {chance}% (if steady conditions)',
             'catch.cost': 'Replacement: {coins} Coins per expected capture',
             'catch.diamondCost': 'Beast requires Diamonds; no Coin cost assumed',
@@ -447,7 +447,7 @@
             'catch.card': 'Ultra {ultra}% · Beast {beast}% (wiki-conditional)',
             'catch.levelCap': 'Caught level cap: {level} (wild rewards unchanged)',
             'catch.cardUnknown': 'Capture chance unavailable (rarity unresolved)',
-            'catch.targetRate': 'Target {captures} captures/h · {shiny} shiny caught/h · mean {hours}h/shiny ({source})',
+            'catch.targetRate': 'Target {captures} captures · {shiny} shiny caught · mean {hours}h/shiny ({source})',
             'catch.targetObserved': 'observed throw coverage',
             'catch.targetCeiling': 'upper bound if all bodies targeted',
             'catch.shinyMean': 'Mean wait for shiny caught: {hours}h · ≈{throws} accepted attempts/shiny caught',
@@ -492,8 +492,8 @@
             'reference.dropKick': 'Kick drop multiplier (hypothetical)',
             'reference.catchResult': 'Scenario for chosen hunt and ball',
             'reference.rareResult': 'Scenario for selected rare item and hunt',
-            'reference.rareStats': '{chance} per kill · {units}/h expected · ≥1 in 24h {day} · none in 24h {none}',
-            'reference.captureStats': 'Catch {catchChance} per accepted throw · {catches}/h expected · shiny seen {seen}/h · shiny caught {caught}/h · ≥1 shiny caught in 24h {day} · none {none}',
+            'reference.rareStats': '{chance} per kill · {units} expected · ≥1 in 24h {day} · none in 24h {none}',
+            'reference.captureStats': 'Catch {catchChance} per accepted throw · {catches} expected · shiny seen {seen} · shiny caught {caught} · ≥1 shiny caught in 24h {day} · none {none}',
             'reference.unknown': 'Unknown; cannot infer missing odds, eligibility or rate',
             'diag.toggle': 'Local estimate diagnostics (off by default)',
             'diag.title': 'Redacted evidence · local only',
@@ -545,7 +545,7 @@
             'rare.noCommand': 'In-game activation unavailable until the game reports its current tier',
             'rare.source': '{source} · {rate} kills/h ({rateSource})',
             'rare.kills': 'per kill',
-            'rare.units': '{value} items/h',
+            'rare.units': '{value} expected items',
             'rare.mean': 'mean {hours}h / item',
             'rare.craft': 'mean {hours}h / 10 fragments',
             'rare.chances': '≥1 in 1h: {hour}% · 24h: {day}%',
@@ -779,8 +779,8 @@
             'catch.current': 'Hunt em análise: {hunt}',
             'catch.unknown': '— (raridade da espécie ou abates/h indisponíveis)',
             'catch.percent': '{chance}% por bola aceita',
-            'catch.expected': '{count} capturas/h · {balls} bolas aceitas/captura em média',
-            'catch.seen': 'Shinies vistos: {count}/h · shinies capturados: {caught}/h',
+            'catch.expected': '{count} capturas · {balls} bolas aceitas/captura em média',
+            'catch.seen': 'Shinies vistos: {count} · shinies capturados: {caught}',
             'catch.oneDay': '≥1 shiny capturado em 24h: {chance}% (com condições constantes)',
             'catch.cost': 'Reposição: {coins} Moedas por captura esperada',
             'catch.diamondCost': 'Beast usa Diamantes; sem inventar custo em Moedas',
@@ -796,7 +796,7 @@
             'catch.card': 'Ultra {ultra}% · Beast {beast}% (condicional da wiki)',
             'catch.levelCap': 'Teto do nível ao capturar: {level} (recompensas do selvagem não mudam)',
             'catch.cardUnknown': 'Chance de captura indisponível (raridade não verificada)',
-            'catch.targetRate': 'Alvo {captures} capturas/h · {shiny} shinies capturados/h · média {hours}h/shiny ({source})',
+            'catch.targetRate': 'Alvo {captures} capturas · {shiny} shinies capturados · média {hours}h/shiny ({source})',
             'catch.targetObserved': 'cobertura medida de arremessos',
             'catch.targetCeiling': 'teto se todos os corpos receberem bola',
             'catch.shinyMean': 'Espera média por shiny capturado: {hours}h · ≈{throws} bolas aceitas/shiny capturado',
@@ -841,8 +841,8 @@
             'reference.dropKick': 'Multiplicador Kick para drops (hipotético)',
             'reference.catchResult': 'Cenário da hunt e bola escolhidas',
             'reference.rareResult': 'Cenário do item raro e hunt escolhidos',
-            'reference.rareStats': '{chance} por abate · {units}/h esperados · ≥1 em 24h {day} · nenhum em 24h {none}',
-            'reference.captureStats': 'Captura {catchChance} por bola aceita · {catches}/h esperadas · shiny visto {seen}/h · capturado {caught}/h · ≥1 shiny capturado em 24h {day} · nenhum {none}',
+            'reference.rareStats': '{chance} por abate · {units} esperados · ≥1 em 24h {day} · nenhum em 24h {none}',
+            'reference.captureStats': 'Captura {catchChance} por bola aceita · {catches} esperadas · shiny visto {seen} · capturado {caught} · ≥1 shiny capturado em 24h {day} · nenhum {none}',
             'reference.unknown': 'Indisponível; sem inferir chance, elegibilidade ou taxa ausente',
             'diag.toggle': 'Diagnóstico local da estimativa (desligado por padrão)',
             'diag.title': 'Evidências resumidas · somente local',
@@ -894,7 +894,7 @@
             'rare.noCommand': 'Troca no jogo indisponível até o estado informar o tier atual',
             'rare.source': '{source} · {rate} abates/h ({rateSource})',
             'rare.kills': 'por abate',
-            'rare.units': '{value} itens/h',
+            'rare.units': '{value} itens esperados',
             'rare.mean': 'média {hours}h / item',
             'rare.craft': 'média {hours}h / 10 fragmentos',
             'rare.chances': '≥1 em 1h: {hour}% · 24h: {day}%',
@@ -12536,12 +12536,9 @@
         const chosenSpeciesPlan=capturePlanForSpecies(species,
             state.filters.captureBall==='beast'?5:4,xpInfo);
         const shinyCard=chosenSpeciesPlan?
-            tr('catch.targetRate',{captures:chosenSpeciesPlan.catchesH.toFixed(2),
-                shiny:chosenSpeciesPlan.shinyCaughtH===null?'—':
-                    chosenSpeciesPlan.shinyCaughtH<.000001 &&
-                    chosenSpeciesPlan.shinyCaughtH>0?
-                        chosenSpeciesPlan.shinyCaughtH.toExponential(2):
-                        chosenSpeciesPlan.shinyCaughtH.toFixed(6),
+            tr('catch.targetRate',{
+                captures:formatEventRate(chosenSpeciesPlan.catchesH),
+                shiny:formatEventRate(chosenSpeciesPlan.shinyCaughtH),
                 hours:chosenSpeciesPlan.meanHoursShiny===null?'—':
                     formatRate(chosenSpeciesPlan.meanHoursShiny),
                 source:tr(chosenSpeciesPlan.acceptedSource==='observed'
@@ -12582,7 +12579,7 @@
             tr('econ.kill')+': '+metricRate(economicInfo.killCoinsH),
             tr('econ.loot')+': '+metricRate(economicInfo.npcLootEvH),
             tr('econ.net')+': '+metricRate(economicInfo.netH),
-            tr('rank.rare')+': '+metricRate(selectedRare?.unitsH),
+            tr('rank.rare')+': '+formatEventRate(selectedRare?.unitsH),
             selectedRare?selectedRare.name+' · '+selectedRare.source+
                 ' · '+tr('rank.rarePreview',{
                     tier:state.filters.outlandPreviewTier}):
@@ -13037,8 +13034,7 @@
         const fmtChance=value=>(value*100).toFixed(6)+'%';
         const fmtHours=value=>value===null?'—':
             value>=1000?formatRate(value):value.toFixed(value>=10?1:2);
-        const fmtUnits=value=>Number.isFinite(value)?
-            (value>=1?value.toFixed(2):value.toFixed(5)):'—';
+        const fmtUnits=value=>formatEventRate(value);
         const modelRows=model=>model?.drops?.length
             ? model.drops.map(row=>{
                 const observed=model.observedDrops?.[row.id];
@@ -13173,7 +13169,7 @@
         const pct=value=>typeof value==='number'&&Number.isFinite(value)
             ?(100*value).toFixed(3)+'%':tr('catch.unknown');
         const rate=value=>typeof value==='number'&&Number.isFinite(value)
-            ?value.toFixed(value<1?5:2):tr('catch.unknown');
+            ?formatRate(value):tr('catch.unknown');
         const captureLine=(label,value)=>'<div class="mha-xp-note">'+
             '<strong>'+escapeHtml(label)+'</strong> · '+
             escapeHtml(value)+'</div>';
@@ -13202,7 +13198,7 @@
             chosen ? captureLine(tr('catch.percent',{
                 chance:chosen.chance===null?'—':(100*chosen.chance).toFixed(3)
             }),tr('catch.expected',{
-                count:rate(chosen.catchesH),
+                count:formatEventRate(chosen.catchesH),
                 balls:rate(chosen.ballsPerCapture)
             })):'',
             chosen && chosen.shinyCaughtH>0 ? captureLine(tr('catch.shinyMean',{
@@ -13210,8 +13206,8 @@
                 throws:formatRate(1/(chosen.chance*chosen.shinyP))
             }),tr('catch.limit')):'',
             chosen ? captureLine(tr('catch.seen',{
-                count:rate(chosen.shinySeenH),
-                caught:rate(chosen.shinyCaughtH)
+                count:formatEventRate(chosen.shinySeenH),
+                caught:formatEventRate(chosen.shinyCaughtH)
             }),tr('catch.oneDay',{
                 chance:chosen.shinyCaught24hChance===null?'—':
                     (100*chosen.shinyCaught24hChance).toFixed(5)
@@ -13309,15 +13305,15 @@
             v.toFixed(v<1?5:2):'—';
         const refCaptureText=refCatch ? tr('reference.captureStats',{
             catchChance:refPct(refCatch.catchChance),
-            catches:refCount(refCatch.catchesH),
-            seen:refCount(refCatch.shinySeenH),
-            caught:refCount(refCatch.shinyCaughtH),
+            catches:formatEventRate(refCatch.catchesH),
+            seen:formatEventRate(refCatch.shinySeenH),
+            caught:formatEventRate(refCatch.shinyCaughtH),
             day:refPct(refCatch.shinyCaught24hChance),
             none:refPct(refCatch.shinyNotCaught24hChance)
         }):tr('reference.unknown');
         const refRareText=refRare ? tr('reference.rareStats',{
             chance:refPct(refRare.chance),
-            units:refCount(refRare.unitsH),
+            units:formatEventRate(refRare.unitsH),
             day:refPct(refRare.chance24h),
             none:refPct(refRare.noDrop24h)
         }):tr('reference.unknown');
