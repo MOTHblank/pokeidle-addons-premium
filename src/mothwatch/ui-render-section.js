@@ -184,6 +184,11 @@
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Recent activity')) + '</h4><span>' +
                     escapeHtml(tr('Purchase attempts, confirmations, and errors.')) + '</span></div>' +
                     '<div class="moth-mw-log" id="moth-mw-activity-log"></div>' +
+                    '<section class="moth-mw-automation-block"><h4>' +
+                    escapeHtml(tr('Armed snatches')) + '</h4><div id="moth-mw-snatch-list"></div>' +
+                    '<p class="moth-mw-rule-hint">' +
+                    escapeHtml(tr('Targets saved per account. The game tab must remain connected; competing buyers may win.')) +
+                    '</p></section>' +
                     '<section class="moth-mw-automation-block"><h4>' + escapeHtml(tr('Redacted diagnostics (opt-in)')) + '</h4>' +
                     '<p class="moth-mw-rule-hint">' +
                     escapeHtml(tr('Disabled by default. When on, keeps only 64 schema/count samples in memory. Never records packet values, seller names, listing IDs, credentials or private settings.')) +
@@ -234,6 +239,11 @@
         } else if (state.watchView === 'automation') {
             refreshAutomationLive(content);
         } else if (state.watchView === 'activity') {
+            const snatchHost = q('#moth-mw-snatch-list', content);
+            if (snatchHost && !snatchHost.contains(document.activeElement)) {
+                const snatchHtml = snatchQueueHtml();
+                if (snatchHost.innerHTML !== snatchHtml) snatchHost.innerHTML = snatchHtml;
+            }
             const refs = q('#moth-mw-reference-tools', content);
             const html = '<div class="moth-mw-reference-info"><b>' + escapeHtml(tr('Item references:')) + '</b> ' +
                 escapeHtml(tr('live server 7-day averages with a saved fallback captured')) + ' ' + escapeHtml(captured) + '. ' +

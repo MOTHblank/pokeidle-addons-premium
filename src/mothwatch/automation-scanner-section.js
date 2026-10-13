@@ -10,8 +10,10 @@
             state.candidates.delete(pending.candidateKey);
             state.itemInventoryMemo = null;
         }
-        requestItemSummary(activeAnyItemRules().length > 0);
-        setTimeout(startPokemonScan, 250);
+        if (!snatchCriticalWindow()) {
+            requestItemSummary(activeAnyItemRules().length > 0);
+            setTimeout(startPokemonScan, 250);
+        }
         queueRender();
     }
 

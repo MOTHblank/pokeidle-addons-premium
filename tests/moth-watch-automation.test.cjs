@@ -558,11 +558,11 @@ test('Milestone A: session/day caps account for outstanding unknown orders acros
     const log = [];
     const api = new Function('state','config','localStorage','sessionStorage',
         'ORDER_JOURNAL_KEY','ORDER_SESSION_KEY','normalize','addLog','queueRender',
-        'sanitizeFixedItemRules','sanitizeAnyItemRules','sanitizePokemonBuyRules',
+        'sanitizeFixedItemRules','sanitizeAnyItemRules','sanitizePokemonBuyRules','snatchOutcome',
         source + '\nreturn {orderAccountKey,loadOrderJournal,saveOrderJournal,reserveOrder,settleOrder,'+
         'resolveOrder,unresolvedListing,remainingBudget,orderExposure};')(
         state,config,storage,session,'orders','session',text=>text.toLowerCase(),text=>log.push(text),
-        ()=>{},()=>[],()=>[],()=>[]);
+        ()=>{},()=>[],()=>[],()=>[],()=>{});
     state.orderJournal=api.loadOrderJournal();
     const at=Date.now();
     const order={listingId:77,currency:'gold',sentAt:at,spend:120,qty:2,
@@ -1233,4 +1233,107 @@ test('MothWatch v0.6.1: cached Buy controls invalidate only for focused item quo
         listingId:2,price:3,seenAt:Date.now()});
     assert.equal(state.itemInventoryMemo,null,'selected item quote must redraw Buy actions');
     assert.match(script,/if \(status === 'confirmed'\) \{\s*state\.candidates\.delete\(pending\.candidateKey\);\s*state\.itemInventoryMemo = null;/);
+});
+
+
+function heldSnatchHarness() {
+    const now = Date.now();
+    let server=now-2000, purchaseCalls=[], refreshCalls=0, timers=[], pending=false,
+        unknown=false, sentAt=0;
+    const DateClock=class extends Date { static now() {return now;} };
+    const state={
+        nick:'buyer',orderJournal:{accountKey:'acct',sessionId:'sess',orders:[]},
+        gameSocket:{readyState:1},pendingBuy:null,rateLimitedUntil:0,
+        snatchWake:null,snatchManual:new Map(),snatchObserved:new Map(),
+        snatchNativeOffers:new Map(),snatchRecoverAt:new Map(),
+        attemptedListings:new Map(),detailQueue:[],detailQueued:new Set(),
+        ruleItemKeys:new Set(),itemOfferDetails:new Map(),pokemonAutoOffers:new Map(),
+        lastDetailRequest:new Map()
+    };
+    const config={enabled:true,fixedRulesEnabled:true,purchasesPaused:false};
+    const src=fs.readFileSync(path.join(__dirname,'..','src','mothwatch','snatch-section.js'),'utf8');
+    const api=new Function('state','config','Date','setTimeout','clearTimeout',
+        'orderAccountKey','serverNow','isOwnListing','unresolvedListing',
+        'activeRuleById','sanitizeFixedItemRules','sanitizeAnyItemRules',
+        'sanitizePokemonBuyRules','activeAnyItemRules','activePokemonRules',
+        'pokemonRuleMatches','pokemonListingName','catalogName','localStorage',
+        'queueRender','addLog','tr','num','money','escapeHtml','gameIsLoading',
+        'unverifiedOrdersExist','freshQuote','purchaseQuantity','backgroundDelayMs',
+        'tryBuy','snatchRefresh','currentRuleMatches',
+        // Shadowing source functions is not needed; fetch availability via stub.
+        src+'\nreturn {snatchKey,snatchReleaseQuote,snatchTick,snatchSchedule,'+
+        'snatchOutcome,snatchStop,snatchObserve,snatchMark};')(
+        state,config,DateClock,(fn,ms)=>{const t={fn,ms};timers.push(t);return t;},
+        ()=>{},()=> 'acct',()=>server,
+        ()=>false,()=>false,()=>null,()=>[],()=>[],()=>[],()=>[],()=>[],
+        ()=>true,()=> 'Pokémon',()=> 'Item', {getItem:()=>null,setItem:()=>{}},
+        ()=>{},()=>{},x=>x,String,String,String,()=>false,()=>unknown,
+        ()=>false,()=>1,()=>0,(c,manual,qty,rule,release)=>{
+            purchaseCalls.push({id:c.listingId,manual,qty,release});
+            state.pendingBuy={listingId:c.listingId,sentAt:now};
+            sentAt=server;return true;
+        },()=>{refreshCalls++;},()=>true);
+    const candidate={key:'snatch:item:gold:789',kind:'item',listingId:789,
+        itemId:106,name:'Test',currency:'gold',price:100,unitPrice:100,
+        qty:1,seller:'seller',seenAt:now,retainedUntil:now,average:0,ratio:1};
+    const key=api.snatchKey('item','gold',789);
+    state.snatchManual.set(key,{kind:'item',currency:'gold',id:789,itemId:106,
+        maxPrice:100,expiresAt:now+500000});
+    state.snatchObserved.set(key,{candidate,ruleId:'',releaseAt:now,
+        retryAt:0,attempts:0,refreshedAt:now,observedAt:now});
+    return {state,config,key,candidate,api,purchaseCalls,timers,
+        setServer:t=>{server=t;},setUnknown:v=>{unknown=v;},
+        getSentAt:()=>sentAt};
+}
+
+test('Snatch: verified two-minute hold is prearmed; first buy needs no market scan', () => {
+    const h=heldSnatchHarness();
+    h.api.snatchSchedule();
+    const first=h.timers.at(-1);
+    assert.equal(first.ms,2000,'release timer must target actual server unlock');
+    h.api.snatchTick();
+    assert.equal(h.purchaseCalls.length,0,'never purchase before retention expires');
+    h.setServer(h.candidate.retainedUntil);
+    assert.equal(h.api.snatchReleaseQuote(h.candidate),true);
+    h.api.snatchTick();
+    assert.deepEqual(h.purchaseCalls,[{id:789,manual:true,qty:1,release:true}]);
+    assert.equal(h.getSentAt(),h.candidate.retainedUntil);
+    h.api.snatchTick();
+    assert.equal(h.purchaseCalls.length,1,'one pending order at a time');
+    h.setUnknown(true);
+    h.state.pendingBuy=null;
+    h.api.snatchTick();
+    assert.equal(h.purchaseCalls.length,1,'unknown result blocks duplicate');
+});
+
+test('Snatch: explicit refused order releases 400ms retry; success removes target', () => {
+    const h=heldSnatchHarness();
+    h.setServer(h.candidate.retainedUntil);
+    h.api.snatchTick();
+    assert.equal(h.purchaseCalls.length,1);
+    h.state.pendingBuy=null;
+    h.api.snatchOutcome(789,'refused');
+    assert.equal(h.state.snatchObserved.get(h.key).retryAt,Date.now()+400);
+    // The test clock stays fixed; advance retry deadline explicitly.
+    h.state.snatchObserved.get(h.key).retryAt=0;
+    h.state.attemptedListings.delete(789);
+    h.api.snatchTick();
+    assert.equal(h.purchaseCalls.length,2,'retry must not wait for market refresh');
+    h.api.snatchOutcome(789,'confirmed');
+    assert.equal(h.state.snatchObserved.has(h.key),false);
+    assert.equal(h.state.snatchManual.has(h.key),false);
+});
+
+test('Snatch: stale pre-release quotes fail closed and server backoff is observed', () => {
+    const h=heldSnatchHarness();
+    h.setServer(h.candidate.retainedUntil);
+    h.state.rateLimitedUntil=Date.now()+15000;
+    h.api.snatchTick();
+    assert.equal(h.purchaseCalls.length,0);
+    h.state.rateLimitedUntil=0;
+    h.candidate.seenAt=Date.now()-190000;
+    assert.equal(h.api.snatchReleaseQuote(h.candidate),false);
+    h.api.snatchTick();
+    assert.equal(h.purchaseCalls.length,0,'no speculative purchase from expired quote');
+    assert.equal(h.state.snatchObserved.get(h.key).retryAt,Date.now()+1000);
 });
