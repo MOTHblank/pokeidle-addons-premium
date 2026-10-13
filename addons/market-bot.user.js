@@ -3808,7 +3808,11 @@
     }
 
     function snatchQueueHtml() {
-        const own=[...state.snatchManual.entries()].slice(0,SNATCH_LIMIT);
+        const own=[...state.snatchManual.entries()]
+            .sort(([keyA],[keyB])=>
+                Number(state.snatchObserved.get(keyA)?.releaseAt || Infinity) -
+                Number(state.snatchObserved.get(keyB)?.releaseAt || Infinity))
+            .slice(0,SNATCH_LIMIT);
         const automatic=[...state.snatchObserved.entries()]
             .filter(([key,entry])=>!state.snatchManual.has(key) && activeRuleById(entry.ruleId))
             .slice(0,SNATCH_LIMIT);
@@ -4451,6 +4455,7 @@
             '.moth-mw-snatch-button.is-armed{background:var(--rx,#84325f);color:#fff}',
             '.moth-mw-snatch-button[aria-pressed=true]{box-shadow:inset 0 0 0 1px var(--seta,#efc66b)}',
             '.moth-mw-snatch-explainer{margin:8px 0 14px;font-size:11px;line-height:1.6;color:var(--sobre-mad-dim,#bbb)}',
+            '.moth-mw-snatch-feedback{margin:7px 0;font-size:11px;font-weight:700;color:var(--seta,#efc66b)}',
             '.moth-mw-snatch-queue{display:grid;gap:16px;margin:12px 0}',
             '.moth-mw-snatch-group{display:grid;gap:8px;min-width:0}',
             '.moth-mw-snatch-group h5{margin:0;font-size:12px}',
