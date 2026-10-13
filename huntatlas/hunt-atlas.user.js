@@ -3826,7 +3826,14 @@
             return {perHour:null,coverage:0,source:'unknown'};
         const reported=mix && typeof mix==='object'
             ? Object.values(mix).reduce((n,x)=>n+Number(x?.kills||0),0) : 0;
-        const measured=reported>=30;
+        const huntIds=new Set(hunt.especies.map(row=>
+            Number(outlandNormalizeSpeciesId(row.pokeId))));
+        // A fully attributed event can still refer to a species absent from
+        // this catalog. Never silently discard that weight when averaging.
+        const matching=mix && typeof mix==='object' &&
+            Object.entries(mix).every(([id,row])=>
+                !(Number(row?.kills)>0) || huntIds.has(Number(id)));
+        const measured=reported>=30 && matching;
         const cached=!measured ? FARM_LOOT_BASELINE_CACHE.get(hunt) : null;
         if (cached?.catalog === known && cached.species === hunt.especies)
             return {perHour:cached.perKill===null?null:killsH*cached.perKill,
