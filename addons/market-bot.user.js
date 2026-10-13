@@ -1903,6 +1903,21 @@
         return keys.map(key => Number(raw[key]));
     }
 
+    function pokemonCollectibles(ficha) {
+        const flag = (...keys) => {
+            const value = keys.map(key => ficha?.[key]).find(v => typeof v === 'boolean');
+            return typeof value === 'boolean' ? value : null;
+        };
+        return {
+            legendary: flag('lendario', 'legendary'),
+            mythical: flag('mitico', 'mythical'),
+            mega: flag('mega'),
+            tmElemental: flag('tmElemental', 'tmElementalEquipada'),
+            tmAoe: flag('tmAoe', 'tmAoeEquipada'),
+            held: flag('heldItem', 'itemEquipado')
+        };
+    }
+
     function pokemonFacts(ficha) {
         const level = Number(ficha?.level);
         const ivs = pokemonIVs(ficha);
@@ -1927,7 +1942,8 @@
             levelBand: ficha?.level != null && Number.isFinite(level) && level > 0
                 ? levelBand(level) : null,
             score: pokemonScore(ficha), quality: pokemonQuality(ficha), ivs,
-            refinement: pokemonRefinement(ficha), missing
+            refinement: pokemonRefinement(ficha),
+            traits: pokemonCollectibles(ficha), missing
         };
     }
 
