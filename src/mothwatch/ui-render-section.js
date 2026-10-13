@@ -73,7 +73,10 @@
             if (searchTerm && ![c.name, c.seller, c.kind, c.listingId].some(value => normalize(value).includes(searchTerm))) return false;
             const manuallyLoaded = c.kind === 'item' && state.loadedItemKeys.has(String(c.itemId) + ':' + c.currency);
             // Unreferenced diamonds remain inspectable. Referenced diamonds must meet the watch threshold.
-            const visibleWithoutReference = manuallyLoaded || (c.kind === 'diamond' && !(Number(c.average) > 0));
+            // A missing or invalid reference is not evidence that a listing is
+            // overpriced. Keep such offers visible for manual inspection.
+            const referenceMissing = !(Number(c.average) > 0) || !Number.isFinite(Number(c.ratio));
+            const visibleWithoutReference = manuallyLoaded || referenceMissing;
             return (visibleWithoutReference || c.ratio <= Math.max(0.01, Number(config.watchPercent) / 100)) && candidateVisible(c);
         });
         // Other tabs still display the matching-listing count, but do not pay
@@ -133,7 +136,7 @@
                     filterButton('Diamonds', 'kind', 'diamond', kindFilter === 'diamond', '/img/moeda-gema.png') + '</div>' +
                     sortSelect() + '</div>' +
                     '<div class="moth-mw-inventory-note">' +
-                    escapeHtml(tr('Shiny Pokémon can only be listed for Gems. Old Coin listings are ignored.')) +
+                    escapeHtml(tr('Showing discounted offers and listings without reliable price references. This is not the full market; use Market inventory to inspect other items. Shiny Pokémon require Gems.')) +
                     '</div>' +
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Opportunities')) + '</h4><span id="moth-mw-opportunity-count"></span></div>' +
                     '<div class="moth-mw-list" id="moth-mw-opportunity-list"></div>';
