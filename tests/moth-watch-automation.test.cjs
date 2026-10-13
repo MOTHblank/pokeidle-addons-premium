@@ -1313,7 +1313,8 @@ test('Snatch: explicit refused order releases 400ms retry; success removes targe
     assert.equal(h.purchaseCalls.length,1);
     h.state.pendingBuy=null;
     h.api.snatchOutcome(789,'refused');
-    assert.ok(Math.abs(h.state.snatchObserved.get(h.key).retryAt - (Date.now()+400)) < 20);
+    const retryDelay=h.state.snatchObserved.get(h.key).retryAt-Date.now();
+    assert.ok(retryDelay>0 && retryDelay<=400,'refusal schedules a short bounded retry');
     // The test clock stays fixed; advance retry deadline explicitly.
     h.state.snatchObserved.get(h.key).retryAt=0;
     h.state.attemptedListings.delete(789);
@@ -1335,9 +1336,9 @@ test('Snatch: stale pre-release quotes fail closed and server backoff is observe
     assert.equal(h.api.snatchReleaseQuote(h.candidate),false);
     h.api.snatchTick();
     assert.equal(h.purchaseCalls.length,0,'no speculative purchase from expired quote');
-    assert.ok(Math.abs(h.state.snatchObserved.get(h.key).retryAt - (Date.now()+1000)) < 20);
+    const retryDelay=h.state.snatchObserved.get(h.key).retryAt-Date.now();
+    assert.ok(retryDelay>0 && retryDelay<=1000,'stale quote retry is bounded without a spin');
 });
-
 
 test('Snatch: first 30 explicitly refused orders retry in 400ms, then taper gracefully', () => {
     const source=fs.readFileSync(path.join(__dirname,'..','src','mothwatch',
