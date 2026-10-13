@@ -557,7 +557,11 @@
             'xp.ranged': 'heuristic range {low}–{high} trainer XP/h',
             'xp.unboosted': 'modeled XP excludes unverified VIP, guild, stream, event and catch-up bonuses',
             'xp.uncertainLeader': 'Leading candidate (uncertain): {hunt}',
-            'xp.fallback': 'reason: {reason}',
+            'xp.fallback': '{reason}',
+            'xp.fallback.known-immunity': 'Known immunity',
+            'xp.fallback.no-lead-combat-samples': 'No combat samples yet',
+            'xp.fallback.incomplete-spawn-coverage': 'Some enemies are not measured yet',
+            'xp.fallback.insufficient-personalized-model': 'More combat samples needed',
             'xp.calibration': 'validated against {count} hunt(s) in this context; median absolute error {error}%',
             'xp.unknownPokemon': 'Pokémon XP event stream incomplete (not combined with trainer XP)',
             'xp.modelNote': ' · exact upstream XP curve; real combat samples take priority over experimental move-index estimates.',
@@ -873,7 +877,11 @@
             'xp.ranged': 'faixa heurística {low}–{high} XP de treinador/h',
             'xp.unboosted': 'XP modelado não inclui bônus não verificados de VIP, guilda, lives, eventos ou catch-up',
             'xp.uncertainLeader': 'Candidato principal (incerto): {hunt}',
-            'xp.fallback': 'motivo: {reason}',
+            'xp.fallback': '{reason}',
+            'xp.fallback.known-immunity': 'Imunidade conhecida',
+            'xp.fallback.no-lead-combat-samples': 'Ainda sem dados de combate',
+            'xp.fallback.incomplete-spawn-coverage': 'Alguns inimigos ainda não foram medidos',
+            'xp.fallback.insufficient-personalized-model': 'São necessárias mais amostras de combate',
             'xp.calibration': 'comparado com {count} hunt(s) neste contexto; erro absoluto mediano {error}%',
             'xp.unknownPokemon': 'evento de XP do Pokémon incompleto (não somado ao XP do treinador)',
             'xp.modelNote': ' · curva oficial de XP; amostras reais de combate têm prioridade sobre estimativas experimentais do índice de golpes.',
@@ -11907,7 +11915,7 @@
             rangeLabel(estimate),
             estimate?.observed ? null : tr('xp.unboosted'),
             estimate?.fallbackReason
-                ? tr('xp.fallback', {reason: estimate.fallbackReason}) : null
+                ? tr('xp.fallback', {reason: tr('xp.fallback.'+estimate.fallbackReason)}) : null
         ].filter(Boolean).join(' · ');
 
         const current =
