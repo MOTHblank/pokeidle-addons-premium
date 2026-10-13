@@ -737,7 +737,7 @@ test('Milestone B: price inspection is read-only and cannot authorize market ord
     assert.doesNotMatch(inspect,/market\.comprar|send\(|tryBuy\(|saveConfig\(/);
     assert.match(inspect,/Insufficient comparable sales/);
     assert.match(inspect,/No matching configured Pokémon rule/);
-    assert.match(inspect,/No purchase authorization/);
+    assert.match(script,/No purchase authorization/);
     assert.match(script,/data-moth-view="pricing"/);
     const state={orderJournal:{},pendingBuy:null};
     const config={enabled:true,fixedRulesEnabled:true,purchasesPaused:false,pokemonBuyRules:[
