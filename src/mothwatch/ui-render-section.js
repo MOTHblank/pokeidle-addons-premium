@@ -170,9 +170,9 @@
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Automation status')) + '</h4><span>' +
                     escapeHtml(tr('Review the systems that can place market orders, then set spending safeguards and advanced monitoring.')) + '</span></div>' +
                     automationNoticeHtml() + automationStatusPanelHtml() +
-                    '<section class="moth-mw-settings-card moth-mw-budget-card"><h4>' + escapeHtml(tr('Spending safeguards')) + '</h4>' +
-                    '<p class="moth-mw-budget-warning">' +
-                    escapeHtml(tr('Automatic buying may use your entire available balance when reserves and spending limits are set to zero.')) +
+                    '<section class="moth-mw-settings-card moth-mw-budget-card"><h4>' + escapeHtml(tr('Optional spending limits')) + '</h4>' +
+                    '<p class="moth-mw-rule-hint">' +
+                    escapeHtml(tr('Your explicit price rules decide which listings to buy. A cumulative limit of 0 adds no cap.')) +
                     '</p><div class="moth-mw-config">' +
                     configField('Keep Coins in reserve', 'goldReserve', 'number', '') +
                     configField('Keep Gems in reserve', 'gemReserve', 'number', '') +
