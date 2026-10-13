@@ -328,7 +328,21 @@
 
     function handlePokemonListings(message) {
         const scan = state.pokemonScan;
-        if (!scan || !scan.waiting || !marketReplyMatches(message, 'pokemon')) return false;
+        if (!scan || !scan.waiting || !marketReplyMatches(message, 'pokemon')) {
+            // Passive native market evidence keeps buying rules current while
+            // the player browses. Never infer the type from an untyped page.
+            if (communityMarketIsOpen() && message.aba === 'vitrine' &&
+                message.tipo === 'pokemon' && ['gold','orb'].includes(message.moeda) &&
+                Number(message.pagina) === 0 && Array.isArray(message.linhas) &&
+                message.linhas.every(o => o && o.ficha &&
+                    (!o.tipo || o.tipo === 'pokemon') &&
+                    (!o.moeda || o.moeda === message.moeda))) {
+                state.pokemonAutoOffers.set(message.moeda, {
+                    offers: message.linhas.slice(0, 120), updatedAt: Date.now()
+                });
+            }
+            return false;
+        }
         const {currency, page} = scan.waiting;
         if (Number(message.pagina || 0) !== page ||
             (message.moeda && message.moeda !== currency) ||

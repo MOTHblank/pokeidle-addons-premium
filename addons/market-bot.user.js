@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.6.6
+// @version      0.6.7
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -14,7 +14,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.6');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.7');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -39,7 +39,7 @@
     const POKEMON_SALE_WINDOW_MS = 90 * 86400000;
     const POKEMON_HISTORY_FRESH_MS = 30 * 86400000;
     const BACKGROUND_MIN_GAP_MS = 3000;
-    const BACKGROUND_SCAN_WITH_RULES_MS = 30000;
+    const BACKGROUND_SCAN_WITH_RULES_MS = 15000;
     const RULE_DETAIL_REFRESH_MS = 30000;
     const RATE_LIMIT_BACKOFF_MS = 15000;
     const ITEM_MARKET_CAP_TTL_MS = 10 * 60 * 1000;
@@ -1919,13 +1919,14 @@
         const itemId = Number(message.itemId);
         const currency = message.moeda === 'orb' || message.moeda === 'gold' ? message.moeda : null;
         if (!Number.isSafeInteger(itemId) || itemId <= 0 || !currency) return;
-        if (!state.detailPending || state.detailPending.itemId !== itemId ||
-            state.detailPending.currency !== currency || communityMarketIsOpen()) return;
-        const lines = Array.isArray(message.linhas) ? message.linhas : [];
-        const pending = state.detailPending;
-        if (pending && pending.itemId === itemId && pending.currency === currency) {
-            finishItemDetailRequest(pending, lines.length ? 'loaded' : 'empty');
-        }
+        const lines = Array.isArray(message.linhas) ? message.linhas : null;
+        if (!lines) return;
+        const pending = state.detailPending?.itemId === itemId &&
+            state.detailPending.currency === currency ? state.detailPending : null;
+        // A native item-market response is also authenticated listing evidence.
+        // Do not lose it when an automated detail request was not outstanding.
+        if (!pending && !communityMarketIsOpen()) return;
+        if (pending) finishItemDetailRequest(pending, lines.length ? 'loaded' : 'empty');
         processItemListingPayload(itemId, currency, lines);
     }
 
@@ -1936,9 +1937,13 @@
         const explicitlyLoaded = state.loadedItemKeys.has(detailKey);
         const selected = state.selectedItemFocus?.key === detailKey;
         const neededForRecommendation = state.sellRecommendationKey === detailKey;
+        // Retain every verified item detail we requested (plus native browsing
+        // responses). Broad rules rotate targets each tick; their queue key can
+        // disappear before the packet arrives. The bounded cache is the correct
+        // source of purchase quotes, not the transient priority set.
+        state.itemOfferDetails.set(detailKey, { itemId, currency, offers, updatedAt: Date.now() });
+        pruneDetailCache();
         if (explicitlyLoaded || selected || neededForRecommendation || state.ruleItemKeys.has(detailKey)) {
-            state.itemOfferDetails.set(detailKey, { itemId, currency, offers, updatedAt: Date.now() });
-            pruneDetailCache();
             state.itemDetailStatus = {
                 key: detailKey,
                 itemId,
@@ -2718,7 +2723,21 @@
 
     function handlePokemonListings(message) {
         const scan = state.pokemonScan;
-        if (!scan || !scan.waiting || !marketReplyMatches(message, 'pokemon')) return false;
+        if (!scan || !scan.waiting || !marketReplyMatches(message, 'pokemon')) {
+            // Passive native market evidence keeps buying rules current while
+            // the player browses. Never infer the type from an untyped page.
+            if (communityMarketIsOpen() && message.aba === 'vitrine' &&
+                message.tipo === 'pokemon' && ['gold','orb'].includes(message.moeda) &&
+                Number(message.pagina) === 0 && Array.isArray(message.linhas) &&
+                message.linhas.every(o => o && o.ficha &&
+                    (!o.tipo || o.tipo === 'pokemon') &&
+                    (!o.moeda || o.moeda === message.moeda))) {
+                state.pokemonAutoOffers.set(message.moeda, {
+                    offers: message.linhas.slice(0, 120), updatedAt: Date.now()
+                });
+            }
+            return false;
+        }
         const {currency, page} = scan.waiting;
         if (Number(message.pagina || 0) !== page ||
             (message.moeda && message.moeda !== currency) ||
@@ -2887,6 +2906,8 @@
             qty: qty,
             spend: spend,
             balanceBefore: balanceBefore,
+            kind: candidate.kind,
+            itemId: Number(candidate.itemId || 0),
             sentAt: now,
             manual: !!manual
         };
@@ -3090,9 +3111,18 @@
             state.candidates.delete(pending.candidateKey);
             state.itemInventoryMemo = null;
         }
-        if (!snatchCriticalWindow()) {
-            requestItemSummary(activeAnyItemRules().length > 0);
-            setTimeout(startPokemonScan, 250);
+        // A confirmed order can expose another eligible listing immediately.
+        // Refresh just that market rather than enqueueing a full summary and
+        // Pokémon scan after every purchase (which starved rule detail traffic).
+        if (status === 'confirmed' && !snatchCriticalWindow() && hasAnyBuyingRules()) {
+            if (pending.kind === 'item' && pending.itemId > 0) {
+                const key = pending.itemId + ':' + pending.currency;
+                state.ruleItemKeys.add(key);
+                state.lastDetailRequest.delete(key);
+                queueItemDetail(pending.itemId, pending.currency);
+            } else if (pending.kind === 'pokemon' && activePokemonRules().length) {
+                setTimeout(startPokemonScan, 250);
+            }
         }
         queueRender();
     }
@@ -3324,7 +3354,9 @@
         if (!state.socket || state.socket.readyState !== 1) return;
         // A hidden native-market sheet may remain mounted in #modal. Its
         // mere DOM presence must not disable all background automation.
-        if (communityMarketIsOpen() || state.pendingBuy || config.purchasesPaused) return;
+        // Browsing the native market must not pause authorized purchases.
+        // Only background requests that could repaint it are restricted.
+        if (state.pendingBuy || config.purchasesPaused) return;
         const now = Date.now();
         if (now - Number(state.automationLastRunAt || 0) < 1000) return;
         state.automationLastRunAt = now;
@@ -3333,7 +3365,11 @@
         const broad = activeAnyItemRules();
         const pokemon = activePokemonRules();
         const targets = anyItemRuleTargets(broad);
-        state.ruleItemKeys = new Set(fixed.map(rule => rule.itemId + ':' + rule.currency));
+        state.ruleItemKeys = new Set([
+            ...fixed.map(rule => rule.itemId + ':' + rule.currency),
+            ...state.detailQueue.map(job => job.key),
+            ...(state.detailPending ? [state.detailPending.key] : [])
+        ]);
         for (const rule of fixed) automationDetail(rule.itemId, rule.currency);
         if (broad.length && targets.length && state.detailQueue.length + (state.detailPending ? 1 : 0) < 12) {
             let count = 0;
@@ -3344,6 +3380,9 @@
                 automationDetail(target.itemId, target.currency);
             }
         }
+        // Reserve the single purchase slot for an armed release; do not send
+        // a routine buy that could still be pending when a snatch unlocks.
+        if (snatchCriticalWindow()) return;
         // Serialized purchases share balances, reserves, caps and cooldowns.
         for (const rule of fixed) {
             const candidate = fixedRuleCandidate(rule);
@@ -3420,6 +3459,7 @@
     const SNATCH_ACTIVE_MS = 30 * 60000;
     const SNATCH_RETRY_MS = 400;
     const SNATCH_MAX_QUOTE_AGE_MS = 3 * 60000;
+    const SNATCH_PREPARE_MS = 45000;
     // Retry only after explicit server refusal; avoid a fixed 120-attempt cutoff.
     function snatchRetryDelay(attempts) {
         return attempts < 30 ? SNATCH_RETRY_MS : attempts < 90 ? 1500 : 5000;
@@ -3661,7 +3701,7 @@
             if (manual && (c.price > manual.maxPrice || c.itemId !== manual.itemId && c.kind==='item')) {
                 snatchStop(key,'quote changed'); continue;
             }
-            if (entry.releaseAt > server + 18000) continue;
+            if (entry.releaseAt > server + SNATCH_PREPARE_MS) continue;
             if (entry.releaseAt > server) {
                 // Do not fill the wire with scans immediately before unlock.
                 if (entry.releaseAt - server > 5000 &&
@@ -3711,7 +3751,7 @@
             if ((state.snatchManual.has(snatchKey(entry.candidate.kind,
                     entry.candidate.currency,entry.candidate.listingId)) ||
                 activeRuleById(entry.ruleId)) &&
-                entry.releaseAt > 0 && entry.releaseAt-now < 3200 &&
+                entry.releaseAt > 0 && entry.releaseAt-now < 5500 &&
                 entry.releaseAt-now > -10000 &&
                 (!state.pendingBuy || state.pendingBuy.listingId === entry.candidate.listingId)) return true;
         }
@@ -3727,7 +3767,8 @@
         if (!override) {
             for (const entry of state.snatchObserved.values()) {
                 const until = entry.releaseAt || 0;
-                if (until > server + 18000) wait = Math.min(wait,Math.max(50,until-server-18000));
+                if (until > server + SNATCH_PREPARE_MS)
+                    wait = Math.min(wait,Math.max(50,until-server-SNATCH_PREPARE_MS));
                 else if (until > server) wait = Math.min(wait,until-server);
                 else wait = Math.min(wait,Math.max(35,entry.retryAt-Date.now()));
             }

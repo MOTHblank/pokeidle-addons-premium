@@ -10,9 +10,18 @@
             state.candidates.delete(pending.candidateKey);
             state.itemInventoryMemo = null;
         }
-        if (!snatchCriticalWindow()) {
-            requestItemSummary(activeAnyItemRules().length > 0);
-            setTimeout(startPokemonScan, 250);
+        // A confirmed order can expose another eligible listing immediately.
+        // Refresh just that market rather than enqueueing a full summary and
+        // Pokémon scan after every purchase (which starved rule detail traffic).
+        if (status === 'confirmed' && !snatchCriticalWindow() && hasAnyBuyingRules()) {
+            if (pending.kind === 'item' && pending.itemId > 0) {
+                const key = pending.itemId + ':' + pending.currency;
+                state.ruleItemKeys.add(key);
+                state.lastDetailRequest.delete(key);
+                queueItemDetail(pending.itemId, pending.currency);
+            } else if (pending.kind === 'pokemon' && activePokemonRules().length) {
+                setTimeout(startPokemonScan, 250);
+            }
         }
         queueRender();
     }
@@ -244,7 +253,9 @@
         if (!state.socket || state.socket.readyState !== 1) return;
         // A hidden native-market sheet may remain mounted in #modal. Its
         // mere DOM presence must not disable all background automation.
-        if (communityMarketIsOpen() || state.pendingBuy || config.purchasesPaused) return;
+        // Browsing the native market must not pause authorized purchases.
+        // Only background requests that could repaint it are restricted.
+        if (state.pendingBuy || config.purchasesPaused) return;
         const now = Date.now();
         if (now - Number(state.automationLastRunAt || 0) < 1000) return;
         state.automationLastRunAt = now;
@@ -253,7 +264,11 @@
         const broad = activeAnyItemRules();
         const pokemon = activePokemonRules();
         const targets = anyItemRuleTargets(broad);
-        state.ruleItemKeys = new Set(fixed.map(rule => rule.itemId + ':' + rule.currency));
+        state.ruleItemKeys = new Set([
+            ...fixed.map(rule => rule.itemId + ':' + rule.currency),
+            ...state.detailQueue.map(job => job.key),
+            ...(state.detailPending ? [state.detailPending.key] : [])
+        ]);
         for (const rule of fixed) automationDetail(rule.itemId, rule.currency);
         if (broad.length && targets.length && state.detailQueue.length + (state.detailPending ? 1 : 0) < 12) {
             let count = 0;
@@ -264,6 +279,9 @@
                 automationDetail(target.itemId, target.currency);
             }
         }
+        // Reserve the single purchase slot for an armed release; do not send
+        // a routine buy that could still be pending when a snatch unlocks.
+        if (snatchCriticalWindow()) return;
         // Serialized purchases share balances, reserves, caps and cooldowns.
         for (const rule of fixed) {
             const candidate = fixedRuleCandidate(rule);

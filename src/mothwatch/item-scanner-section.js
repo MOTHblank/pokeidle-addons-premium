@@ -292,13 +292,14 @@
         const itemId = Number(message.itemId);
         const currency = message.moeda === 'orb' || message.moeda === 'gold' ? message.moeda : null;
         if (!Number.isSafeInteger(itemId) || itemId <= 0 || !currency) return;
-        if (!state.detailPending || state.detailPending.itemId !== itemId ||
-            state.detailPending.currency !== currency || communityMarketIsOpen()) return;
-        const lines = Array.isArray(message.linhas) ? message.linhas : [];
-        const pending = state.detailPending;
-        if (pending && pending.itemId === itemId && pending.currency === currency) {
-            finishItemDetailRequest(pending, lines.length ? 'loaded' : 'empty');
-        }
+        const lines = Array.isArray(message.linhas) ? message.linhas : null;
+        if (!lines) return;
+        const pending = state.detailPending?.itemId === itemId &&
+            state.detailPending.currency === currency ? state.detailPending : null;
+        // A native item-market response is also authenticated listing evidence.
+        // Do not lose it when an automated detail request was not outstanding.
+        if (!pending && !communityMarketIsOpen()) return;
+        if (pending) finishItemDetailRequest(pending, lines.length ? 'loaded' : 'empty');
         processItemListingPayload(itemId, currency, lines);
     }
 
@@ -309,9 +310,13 @@
         const explicitlyLoaded = state.loadedItemKeys.has(detailKey);
         const selected = state.selectedItemFocus?.key === detailKey;
         const neededForRecommendation = state.sellRecommendationKey === detailKey;
+        // Retain every verified item detail we requested (plus native browsing
+        // responses). Broad rules rotate targets each tick; their queue key can
+        // disappear before the packet arrives. The bounded cache is the correct
+        // source of purchase quotes, not the transient priority set.
+        state.itemOfferDetails.set(detailKey, { itemId, currency, offers, updatedAt: Date.now() });
+        pruneDetailCache();
         if (explicitlyLoaded || selected || neededForRecommendation || state.ruleItemKeys.has(detailKey)) {
-            state.itemOfferDetails.set(detailKey, { itemId, currency, offers, updatedAt: Date.now() });
-            pruneDetailCache();
             state.itemDetailStatus = {
                 key: detailKey,
                 itemId,

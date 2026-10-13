@@ -174,7 +174,7 @@ test('Userscript version and monitor attribute match, with valid syntax and Port
 });
 
 
-test('General scans slow to 30 seconds only while background rule buying is active', () => {
+test('General scans use 15-second refreshes while background rule buying is active', () => {
     let clock = 100000;
     const state = {
         socket: { readyState: 1 }, watchOpen: false, lastScanAt: 0,
@@ -190,17 +190,17 @@ test('General scans slow to 30 seconds only while background rule buying is acti
         'startPokemonScan', 'requestDiamondListings', 'pruneCandidates', 'queueRender',
         'hasAnyBuyingRules', 'activeAnyItemRules', 'activePokemonRules',
         section('    function runScan(force)', '    function pruneCandidates(') +
-        '\nreturn runScan;')(state, config, {now: () => clock}, 30000,
+        '\nreturn runScan;')(state, config, {now: () => clock}, 15000,
         () => false, () => calls.push('items'), () => calls.push('history'),
         () => calls.push('pokemon'), () => calls.push('diamond'),
         () => calls.push('prune'), () => calls.push('render'),
         () => config.fixedRulesEnabled && state.ruleItemKeys.size > 0, () => [], () => []);
     runScan(false);
     assert.equal(calls.filter(x => x === 'items').length, 1);
-    clock += 20000;
+    clock += 10000;
     runScan(false);
     assert.equal(calls.filter(x => x === 'items').length, 1, 'Closed buying mode throttles general scans');
-    clock += 10000;
+    clock += 5000;
     runScan(false);
     assert.equal(calls.filter(x => x === 'items').length, 2);
     state.watchOpen = true;
@@ -941,7 +941,7 @@ test('Milestone C: optional session telemetry avoids duplicate NPC sales', () =>
 test('Milestone C: independent economy UI cannot start selling automation', () => {
     assert.match(script,/data-moth-view="economy"/);
     assert.match(script,/Read-only fees, market eligibility, and recorded purchase exposure/);
-    assert.match(script,/@version\s+0\.6\.6/);
+    assert.match(script,/@version\s+0\.6\.7/);
     assert.doesNotMatch(script,/market\.criar|autoSellRules|sendItemSale/);
 });
 
@@ -1021,7 +1021,7 @@ test('Milestone D: diagnostics source is synchronized with standalone userscript
     assert.equal(embedded,source,'module must exactly match generated userscript section');
     const tool=fs.readFileSync(path.join(__dirname,'..','tools','build-mothwatch.cjs'),'utf8');
     assert.match(tool,/--check/);
-    assert.match(script,/@version\s+0\.6\.6/);
+    assert.match(script,/@version\s+0\.6\.7/);
     assert.doesNotMatch(script,/^\s*\/\/\s*@(?:downloadURL|updateURL)/m,
         'private repo must not advertise inaccessible raw auto-update endpoints');
 });
@@ -1152,7 +1152,7 @@ test('MothWatch v0.6.1: source sections match the single distributable userscrip
         const moduleSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'mothwatch', name), 'utf8').trimEnd();
         assert.equal(script.slice(a + begin.length, b), moduleSource, 'generated parity: ' + id);
     }
-    assert.match(script, /@version\s+0\.6\.6/);
+    assert.match(script, /@version\s+0\.6\.7/);
     assert.doesNotMatch(script, /\bimport\s*\(|\brequire\s*\(/,
         'one Violentmonkey userscript must not require runtime module loading');
 });
@@ -1453,4 +1453,94 @@ test('Snatch hardening: progressive acknowledged-refusal retries and protected r
     assert.match(source,/releaseAt-now < 3200/);
     assert.match(source,/snatchRetryDelay\(entry\.attempts\)/);
     assert.match(source,/rule target expired/);
+});
+
+
+test('Throughput: native browsing does not suspend buys, but snatch release wins the slot', () => {
+    const state = {socket:{readyState:1},pendingBuy:null,automationLastRunAt:0,
+        ruleItemKeys:new Set(),detailQueue:[],detailPending:null};
+    const config={enabled:true,fixedRulesEnabled:true,purchasesPaused:false,
+        fixedItemRules:[{id:'rule',itemId:106,currency:'gold',buyMax:100,buyEnabled:true}]};
+    let critical=false, bought=0;
+    const run=new Function('state','config','gameIsLoading','communityMarketIsOpen',
+        'hasAnyBuyingRules','sanitizeFixedItemRules','activeAnyItemRules','activePokemonRules',
+        'anyItemRuleTargets','automationDetail','fixedRuleCandidate','purchaseQuantity',
+        'tryBuy','anyItemRuleCandidate','pokemonRuleCandidate','snatchCriticalWindow',
+        section('    function runMarketAutomation(', '    function runScan(force)')+
+        '\nreturn runMarketAutomation;')(
+        state,config,()=>false,()=>true,()=>true,v=>v,()=>[],()=>[],()=>[],
+        ()=>{},()=>({listingId:201}),()=>1,()=>{bought++;return true;},
+        ()=>null,()=>null,()=>critical);
+    run();
+    assert.equal(bought,1,'native community-market modal must not disable rule buys');
+    critical=true;state.automationLastRunAt=0;
+    run();
+    assert.equal(bought,1,'snatch critical window reserves the purchase slot');
+});
+
+test('Throughput: verified broad-rule details survive target rotation', () => {
+    const source=fs.readFileSync(path.join(__dirname,'..','src/mothwatch',
+        'item-scanner-section.js'),'utf8');
+    const segment=source.slice(source.indexOf('    function processItemListingPayload('),
+        source.indexOf('    function itemMediaFor('));
+    const state={loadedItemKeys:new Set(),ruleItemKeys:new Set(),
+        itemOfferDetails:new Map(),itemMarketCaps:new Map(),
+        selectedItemFocus:null,sellRecommendationKey:null};
+    const ingest=new Function('state','snatchConfirmItemListingSet','pruneDetailCache',
+        'itemReference','queueRender','median',segment+
+        '\nreturn processItemListingPayload;')(
+        state,()=>{},()=>{},()=>null,()=>{},()=>0);
+    ingest(106,'gold',[{id:201,preco:90,qtd:2,vendedor:'other'}]);
+    assert.equal(state.itemOfferDetails.get('106:gold').offers[0].id,201,
+        'rotation of ruleItemKeys must not discard an authenticated listing');
+});
+
+test('Throughput: native item detail is usable without an outgoing scan', () => {
+    const src=section('    function handleItemListings(', '    function processItemListingPayload(');
+    const state={detailPending:null}, accepted=[];
+    let native=true;
+    const receive=new Function('state','communityMarketIsOpen','finishItemDetailRequest',
+        'processItemListingPayload',src+'\nreturn handleItemListings;')(
+        state,()=>native,()=>{},(...args)=>accepted.push(args));
+    receive({itemId:106,moeda:'gold',linhas:[{id:33,preco:90,qtd:1}]});
+    assert.equal(accepted.length,1);
+    native=false;
+    receive({itemId:106,moeda:'gold',linhas:[{id:34,preco:80,qtd:1}]});
+    assert.equal(accepted.length,1,'unattributed market packets are not treated as scans');
+});
+
+test('Throughput: native Pokemon price pages update rule evidence only when typed', () => {
+    const source=fs.readFileSync(path.join(__dirname,'..','src/mothwatch',
+        'pokemon-scanner-section.js'),'utf8');
+    const part=source.slice(source.indexOf('    function handlePokemonListings('));
+    const state={pokemonScan:null,pokemonAutoOffers:new Map()};
+    const receive=new Function('state','communityMarketIsOpen','marketReplyMatches',
+        part+'\nreturn handlePokemonListings;')(
+        state,()=>true,()=>false);
+    const row={id:301,preco:100,qtd:1,moeda:'gold',
+        vendedor:'seller',ficha:{shiny:false,potencia:4}};
+    receive({aba:'vitrine',tipo:'pokemon',moeda:'gold',pagina:0,linhas:[row]});
+    assert.equal(state.pokemonAutoOffers.get('gold').offers[0].id,301);
+    receive({aba:'vitrine',moeda:'gold',pagina:0,linhas:[]});
+    assert.equal(state.pokemonAutoOffers.get('gold').offers.length,1,
+        'untyped empty packets cannot erase valid purchase evidence');
+});
+
+test('Snatch: repeated server refusals generate multiple post-release orders', () => {
+    const h=heldSnatchHarness();
+    h.setServer(h.candidate.retainedUntil);
+    for(let i=0;i<4;i++){
+        h.api.snatchTick();
+        assert.equal(h.purchaseCalls.length,i+1,
+            'each acknowledged refusal permits another single guarded order');
+        h.state.pendingBuy=null;
+        h.api.snatchOutcome(789,'refused');
+        assert.equal(h.state.snatchObserved.get(h.key).attempts,i+1);
+        h.state.snatchObserved.get(h.key).retryAt=0;
+        h.state.attemptedListings.delete(789);
+    }
+    h.api.snatchTick();
+    assert.equal(h.purchaseCalls.length,5,'snatch remains armed after several losses');
+    h.api.snatchOutcome(789,'confirmed');
+    assert.equal(h.state.snatchObserved.has(h.key),false);
 });
