@@ -140,7 +140,7 @@
         lastScanAt: 0,
         scanTimer: null,
         watchOpen: false,
-        watchView: (() => { try { const value = localStorage.getItem('moth-pokeidle-market-watch-view-v1'); return ['opportunities', 'inventory', 'automation', 'activity'].includes(value) ? value : 'opportunities'; } catch { return 'opportunities'; } })(),
+        watchView: (() => { try { const value = localStorage.getItem('moth-pokeidle-market-watch-view-v1'); return ['opportunities', 'inventory', 'pricing', 'automation', 'activity'].includes(value) ? value : 'opportunities'; } catch { return 'opportunities'; } })(),
         opportunitySearch: (() => { try { return localStorage.getItem('moth-pokeidle-market-watch-search-v1') || ''; } catch { return ''; } })(),
         firstSeenCache: new Map(),
         itemInventoryCollapsed: (() => {
@@ -4325,7 +4325,7 @@
             if (panel.dataset.mothWatchShell) delete panel.dataset.mothWatchShell;
             forceViewBuild = true;
         }
-        const views = ['opportunities', 'inventory', 'automation', 'activity'];
+        const views = ['opportunities', 'inventory', 'pricing', 'automation', 'activity'];
         if (!views.includes(state.watchView)) state.watchView = 'opportunities';
 
         if (!panel.dataset.mothWatchShell) {
@@ -4336,6 +4336,7 @@
                 '<nav class="moth-mw-tabs" aria-label="' + escapeHtml(tr('Moth Watch views')) + '">' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="opportunities">' + escapeHtml(tr('Opportunities')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="inventory">' + escapeHtml(tr('Market inventory')) + '</button>' +
+                '<button type="button" class="moth-mw-tab" data-moth-view="pricing">' + escapeHtml(tr('Pokémon price evidence')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="automation">' + escapeHtml(tr('Automation & budget')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="activity">' + escapeHtml(tr('Activity & references')) + '</button></nav>' +
                 '<div class="moth-mw-workspace"><div id="moth-mw-view-content"></div></div>';
@@ -4404,6 +4405,11 @@
             } else if (state.watchView === 'inventory') {
                 content.innerHTML = '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Market inventory')) + '</h4><span>' +
                     escapeHtml(tr('Browse item types, then load the offers for a selected currency.')) + '</span></div><div id="moth-mw-inventory-content"></div>';
+            } else if (state.watchView === 'pricing') {
+                content.innerHTML = '<div class="moth-mw-section-title"><h4>' +
+                    escapeHtml(tr('Pokémon price evidence')) + '</h4><span>' +
+                    escapeHtml(tr('Read-only completed-sale comparisons. No purchase authorization.')) +
+                    '</span></div><div id="moth-mw-pricing-list"></div>';
             } else if (state.watchView === 'automation') {
                 content.innerHTML =
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Automation status')) + '</h4><span>' +
@@ -4474,6 +4480,10 @@
                 const newScroller = q('.moth-mw-inventory-list', host);
                 if (newScroller) newScroller.scrollTop = scrollTop;
             }
+        } else if (state.watchView === 'pricing') {
+            const host = q('#moth-mw-pricing-list', content);
+            const html = renderPokemonPriceEvidence();
+            if (host && host.innerHTML !== html) host.innerHTML = html;
         } else if (state.watchView === 'automation') {
             refreshAutomationLive(content);
         } else if (state.watchView === 'activity') {
@@ -4507,7 +4517,7 @@
             const tab = target.closest('[data-moth-view]');
             if (tab) {
                 const view = tab.dataset.mothView;
-                if (!['opportunities', 'inventory', 'automation', 'activity'].includes(view)) return;
+                if (!['opportunities', 'inventory', 'pricing', 'automation', 'activity'].includes(view)) return;
                 state.watchView = view;
                 try { localStorage.setItem('moth-pokeidle-market-watch-view-v1', view); } catch {}
                 renderWatch(true);
