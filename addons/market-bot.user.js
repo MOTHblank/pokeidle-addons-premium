@@ -2032,8 +2032,16 @@
 
     function pokemonComparableSales(sales, listing, options) {
         const { level = true, grade = true, quality = false, ivs = false, refinement = false,
-            gradeTolerance = 0.125, qualityTolerance = 0.15 } = options;
+            gradeTolerance = 0.125, qualityTolerance = 0.15, traits = true } = options;
         return sales.filter(sale => {
+            if (sale.soldAt && (Date.now() - sale.soldAt > POKEMON_SALE_WINDOW_MS ||
+                sale.soldAt > Date.now() + 300000)) return false;
+            if (traits) {
+                for (const [field, value] of Object.entries(listing.traits || {})) {
+                    const soldValue = sale.traits?.[field];
+                    if (value != null && soldValue != null && value !== soldValue) return false;
+                }
+            }
             if (level && (!sale.levelBand || !listing.levelBand ||
                 sale.levelBand !== listing.levelBand)) return false;
             if (grade) {
