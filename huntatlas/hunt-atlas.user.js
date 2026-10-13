@@ -429,7 +429,7 @@
             'catch.lure': 'Simulate Shiny Secret Lure ×2 (hypothetical, not verified active)',
             'catch.current': 'Compared hunt: {hunt}',
             'catch.unknown': '— (species rarity or kill rate unavailable)',
-            'catch.percent': '{chance}% per accepted throw',
+            'catch.percent': '{chance} per accepted throw',
             'catch.expected': '{count} captures · {balls} accepted balls/capture on average',
             'catch.seen': 'Shinies seen: {count} · shinies caught: {caught}',
             'catch.oneDay': '≥1 shiny caught in 24h: {chance} (if steady conditions)',
@@ -444,7 +444,7 @@
             'catch.outland': 'Outland shiny capture eligibility unresolved; shiny estimates withheld.',
             'catch.clamp': 'Beast ×8 does not always double Ultra ×4 after the 10% cap.',
             'catch.mystic': 'Mystic Arena uses a separate ball table and consumes one ticket per attempt; never included in ordinary hunt odds.',
-            'catch.card': 'Ultra {ultra}% · Beast {beast}% (wiki-conditional)',
+            'catch.card': 'Ultra {ultra} · Beast {beast} (wiki-conditional)',
             'catch.levelCap': 'Caught level cap: {level} (wild rewards unchanged)',
             'catch.cardUnknown': 'Capture chance unavailable (rarity unresolved)',
             'catch.targetRate': 'Target {captures} captures · {shiny} shiny caught · mean {hours}/shiny ({source})',
@@ -470,7 +470,7 @@
             'rank.kills': 'Kills/h',
             'rank.coverage': 'Coverage {percent}%',
             'rank.rare': 'Selected rare item rate',
-            'rank.capture': 'Selected ball: {chance}% per accepted throw',
+            'rank.capture': 'Selected ball: {chance} per accepted throw',
             'rank.confidence': 'Confidence: {confidence} (heuristic)',
 
             'rank.keyInfo': 'Rates are conditional, and the best hunt depends on the selected metric.',
@@ -778,7 +778,7 @@
             'catch.lure': 'Simular Shiny Secret Lure ×2 (hipotético; não confirmado ativo)',
             'catch.current': 'Hunt em análise: {hunt}',
             'catch.unknown': '— (raridade da espécie ou abates/h indisponíveis)',
-            'catch.percent': '{chance}% por bola aceita',
+            'catch.percent': '{chance} por bola aceita',
             'catch.expected': '{count} capturas · {balls} bolas aceitas/captura em média',
             'catch.seen': 'Shinies vistos: {count} · shinies capturados: {caught}',
             'catch.oneDay': '≥1 shiny capturado em 24h: {chance} (com condições constantes)',
@@ -793,7 +793,7 @@
             'catch.outland': 'Elegibilidade de shiny na Outland não verificada; projeção de shiny omitida.',
             'catch.clamp': 'Beast ×8 nem sempre dobra a chance da Ultra ×4 após o teto de 10%.',
             'catch.mystic': 'A Arena Mística usa tabela especial de bolas e consome um ticket por tentativa; não entra nas odds das hunts comuns.',
-            'catch.card': 'Ultra {ultra}% · Beast {beast}% (condicional da wiki)',
+            'catch.card': 'Ultra {ultra} · Beast {beast} (condicional da wiki)',
             'catch.levelCap': 'Teto do nível ao capturar: {level} (recompensas do selvagem não mudam)',
             'catch.cardUnknown': 'Chance de captura indisponível (raridade não verificada)',
             'catch.targetRate': 'Alvo {captures} capturas · {shiny} shinies capturados · média {hours}/shiny ({source})',
@@ -819,7 +819,7 @@
             'rank.kills': 'Abates/h',
             'rank.coverage': 'Cobertura {percent}%',
             'rank.rare': 'Frequência do item raro escolhido',
-            'rank.capture': 'Bola selecionada: {chance}% por arremesso aceito',
+            'rank.capture': 'Bola selecionada: {chance} por arremesso aceito',
             'rank.confidence': 'Confiança: {confidence} (heurística)',
 
             'rank.keyInfo': 'As taxas são condicionais; a melhor hunt depende da métrica escolhida.',
@@ -10445,7 +10445,7 @@
 
             .mha-best-row {
                 display: grid;
-                grid-template-columns: 18px minmax(0,1fr) auto auto;
+                grid-template-columns: 18px minmax(0,1fr) minmax(110px,36%) auto;
                 gap: 5px;
                 align-items: center;
                 min-height: 26px;
@@ -11042,6 +11042,54 @@
             }
             .mha-xp-primary-main span, .mha-best-name,
             .mha-xp-value { font-size: 10px; }
+            /* Keep the Top 5 action visible even with long source strings. */
+            .mha-best-row { min-width: 0; }
+            .mha-best-row .mha-xp-value {
+                min-width: 0;
+                white-space: normal;
+                overflow-wrap: anywhere;
+                line-height: 1.3;
+            }
+            .mha-best-row .mha-best-name {
+                min-width: 0;
+                overflow-wrap: anywhere;
+            }
+            .mha-xp-primary-main span {
+                display: block;
+                white-space: normal;
+                overflow-wrap: anywhere;
+            }
+            .mha-xp-summary [data-mha-more] .mha-xp-note {
+                white-space: normal;
+                overflow-wrap: anywhere;
+            }
+            .mha-xp-summary [data-mha-reference] label {
+                display: inline-flex;
+                align-items: center;
+                gap: 5px;
+                padding: 3px 4px;
+                flex-wrap: wrap;
+            }
+            .mha-xp-summary [data-mha-reference] input[type="number"] {
+                width: 76px;
+                max-width: 100%;
+                min-height: 32px;
+                padding: 3px 5px;
+                color: #eee7ea;
+                background: #211a1e;
+                border: 1px solid rgba(255,255,255,.25);
+                border-radius: 5px;
+            }
+            @media (max-width: 720px) {
+                .mha-best-row {
+                    grid-template-columns: 18px minmax(0,1fr) auto;
+                }
+                .mha-best-row .mha-xp-value {
+                    grid-column: 2 / 3;
+                    grid-row: 2;
+                }
+                .mha-best-row .mha-go { grid-column: 3; grid-row: 1 / 3; }
+            }
             .mha-xp-summary [data-mha-more][open] {
                 max-height: min(44dvh, 480px);
                 overflow-y: auto;
@@ -12547,8 +12595,8 @@
         const beastPct=captureWikiChance(rarity,
             captureInfoForBall(5)?.efficiency??8);
         const catchCard=ultraPct!==null&&beastPct!==null ?
-            tr('catch.card',{ultra:(100*ultraPct).toFixed(2),
-                beast:(100*beastPct).toFixed(2)}):
+            tr('catch.card',{ultra:formatProbability(ultraPct),
+                beast:formatProbability(beastPct)}):
             tr('catch.cardUnknown');
 
         const chosenSpeciesPlan=capturePlanForSpecies(species,
@@ -12601,8 +12649,7 @@
                 ' · '+tr('rank.rarePreview',{
                     tier:state.filters.outlandPreviewTier}):
                 tr('rank.invalid'),
-            tr('rank.capture',{chance:activeChance===null?'—':
-                (activeChance*100).toFixed(3)}),
+            tr('rank.capture',{chance:formatProbability(activeChance)}),
             shinyCard??tr('rank.invalid'),
             meta?.captureLevelCeiling?tr('catch.levelCap',{
                 level:Math.min(Number(hunt.nivel)||1,meta.captureLevelCeiling)
@@ -13212,7 +13259,7 @@
                     chosen?.ball?.source
                 ].filter(Boolean).join(' · ')),
             chosen ? captureLine(tr('catch.percent',{
-                chance:chosen.chance===null?'—':(100*chosen.chance).toFixed(3)
+                chance:formatProbability(chosen.chance)
             }),tr('catch.expected',{
                 count:formatEventRate(chosen.catchesH),
                 balls:rate(chosen.ballsPerCapture)
