@@ -2758,10 +2758,10 @@
         ));
     }
 
-    function tryBuy(candidate, manual, requestedQuantity = null, fixedRule = false) {
+    function tryBuy(candidate, manual, requestedQuantity = null, fixedRule = false, snatchRelease = false) {
         // Rule eligibility is revalidated against the latest saved settings.
         if (config.purchasesPaused || unverifiedOrdersExist() ||
-            !freshQuote(candidate, !!manual)) {
+            !(freshQuote(candidate, !!manual) || snatchRelease && snatchReleaseQuote(candidate))) {
             diagnosticOutcome('quote-rejected');
             if (manual) addLog('Stale or unverified quote · refresh listing');
             return false;
@@ -3346,15 +3346,42 @@
     const SNATCH_KEY = 'moth-pokeidle-snatch-v1';
     const SNATCH_LIMIT = 40;
     const SNATCH_ACTIVE_MS = 30 * 60000;
-    const SNATCH_RETRY_MS = 1200;
+    const SNATCH_RETRY_MS = 400;
+    const SNATCH_MAX_QUOTE_AGE_MS = 3 * 60000;
+    const SNATCH_ATTEMPT_LIMIT = 120;
     function snatchKey(kind, currency, id) {
         return kind + ':' + currency + ':' + id;
     }
 
+    // Previously observed *held* quotes remain usable at release even when
+    // ordinary 30-second fresh quote checks expire. ID, price and hold time
+    // are server-derived; a purchase is still authoritatively validated.
+    function snatchReleaseQuote(candidate) {
+        if (!candidate || !['item','pokemon'].includes(candidate.kind)) return false;
+        const id = Number(candidate.listingId), price = Number(candidate.price);
+        const age = Date.now() - Number(candidate.seenAt);
+        const retained = Number(candidate.retainedUntil);
+        return Number.isSafeInteger(id) && id > 0 &&
+            ['gold','orb'].includes(candidate.currency) &&
+            Number.isSafeInteger(price) && price > 0 &&
+            Number.isSafeInteger(candidate.qty) && candidate.qty > 0 &&
+            Number.isFinite(age) && age >= 0 && age <= SNATCH_MAX_QUOTE_AGE_MS &&
+            Number.isFinite(retained) && retained > 0 && retained <= serverNow() &&
+            !!state.nick && !!candidate.seller && candidate.seller !== '—' &&
+            !isOwnListing({vendedor:candidate.seller}) && !unresolvedListing(id) &&
+            (candidate.kind !== 'pokemon' || candidate.qty === 1 &&
+                typeof candidate.ficha?.shiny === 'boolean' &&
+                Number.isSafeInteger(Number(candidate.ficha?.potencia)) &&
+                Number(candidate.ficha.potencia) >= 1 && Number(candidate.ficha.potencia) <= 5);
+    }
+
     function snatchRestore() {
         const account = orderAccountKey();
+        if (state.snatchWake) clearTimeout(state.snatchWake);
         state.snatchManual = new Map();
         state.snatchObserved = new Map();
+        state.snatchRecoverAt = new Map();
+        state.snatchNativeOffers = new Map();
         state.snatchWake = null;
         if (!account) return;
         try {
@@ -3375,6 +3402,7 @@
                 });
             }
         } catch {}
+        snatchSchedule();
     }
 
     function snatchSave() {
@@ -3418,7 +3446,12 @@
         const rule = snatchMatchingRule(kind,currency,itemId,offer);
         const until = Number(offer.compravelEm);
         const held = Number.isFinite(until) && until > serverNow();
-        if (!manual && (!rule || !held)) return;
+        if (!manual && (!rule || !held && !state.snatchObserved.has(key))) return;
+        if (!state.snatchObserved.has(key) && state.snatchObserved.size >= SNATCH_LIMIT) {
+            const disposable = [...state.snatchObserved.keys()].find(k=>!state.snatchManual.has(k));
+            if (!disposable) return;
+            state.snatchObserved.delete(disposable);
+        }
         const old = state.snatchObserved.get(key);
         const candidate = {
             key:'snatch:' + key, kind, currency, listingId:id, itemId,
@@ -3444,16 +3477,26 @@
         if (!state.orderJournal?.accountKey || message?.t !== 'market') return;
         if (message.aba === 'item' && ['gold','orb'].includes(message.moeda) &&
             Number.isSafeInteger(Number(message.itemId))) {
-            for (const offer of Array.isArray(message.linhas) ? message.linhas.slice(0,120) : [])
-                snatchObserve('item',message.moeda,offer,Number(message.itemId));
+            for (const offer of Array.isArray(message.linhas) ? message.linhas.slice(0,120) : []) {
+                const id=Number(offer?.id),itemId=Number(message.itemId);
+                if (Number.isSafeInteger(id)&&id>0 && Number.isSafeInteger(itemId)&&itemId>0)
+                    state.snatchNativeOffers.set(snatchKey('item',message.moeda,id),offer);
+                snatchObserve('item',message.moeda,offer,itemId);
+            }
         } else if (message.aba === 'vitrine' && Array.isArray(message.linhas)) {
             for (const offer of message.linhas.slice(0,120)) {
                 const kind = offer?.ficha ? 'pokemon' : offer?.tipo === 'item' ? 'item' : null;
                 const currency = offer?.moeda || message.moeda;
-                if (kind && ['gold','orb'].includes(currency))
+                if (kind && ['gold','orb'].includes(currency)) {
+                    const id=Number(offer?.id);
+                    if (Number.isSafeInteger(id)&&id>0)
+                        state.snatchNativeOffers.set(snatchKey(kind,currency,id),offer);
                     snatchObserve(kind,currency,offer,Number(offer.itemId || 0));
+                }
             }
         }
+        while (state.snatchNativeOffers.size > 240)
+            state.snatchNativeOffers.delete(state.snatchNativeOffers.keys().next().value);
     }
 
     function snatchMark(kind, currency, id, itemId = 0) {
@@ -3462,12 +3505,13 @@
             state.snatchManual.delete(key);
             snatchSave(); snatchSchedule(); queueRender(); return true;
         }
+        if (state.snatchManual.size >= SNATCH_LIMIT) return false;
         const obs = state.snatchObserved.get(key);
         const itemOffer = kind === 'item' ?
             state.itemOfferDetails.get(itemId + ':' + currency)?.offers?.find(o=>Number(o.id)===id) : null;
         const pokemonOffer = kind === 'pokemon' ?
             state.pokemonAutoOffers.get(currency)?.offers?.find(o=>Number(o.id)===id) : null;
-        const offer = itemOffer || pokemonOffer;
+        const offer = itemOffer || pokemonOffer || state.snatchNativeOffers?.get(key);
         if (!obs && offer) {
             // A direct player click is an explicit one-listing authorization;
             // initialize the same observation path even without a broad rule.
@@ -3511,12 +3555,23 @@
 
     function snatchTick() {
         state.snatchWake = null;
+        const now = Date.now();
+        for (const [key, target] of [...state.snatchManual]) {
+            if (target.expiresAt <= now) { snatchStop(key, 'expired'); continue; }
+            if (state.snatchObserved.has(key) || now - Number(state.snatchRecoverAt?.get(key)||0)<10000) continue;
+            state.snatchRecoverAt.set(key,now);
+            if (target.kind === 'item' && target.itemId > 0 && !communityMarketIsOpen()) {
+                state.ruleItemKeys.add(target.itemId + ':' + target.currency);
+                queueItemDetail(target.itemId,target.currency);
+            } else if (target.kind === 'pokemon' && !communityMarketIsOpen() &&
+                !state.pokemonScan?.waiting) startPokemonScan();
+        }
         if (!state.orderJournal?.accountKey || !config.enabled || config.purchasesPaused ||
             !state.gameSocket || state.gameSocket.readyState !== 1 ||
             state.pendingBuy || unverifiedOrdersExist() || gameIsLoading()) {
-            snatchSchedule(1000); return;
+            snatchSchedule(10000); return;
         }
-        const now = Date.now(), server = serverNow();
+        const server = serverNow();
         const entries = [...state.snatchObserved.entries()].sort((a,b)=>
             Number(a[1].releaseAt || 0) - Number(b[1].releaseAt || 0));
         for (const [key, entry] of entries) {
@@ -3529,21 +3584,25 @@
                 snatchStop(key,'quote changed'); continue;
             }
             if (entry.releaseAt > server + 18000) continue;
-            if (entry.releaseAt > server - 50 || !freshQuote(c,!!manual)) {
+            if (entry.releaseAt > server) {
+                if (entry.releaseAt - server > 1500) snatchRefresh(entry,now);
+                continue;
+            }
+            if (!freshQuote(c,!!manual) && !snatchReleaseQuote(c)) {
                 snatchRefresh(entry,now);
                 continue;
             }
             if (now < entry.retryAt || Number(state.attemptedListings.get(c.listingId)||0)>now) continue;
-            if (entry.attempts >= 30) { snatchStop(key,'attempt limit'); continue; }
+            if (entry.attempts >= SNATCH_ATTEMPT_LIMIT) { snatchStop(key,'attempt limit'); continue; }
             if (entry.ruleId && !manual && (!rule || !currentRuleMatches(rule,c,c.price))) {
                 state.snatchObserved.delete(key); continue;
             }
             const activeRule = manual ? null : rule;
             if (purchaseQuantity(c,activeRule?.id || '') < 1) continue;
-            if (backgroundDelayMs()>0) continue;
+            // No refresh request is made before the scheduled first buy.
             entry.retryAt = now + SNATCH_RETRY_MS;
-            entry.attempts++;
-            if (tryBuy(c,!!manual,1,activeRule || false)) {
+            if (tryBuy(c,!!manual,1,activeRule || false,true)) {
+                entry.attempts++;
                 queueRender();
                 break;
             }
@@ -3556,13 +3615,13 @@
         state.snatchWake = null;
         if (!(state.snatchManual?.size || state.snatchObserved?.size)) return;
         const server = serverNow();
-        let wait = override || 30000;
+        let wait = override || (state.snatchObserved.size ? 30000 : 10000);
         if (!override) {
             for (const entry of state.snatchObserved.values()) {
                 const until = entry.releaseAt || 0;
                 if (until > server + 18000) wait = Math.min(wait,Math.max(50,until-server-18000));
-                else if (until > server) wait = Math.min(wait,until-server < 2000 ? Math.max(25,until-server+30) : 2000);
-                else wait = Math.min(wait,Math.max(200,entry.retryAt-Date.now()));
+                else if (until > server) wait = Math.min(wait,until-server);
+                else wait = Math.min(wait,Math.max(35,entry.retryAt-Date.now()));
             }
         }
         // A single timer for all snatches. No permanently fast interval.
@@ -3570,7 +3629,7 @@
     }
 
     function snatchOutcome(listingId,status) {
-        for (const [key,entry] of state.snatchObserved) {
+        for (const [key,entry] of [...state.snatchObserved]) {
             if (entry.candidate.listingId !== listingId) continue;
             if (status === 'confirmed' || status === 'unknown') {
                 snatchStop(key,status); continue;
@@ -3579,6 +3638,62 @@
             state.attemptedListings.set(listingId,entry.retryAt);
         }
         snatchSchedule();
+    }
+
+    function snatchConfirmItemListingSet(itemId,currency,offers) {
+        if (!Array.isArray(offers) || offers.length >= 120) return;
+        const present = new Set(offers.map(o=>Number(o?.id)));
+        for (const [key,entry] of [...state.snatchObserved]) {
+            if (entry.candidate.kind !== 'item' ||
+                entry.candidate.itemId !== itemId || entry.candidate.currency !== currency) continue;
+            entry.missing = present.has(entry.candidate.listingId) ? 0 : (entry.missing||0)+1;
+            if (entry.missing >= 2 && serverNow() >= entry.releaseAt)
+                snatchStop(key,'listing no longer available');
+        }
+    }
+
+    function snatchEnhanceNativeMarket() {
+        const list=q('#cm-lista');
+        if (!list || !communityMarketIsOpen()) return;
+        // Native markup is not a stable public contract. Only attach to rows
+        // with an explicit matching listing ID and a verified market packet.
+        for (const row of list.querySelectorAll('[data-anuncio-id],[data-listing-id]')) {
+            const id=Number(row.getAttribute('data-anuncio-id') ||
+                row.getAttribute('data-listing-id'));
+            if (!Number.isSafeInteger(id)||id<=0||row.querySelector('[data-moth-native-snatch]'))
+                continue;
+            const entry=[...state.snatchNativeOffers.entries()].find(([key])=>
+                key.endsWith(':'+id));
+            if (!entry) continue;
+            const [key,offer]=entry;
+            const [kind,currency]=key.split(':');
+            const marker=row.querySelector('.cm-tempo,.cm-retencao,.cm-contagem,[data-compravel-em]') ||
+                row.querySelector('button');
+            if (!marker || !offer || !['item','pokemon'].includes(kind)) continue;
+            const button=document.createElement('button');
+            button.type='button'; button.className='moth-mw-btn';
+            button.dataset.mothNativeSnatch=key;
+            button.dataset.mothSnatchItem=String(Number(offer.itemId)||0);
+            button.textContent=tr(state.snatchManual.has(key)?'Cancel snatch':'Snatch');
+            button.style.marginInlineStart='0.4rem';
+            marker.insertAdjacentElement('afterend',button);
+        }
+    }
+
+    function snatchQueueHtml() {
+        const rows=[...state.snatchManual.entries()].slice(0,SNATCH_LIMIT);
+        if (!rows.length) return '<p class="moth-mw-rule-hint">' +
+            escapeHtml(tr('No snatches armed.')) + '</p>';
+        return rows.map(([key,target]) => {
+            const observation=state.snatchObserved.get(key);
+            const count=observation?.releaseAt>serverNow()
+                ? tr('Held · {seconds}s', {seconds:Math.max(1,Math.ceil((observation.releaseAt-serverNow())/1000))})
+                : observation ? tr('Waiting for purchase') : tr('Waiting for a fresh listing');
+            return '<div class="moth-mw-offer-row"><b>#'+num(target.id)+'</b> · ' +
+                escapeHtml(tr(target.kind==='pokemon'?'Pokémon':'Items')) +
+                ' · ' + money(target.maxPrice,target.currency) + ' · ' + escapeHtml(count) +
+                snatchButton(target.kind,target.currency,target.id,target.itemId) + '</div>';
+        }).join('');
     }
 
     function snatchButton(kind,currency,id,itemId=0) {
