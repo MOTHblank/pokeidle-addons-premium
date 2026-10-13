@@ -1,6 +1,6 @@
 # PokéIdle Hunt Atlas
 
-> **Versão experimental 1.9.16.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
+> **Versão experimental 1.9.17.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
 >
 > Não há mapa visual novo. O Atlas continua sendo uma lista pesquisável; o índice `map-markers.json` só adiciona contexto textual de localização para hunts com slug correspondente. O índice `moves-index.json` oferece golpes possíveis por espécie/nível, não uma lista de golpes equipados. Agora o Atlas compara os golpes dos índices com o catálogo mais recente de Pokémon e mostra divergências. Quando o jogo fornece nomes de golpes, o modelo usa **amostras por execução**, sem contar várias vítimas de um ataque em área como vários golpes. Quando o nome não chega, mantém o modelo por tipo. XP/h **medido** continua acima de qualquer projeção. Os índices são opcionais e podem estar desatualizados.
 >
@@ -48,6 +48,18 @@ No painel **Planejador de capturas e shinies**, a escolha Ultra/Beast e a simula
 **Dados medidos** vêm de `morte`, `bola` e `capturado` correlacionados: ao menos seis abates e 60 segundos, com denominador de tempo corrido, separando tentativas aceitas, capturas confirmadas e shiny visto/capturado. Para outras hunts, as projeções indicam claramente um **teto condicional se uma bola for aceita por corpo**, não que o Auto Catch alcance esse ritmo. Quando um Pokémon não fornece raridade econômica confiável, a chance fica indisponível; não usamos preço de venda MKT/RMT. A chance é o **modelo da wiki, ainda não confirmado com a fórmula do servidor**. Na Outland, a elegibilidade para shiny continua não verificada, portanto não é inventada. Arena Mística usa tabela própria e ticket por tentativa.
 
 Veja [contrato técnico, cenários de teste e limitações](../docs/HUNTATLAS_MILESTONE_E.md). O addon não compra bolas automaticamente nem altera o Auto Catch+.
+
+### Bônus reais de XP detectados (v1.9.17)
+
+Em **Detalhes da hunt → Bônus de XP detectados no jogo**, o Atlas lê diretamente os mesmos campos do estado recebidos pelo Controller Bridge/Moth Controller. Não é necessário ter o Controller aberto. A seção informa separadamente bônus creditados pela **Twitch**, percentuais de XP do **evento**, bônus de **ranking de guilda**, **VIP**, o boost temporário da **guilda** e os boosts da **Loja** `xp` e `pokexp` quando o servidor publica sua tabela de multiplicadores (`tiposBoost`).
+
+O cálculo de XP/h **modelado** usa os multiplicadores nativos conhecidos no treinador e no Pokémon de maneira independente, reproduzindo o empilhamento multiplicativo descrito em `pokeidle-upstream/hunt-analyser.mjs` e `shared/guild-boost.mjs`. Uma porcentagem Twitch disponível mas **sem canais creditados** não é aplicada; apenas a leitura `twitch.assistindoEm` confirma o crédito. O período de validade de VIP, boost da guilda e boosts de Loja é respeitado; previsões em cache mudam quando um bônus expira, mesmo sem novos pacotes.
+
+Quando o jogo já forneceu XP/h **medido de abates**, o Atlas preserva esse valor sem multiplicá-lo novamente. O bônus de recuperação `atrasados` é detectado, porém **não** é multiplicado sobre previsões de outras hunts porque seu efeito muda dentro do próprio abate que alcança o nível-alvo. Qualquer multiplicador de Loja sem catálogo conhecido permanece identificado como efeito indeterminado, em vez de adivinhar um número. Como o mirror do upstream não contém todo o servidor, XP/h modelado ainda pode divergir do XP/h real.
+
+**Não confundir:** a área **Simular bônus** logo abaixo é um calculador opcional de cenários de **captura, shiny e drops**, com hipóteses externas. Ela não detecta automaticamente esses bônus e não deve ser usada como confirmação de buffs ativos. O Atlas coleta somente os campos necessários do estado existente, sem adicionar polling, WebSockets ou conexão ao Controller.
+
+Testes: `huntatlas/tests/native-xp-bonuses.test.cjs`, `forecast-milestone-b.test.cjs` e `pokeidle-tools-reference.test.cjs`.
 
 ### Simulação opcional de bônus (v1.9.16)
 
