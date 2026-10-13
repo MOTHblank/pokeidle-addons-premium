@@ -1,3 +1,5 @@
+> Atualização v1.9.13: o Top 5 fica sempre visível, sem botão para expandir. Menções ao botão Top 5 abaixo correspondem à revisão histórica da v1.9.11.
+
 # HuntAtlas UI/UX review — v1.9.11
 
 **Scope:** Premium HuntAtlas 1.9.10 → 1.9.11, 2026-10-13. This is a **source-based** review of the actual userscript, markup, controls, CSS, state and interaction paths. It is **not** a claim that screenshots or a live Firefox game session were tested. Product goals: **PT-BR default**, honest evidence/status, fast hunt navigation and very low overhead for long-running Firefox/headless profiles.
