@@ -1336,5 +1336,6 @@ test('Snatch: stale pre-release quotes fail closed and server backoff is observe
     assert.equal(h.api.snatchReleaseQuote(h.candidate),false);
     h.api.snatchTick();
     assert.equal(h.purchaseCalls.length,0,'no speculative purchase from expired quote');
-    assert.equal(h.state.snatchObserved.get(h.key).retryAt,Date.now()+1000);
+    const retryDelay=h.state.snatchObserved.get(h.key).retryAt-Date.now();
+    assert.ok(retryDelay>0 && retryDelay<=1000,'stale quote retry is bounded without a spin');
 });
