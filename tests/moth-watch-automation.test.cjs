@@ -761,3 +761,25 @@ test('Milestone B: price inspection is read-only and cannot authorize market ord
     assert.equal(config.pokemonBuyRules[0].buyEnabled,true,
         'inspection must not mutate authorization');
 });
+
+
+test('Milestone B: relevant IV and combat role matches are explanatory only', () => {
+    const h=createPokemonValuationHarness(), work=new Map();
+    const physical=samplePokemon({equippedMoves:[{categoria:'PHYSICAL'}]});
+    [200,220,240].forEach(bruto=>h.addPokemonHistorySample({
+        tipo:'pokemon',moeda:'gold',bruto,vendidoEm:Date.now()-86400000,
+        ficha:physical
+    },work));
+    h.finalizePokemonHistory(work);
+    const ref=h.pokemonReferenceFor(physical,'gold');
+    assert.equal(ref.roleComparison.role,'physical');
+    assert.equal(ref.roleComparison.observedRoleSales,3);
+    assert.equal(ref.roleComparison.relevantIvGap,0);
+    assert.equal(ref.value,220);
+    const opposite=samplePokemon({equippedMoves:[{categoria:'SPECIAL'}]});
+    const context=h.pokemonReferenceFor(opposite,'gold');
+    assert.equal(context.roleComparison.observedRoleSales,0);
+    assert.equal(context.roleComparison.relevantIvGap,null);
+    assert.equal(context.value,220,'role annotation never adjusts sale price');
+    assert.match(script,/Role-comparable sales/);
+});
