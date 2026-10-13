@@ -3261,14 +3261,14 @@
             byBall,byBallCaught,bySpecies,
             source:'observed-server/accepted-correlated'};
     }
-    function captureHuntChance(hunt,rarities,efficiency,mix=null) {
+    function captureHuntChance(hunt,rarities,efficiency,mix=null,mixMode='kills') {
         if(!Array.isArray(hunt?.especies)||!hunt.especies.length)
             return {chance:null,coverage:0,source:'no-spawns'};
-        const measured=mix&&Object.values(mix).reduce((n,x)=>n+x.kills,0)>=30;
+        const measured=mix&&Object.values(mix).reduce((n,x)=>n+(x[mixMode]||0),0)>=30;
         let total=0,covered=0,weighted=0;
         for(const row of hunt.especies){
             const id=Number(outlandNormalizeSpeciesId(row.pokeId));
-            const weight=measured?(mix?.[id]?.kills??0):
+            const weight=measured?(mix?.[id]?.[mixMode]??0):
                 Math.max(1,Number(row.pontos)||1);
             total+=weight;
             const rarity=rarities.get(id);
@@ -3281,7 +3281,8 @@
                 'spawn-weighted-wiki-conditional'};
     }
     function captureForecast(hunt,rarities,killsH,efficiency,options={}) {
-        const base=captureHuntChance(hunt,rarities,efficiency,options.mix);
+        const base=captureHuntChance(hunt,rarities,efficiency,
+            options.mix,options.mixMode??'kills');
         const fraction=options.acceptedFraction;
         const observed=typeof fraction==='number'&&
             Number.isFinite(fraction)&&fraction>=0&&fraction<=1;
@@ -6227,13 +6228,15 @@
         const observed=captureObservedForHunt(hunt);
         const mixKills=observed?Object.values(observed.bySpecies)
             .reduce((sum,row)=>sum+row.kills,0):0;
-        const measuredMix=observed&&mixKills===observed.kills &&
-            mixKills>=30 ? observed.bySpecies:null;
+        const mixThrows=observed?Object.values(observed.bySpecies)
+            .reduce((sum,row)=>sum+row.throws,0):0;
+        const measuredMix=observed&&mixThrows===observed.throws &&
+            mixThrows>=30 ? observed.bySpecies:null;
         const fraction=observed&&observed.kills>=6 ?
             Math.min(1,Math.max(0,observed.throws/observed.kills)):null;
         const predicted=captureForecast(hunt,state.captureRarities,
             xp?.killsH??null,ball.efficiency,{
-                mix:measuredMix,
+                mix:measuredMix,mixMode:'throws',
                 acceptedFraction:fraction,
                 coinPrice:ball.coins,
                 diamondPrice:ball.diamondPrice,
@@ -12602,7 +12605,7 @@
         ].join('');
 
 
-        const captureHunt=state.filters.search.trim()&&results.length?
+        const captureHunt=String(state.filters.search||'').trim()&&results.length?
             results[0].hunt : current && isUnlocked(current) ?
             current : best?.hunt??null;
         const activeCaptureId=state.filters.captureBall==='beast'?5:4;
