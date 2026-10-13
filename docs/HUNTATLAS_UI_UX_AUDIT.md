@@ -1,3 +1,5 @@
+> **Atualização v1.9.14:** o Top 5 é sempre visível, e o botão de expansão não existe mais. As referências ao controle de mostrar/ocultar Top 5 abaixo descrevem apenas a v1.9.11.
+
 # HuntAtlas UI/UX review — v1.9.11
 
 **Scope:** Premium HuntAtlas 1.9.10 → 1.9.11, 2026-10-13. This is a **source-based** review of the actual userscript, markup, controls, CSS, state and interaction paths. It is **not** a claim that screenshots or a live Firefox game session were tested. Product goals: **PT-BR default**, honest evidence/status, fast hunt navigation and very low overhead for long-running Firefox/headless profiles.
