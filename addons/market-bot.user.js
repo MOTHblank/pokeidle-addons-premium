@@ -689,6 +689,7 @@
     }
 
 
+    // BEGIN MOTHWATCH RULES GENERATED
     function sanitizeRuleCaps(rule) {
         const number = key => {
             const n = Number(rule?.[key]);
@@ -762,6 +763,9 @@
 
     // Account-profile-local journal; unknown orders are retained after reload.
     // Never infer success from a send(), an inventory delta, or a timeout.
+    // END MOTHWATCH RULES GENERATED
+
+    // BEGIN MOTHWATCH ORDERS GENERATED
     function orderAccountKey() {
         // Storage keys never include the actual nickname.
         const name = normalize(state.nick || '');
@@ -966,6 +970,7 @@
                 Number.isSafeInteger(Number(candidate.ficha.potencia)) &&
                 Number(candidate.ficha.potencia) >= 1 && Number(candidate.ficha.potencia) <= 5);
     }
+    // END MOTHWATCH ORDERS GENERATED
 
     function loadConfig() {
         let saved = {};
@@ -1036,6 +1041,7 @@
         } catch {}
     }
 
+    // BEGIN MOTHWATCH TRANSPORT GENERATED
     function backgroundDelayMs() {
         const now = Date.now();
         return Math.max(
@@ -1093,6 +1099,7 @@
     function serverNow() {
         return Date.now() - Number(state.serverClockOffset || 0);
     }
+    // END MOTHWATCH TRANSPORT GENERATED
 
     function mergePlayer(snapshot, full) {
         if (!snapshot || typeof snapshot !== 'object') return;
@@ -1935,6 +1942,7 @@
         queueRender();
     }
 
+    // BEGIN MOTHWATCH PRICING GENERATED
     function levelBand(level) {
         const n = Number(level || 0);
         if (n < 100) return 'lt100';
@@ -2297,6 +2305,7 @@
         }
         return null;
     }
+    // END MOTHWATCH PRICING GENERATED
 
     function requestHistoryPage() {
         const fetch = state.historyFetch;
@@ -3997,6 +4006,7 @@
 
     // v0.5 economic calculations are *strictly informational*. No function here
     // sends a socket packet or grants purchasing / selling authorization.
+    // BEGIN MOTHWATCH ECONOMY GENERATED
     function itemProvenance(itemId) {
         const id = Number(itemId);
         const item = Number.isSafeInteger(id) && id > 0 ? state.catalog.get(id) : null;
@@ -4302,6 +4312,7 @@
         state.economyUiCache = { stamp, at: Date.now(), html };
         return html;
     }
+    // END MOTHWATCH ECONOMY GENERATED
 
     function renderItemInventory() {
         const entries = Object.entries(state.itemSummary || {})
@@ -4867,6 +4878,7 @@
 
     // Checking/confirming a newly activated broad rule changes no legacy
     // authorization; persisted options remain exactly as configured.
+    // BEGIN MOTHWATCH RULE_SAFETY GENERATED
     function broadRuleUnbounded(rule) {
         if (!rule?.buyEnabled || !(Number(rule.buyMax) > 0) ||
             !['gold', 'orb'].includes(rule.currency)) return false;
@@ -4916,6 +4928,7 @@
             unit: tr(priceType), pages: tr(pages), risk: tr(cap)
         });
     }
+    // END MOTHWATCH RULE_SAFETY GENERATED
 
     function fixedRuleStatus(rule) {
         if (!rule.buyEnabled || !(rule.buyMax > 0)) return tr('Rule paused');
