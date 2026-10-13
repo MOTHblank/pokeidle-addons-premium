@@ -3700,6 +3700,11 @@
         !Number.isFinite(Number(n))||Number(n)<0 ? null : Number(n);
     function farmNpcPrice(item, shopIds=new Set(),specialIds=new Set()) {
         if (!item || !Number.isInteger(Number(item.id))) return null;
+        // Explicit native NPC eligibility overrides static naming heuristics.
+        if (item.vendavelNpc === false || item.npcSellable === false)
+            return 0;
+        if (item.vendavelNpc === true || item.npcSellable === true)
+            return farmNum(item.npcPrice);
         const name=String(item.name||'').toLowerCase().replace(/\./g,'');
         if (item.category==='stone'&&name!=='rough gemstone') return 0;
         if (['heal','revive'].includes(item.category)||shopIds.has(Number(item.id))||
@@ -3769,20 +3774,27 @@
         return killsH*rows.reduce((sum,x)=>sum+
             x.weight*farmingGoldForLevel(x.level),0)/total;
     }
-    function farmLootPrediction(hunt,known,killsH) {
+    function farmLootPrediction(hunt,known,killsH,mix=null) {
         if(!Number.isFinite(killsH)||killsH<0||
             !Array.isArray(hunt?.especies)||!hunt.especies.length)
             return {perHour:null,coverage:0,source:'unknown'};
+        const reported=mix && typeof mix==='object'
+            ? Object.values(mix).reduce((n,x)=>n+Number(x?.kills||0),0) : 0;
+        const measured=reported>=30;
         let total=0,covered=0,weighted=0;
         for(const x of hunt.especies){
-            const w=Math.max(1,Number(x.pontos)||1);
+            const id=Number(outlandNormalizeSpeciesId(x.pokeId));
+            const w=measured ? Number(mix?.[id]?.kills||0) :
+                Math.max(1,Number(x.pontos)||1);
+            if(!(w>0))continue;
             total+=w;
-            const row=known.get(Number(outlandNormalizeSpeciesId(x.pokeId)));
+            const row=known.get(id);
             if(row&&Number.isFinite(row.perKill)){covered+=w;weighted+=row.perKill*w;}
         }
-        return {perHour:covered===total?killsH*weighted/total:null,
+        return {perHour:total>0&&covered===total?killsH*weighted/total:null,
             coverage:total?Math.round(100*covered/total):0,
-            source:'reconstructed-upstream-catalog'};
+            source:measured?'observed-species-mix+reconstructed-loot':
+                'reconstructed-upstream-catalog'};
     }
     function farmNormalizePrices(data,kind){
         const rows=Array.isArray(data)?data:
@@ -6624,10 +6636,16 @@
     function huntEconomyEstimate(hunt, xp = huntXpEstimate(hunt)) {
         const killsH = Number.isFinite(xp?.killsH) ? xp.killsH : null;
         const modelKillGoldH = farmGoldPrediction(hunt,killsH);
-        const loot = farmLootPrediction(hunt,state.npcLootBySpecies,killsH);
         const current = isHuntHere(hunt?.slug);
         const record = current ? performanceRecord(hunt?.slug,false) : null;
         const rates = current ? observedRates(record) : null;
+        const observedMix = current ? captureObservedForHunt(hunt) : null;
+        const attributed = observedMix ? Object.values(observedMix.bySpecies)
+            .reduce((n,row)=>n+(Number(row?.kills)||0),0) : 0;
+        // Use measured mix only if all 30+ kills have species attribution.
+        const mix = observedMix?.kills >= 30 &&
+            attributed === observedMix.kills ? observedMix.bySpecies : null;
+        const loot = farmLootPrediction(hunt,state.npcLootBySpecies,killsH,mix);
         const now = Date.now();
         const measuredStart = rates ? now-rates.windowMs : null;
         const costs = measuredStart !== null
