@@ -4745,6 +4745,13 @@
                     const candidateKey = 'item:' + entry.itemId + ':' + currency + ':' + offer.id;
                     const candidate = Number.isFinite(listingId) && listingId > 0 ? state.candidates.get(candidateKey) : null;
                     const qty = Math.max(1, Number(offer.qtd || 1));
+                    const heldUntil = retentionUntil(offer);
+                    const snatch = !own && Number.isSafeInteger(listingId) && listingId > 0
+                        ? snatchButton('item',currency,listingId,entry.itemId) : '';
+                    const timerLabel = heldUntil > serverNow()
+                        ? '<span class="moth-mw-offer-meta">' +
+                            escapeHtml(tr('Held · {seconds}s', { seconds: Math.ceil((heldUntil-serverNow())/1000) })) +
+                            '</span>' : '';
                     const action = !own && candidate
                         ? '<button type="button" class="moth-mw-btn primary" data-moth-buy="' + escapeHtml(candidate.key) + '">' + escapeHtml(tr('Buy')) + '</button>'
                         : own
@@ -4755,7 +4762,7 @@
                         '<span class="moth-mw-offer-meta">' + num(qty) + ' ' + escapeHtml(tr('units')) + '</span>' +
                         '<b>' + money(price, currency) + '</b>' +
                         '<span class="moth-mw-offer-meta moth-mw-offer-id">#' + (Number.isFinite(listingId) ? num(listingId) : '—') + '</span>' +
-                        action + '</div>';
+                        timerLabel + snatch + action + '</div>';
                 }).filter(Boolean).join('') + '</div>';
             } else if (loading || status === 'idle') {
                 content = '<div class="moth-mw-empty">' + escapeHtml(tr('Waiting for the market to return offers…')) + '</div>';
@@ -4910,7 +4917,7 @@
             '<p>' + escapeHtml(tr('Missing listing fields: {fields}', { fields: missing })) + '</p>' +
             '<p class="moth-mw-rule-hint">' + escapeHtml(tr('Rule preview (not permission): {preview}', {
                 preview: ruleLabel
-            })) + '</p></article>';
+            })) + '</p>' + snatchButton('pokemon',currency,Number(listing?.id)) + '</article>';
     }
 
     function renderPokemonPriceEvidence() {
