@@ -37,7 +37,7 @@ test('long expected waits use appropriate units in either locale',()=>{
     assert.equal(h.formatDurationHours(12),'12 h');
     assert.equal(h.formatDurationHours(72),'3 d');
     assert.equal(h.formatDurationHours(8760),'1 yr');
-    assert.equal(h.formatDurationHours(8760,true),'1 anos');
+    assert.equal(h.formatDurationHours(8760,true),'1 ano');
     assert.equal(h.formatDurationHours(null),'—');
 });
 
