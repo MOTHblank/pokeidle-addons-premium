@@ -2401,7 +2401,7 @@
                 ' · temporarily held from another attempt');
         }
 
-        requestItemSummary();
+        requestItemSummary(activeAnyItemRules().length > 0);
         setTimeout(startPokemonScan, 250);
         queueRender();
     }
