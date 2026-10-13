@@ -445,6 +445,7 @@
             'catch.mystic': 'Mystic Arena uses a separate ball table and consumes one ticket per attempt; never included in ordinary hunt odds.',
             'catch.card': 'Ultra {ultra}% · Beast {beast}% (wiki-conditional)',
             'catch.cardUnknown': 'Capture chance unavailable (rarity unresolved)',
+            'catch.targetRate': 'Target {captures} captures/h · {shiny} shiny caught/h (upper bound if all bodies targeted)',
             'sort.coins': 'Kill Coins/hour',
             'sort.netCoins': 'Net Coins/hour (measured)',
             'econ.title': 'Farming economy · {hunt}',
@@ -725,6 +726,7 @@
             'catch.mystic': 'A Arena Mística usa tabela especial de bolas e consome um ticket por tentativa; não entra nas odds das hunts comuns.',
             'catch.card': 'Ultra {ultra}% · Beast {beast}% (condicional da wiki)',
             'catch.cardUnknown': 'Chance de captura indisponível (raridade não verificada)',
+            'catch.targetRate': 'Alvo {captures} capturas/h · {shiny} shinies capturados/h (teto se todos os corpos receberem bola)',
             'sort.coins': 'Moedas/h por abate',
             'sort.netCoins': 'Moedas líquidas/h (medido)',
             'econ.title': 'Economia da hunt · {hunt}',
@@ -3280,6 +3282,42 @@
                 base.chance!==null?farmingChanceAtLeastOne(
                     shinyP*base.chance,24*acceptedH):null,
             hypotheticalLure:lure};
+    }
+    function captureSpeciesForecast(hunt,speciesId,rarity,efficiency,
+        killsH,options={}) {
+        if(!Array.isArray(hunt?.especies)||!hunt.especies.length ||
+            !Number.isFinite(killsH)||killsH<0)
+            return null;
+        const target=Number(outlandNormalizeSpeciesId(speciesId));
+        let total=0,matches=0;
+        const mix=options.mix;
+        const measured=mix&&Object.values(mix).reduce((n,x)=>n+x.kills,0)>=30;
+        for(const row of hunt.especies){
+            const weight=measured?Number(mix?.[
+                outlandNormalizeSpeciesId(row.pokeId)]?.kills??0):
+                Math.max(1,Number(row.pontos)||1);
+            total+=weight;
+            if(Number(outlandNormalizeSpeciesId(row.pokeId))===target)
+                matches+=weight;
+        }
+        const chance=captureWikiChance(rarity,efficiency);
+        if(!total||!matches||chance===null)return null;
+        const fraction=typeof options.acceptedFraction==='number'&&
+            options.acceptedFraction>=0&&options.acceptedFraction<=1?
+                options.acceptedFraction:1;
+        const acceptedH=killsH*(matches/total)*fraction;
+        const catchesH=acceptedH*chance;
+        const eligible=String(hunt.area||'').toLowerCase()==='outland'
+            ?null:true;
+        const shinyP=options.hypotheticalLure?1/12000:1/24000;
+        return {chance,targetFraction:matches/total,acceptedH,catchesH,
+            shinySeenH:eligible?acceptedH*shinyP:null,
+            shinyCaughtH:eligible?catchesH*shinyP:null,
+            meanHoursShiny:eligible&&catchesH>0?1/(catchesH*shinyP):null,
+            shiny24h:eligible?
+                farmingChanceAtLeastOne(chance*shinyP,24*acceptedH):null,
+            source:measured?'measured-species-mix+wiki':
+                'spawn-weighted-wiki-conditional'};
     }
     // HA MILESTONE E PURE END.
 
@@ -6147,11 +6185,15 @@
         const ball=captureInfoForBall(ballId);
         if(!ball)return null;
         const observed=captureObservedForHunt(hunt);
+        const mixKills=observed?Object.values(observed.bySpecies)
+            .reduce((sum,row)=>sum+row.kills,0):0;
+        const measuredMix=observed&&mixKills===observed.kills &&
+            mixKills>=30 ? observed.bySpecies:null;
         const fraction=observed&&observed.kills>=6 ?
             Math.min(1,Math.max(0,observed.throws/observed.kills)):null;
         const predicted=captureForecast(hunt,state.captureRarities,
             xp?.killsH??null,ball.efficiency,{
-                mix:observed?.bySpecies??null,
+                mix:measuredMix,
                 acceptedFraction:fraction,
                 coinPrice:ball.coins,
                 diamondPrice:ball.diamondPrice,
@@ -6163,6 +6205,26 @@
         return {...predicted,ball,observed,
             stockHours,rateSource:xp?.observed?'observed-kills':
                 xp?.source??'unknown'};
+    }
+
+    function capturePlanForSpecies(species,ballId=4,xp=null) {
+        if(!species?.hunt)return null;
+        const hunt=species.hunt;
+        const estimate=xp??huntXpEstimate(hunt);
+        const ball=captureInfoForBall(ballId);
+        if(!ball)return null;
+        const observed=captureObservedForHunt(hunt);
+        const mixKills=observed?Object.values(observed.bySpecies)
+            .reduce((sum,row)=>sum+row.kills,0):0;
+        const mix=observed&&mixKills===observed.kills &&
+            mixKills>=30?observed.bySpecies:null;
+        return captureSpeciesForecast(hunt,species.id,
+            state.captureRarities.get(Number(outlandNormalizeSpeciesId(species.id))),
+            ball.efficiency,estimate?.killsH??null,{
+                mix,acceptedFraction:observed?
+                    Math.min(1,observed.throws/Math.max(1,observed.kills)):null,
+                hypotheticalLure:state.filters.shinyLurePreview
+            });
     }
 
     function farmTrackUse(receipt, at=Date.now()) {
@@ -8809,6 +8871,7 @@
 
         // Compute at most one economy estimate per hunt during this sort.
         const economySortCache = new Map();
+        const captureSortCache = new Map();
         const economyFor = hunt => {
             if (!hunt?.slug) return null;
             if (!economySortCache.has(hunt.slug))
@@ -8935,8 +8998,11 @@
                     const id=state.filters.captureBall==='beast'?5:4;
                     const key=sort==='capture'?'catchesH':'shinyCaughtH';
                     const val=species=>{
-                        const estimate=huntXpEstimate(species.hunt);
-                        return capturePlanForHunt(species.hunt,id,estimate)?.[key];
+                        const cacheKey=String(species.id)+'|'+species.hunt?.slug;
+                        if(!captureSortCache.has(cacheKey))
+                            captureSortCache.set(cacheKey,
+                                capturePlanForSpecies(species,id)?.[key]??null);
+                        return captureSortCache.get(cacheKey);
                     };
                     const av=val(a),bv=val(b);
                     const ak=typeof av==='number'&&Number.isFinite(av);
@@ -11911,6 +11977,14 @@
                 beast:(100*beastPct).toFixed(2)}):
             tr('catch.cardUnknown');
 
+        const chosenSpeciesPlan=capturePlanForSpecies(species,
+            state.filters.captureBall==='beast'?5:4,xpInfo);
+        const shinyCard=chosenSpeciesPlan?
+            tr('catch.targetRate',{captures:chosenSpeciesPlan.catchesH.toFixed(2),
+                shiny:chosenSpeciesPlan.shinyCaughtH===null?'—':
+                    chosenSpeciesPlan.shinyCaughtH.toFixed(6)}) :
+            null;
+
         const worldLocation = locationForHunt(hunt);
         const sharedHunts = sharedWorldLocation(hunt);
         const sub =
@@ -11937,6 +12011,7 @@
                 ),
                 xpLabel,
                 catchCard,
+                shinyCard,
                 typeof economicInfo.killCoinsH === 'number'
                     ? tr('econ.kill') + ': ' + formatRate(economicInfo.killCoinsH)
                         + ' (' + (economicInfo.killSource === 'observed-server/event'
