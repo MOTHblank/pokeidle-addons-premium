@@ -11,7 +11,16 @@ const parts=[
   ['PRICING','pricing-section.js'],
   ['ECONOMY','economy-section.js'],
   ['RULE_SAFETY','rule-safety-section.js'],
-  ['DIAGNOSTICS','diagnostics-section.js']
+  ['DIAGNOSTICS','diagnostics-section.js'],
+  ['ITEM_SCANNER','item-scanner-section.js'],
+  ['POKEMON_SCANNER','pokemon-scanner-section.js'],
+  ['AUTO_SCANNER','automation-scanner-section.js'],
+  ['SOCKET','socket-section.js'],
+  ['UI_STYLE','ui-style-section.js'],
+  ['UI_BROWSER','ui-browser-section.js'],
+  ['UI_RULES','ui-rules-section.js'],
+  ['UI_RENDER','ui-render-section.js'],
+  ['UI_EVENTS','ui-events-section.js']
 ];
 let output=fs.readFileSync(file,'utf8');
 for(const [id,name] of parts) {
