@@ -4949,7 +4949,9 @@
         const detail = state.itemOfferDetails.get(String(rule.itemId) + ':' + rule.currency);
         if (!detail || Date.now() - Number(detail.updatedAt || 0) > 45000) return tr('Checking listings…');
         const candidate = fixedRuleCandidate(rule);
-        if (candidate && purchaseQuantity(candidate) > 0) return tr('Eligible listing available');
+        if (candidate && freshQuote(candidate, false) && purchaseQuantity(candidate) > 0)
+            return tr('Eligible listing available');
+        if (candidate && !freshQuote(candidate, false)) return tr('Checking listings…');
         if (candidate) return tr('Insufficient spendable balance');
         return tr('Monitoring · no eligible listing');
     }
@@ -5050,10 +5052,12 @@
         if (balanceFor(rule.currency) - reserveFor(rule.currency) < 1) return tr('Insufficient spendable balance');
         if (type === 'any') {
             const candidate = anyItemRuleCandidate(rule, anyItemRuleTargets([rule]));
-            return tr(candidate && purchaseQuantity(candidate) > 0 ? 'Eligible listing available' : 'Checking listings…');
+            return tr(candidate && freshQuote(candidate, false) && purchaseQuantity(candidate) > 0
+                ? 'Eligible listing available' : 'Checking listings…');
         }
         const candidate = pokemonRuleCandidate(rule);
-        return tr(candidate && purchaseQuantity(candidate) > 0 ? 'Eligible listing available' : 'Monitoring · no eligible listing');
+        return tr(candidate && freshQuote(candidate, false) && purchaseQuantity(candidate) > 0
+            ? 'Eligible listing available' : candidate ? 'Checking listings…' : 'Monitoring · no eligible listing');
     }
 
     function categoryRulesHtml(type) {
