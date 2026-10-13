@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.4.0
+// @version      0.5.0
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -15,7 +15,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.4.0');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.5.0');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -34,6 +34,9 @@
     const MAX_FIRST_SEEN = 1800;
     const BASELINE_KEY = 'moth-pokeidle-market-item-baseline-v1';
     const POKEMON_REFERENCE_KEY = 'moth-pokeidle-market-pokemon-reference-v3';
+    const ECONOMY_HOLDINGS_KEY = 'moth-pokeidle-economy-holdings-v1';
+    const ECONOMY_REFERENCE_FRESH_MS = 24 * 3600000;
+    const ECONOMY_TELEMETRY_FRESH_MS = 10 * 60000;
     const POKEMON_SALE_WINDOW_MS = 90 * 86400000;
     const POKEMON_HISTORY_FRESH_MS = 30 * 86400000;
     const BACKGROUND_MIN_GAP_MS = 3000;
@@ -112,6 +115,8 @@
         anyItemTargetsCache: null,
         pokemonAutoOffers: new Map(),
         pokemonEvidenceMemo: null,
+        economyHoldings: [],
+        economyInput: { itemId: 0, quantity: 1, currency: 'gold', feeKind: 'item', feeUnit: 100, feeQuantity: 1, holdingDays: 1 },
         liveDiamondAverages: null,
         diamondStatus: 'waiting',
         diamondPendingCurrency: null,
@@ -141,7 +146,7 @@
         lastScanAt: 0,
         scanTimer: null,
         watchOpen: false,
-        watchView: (() => { try { const value = localStorage.getItem('moth-pokeidle-market-watch-view-v1'); return ['opportunities', 'inventory', 'pricing', 'automation', 'activity'].includes(value) ? value : 'opportunities'; } catch { return 'opportunities'; } })(),
+        watchView: (() => { try { const value = localStorage.getItem('moth-pokeidle-market-watch-view-v1'); return ['opportunities', 'inventory', 'pricing', 'economy', 'automation', 'activity'].includes(value) ? value : 'opportunities'; } catch { return 'opportunities'; } })(),
         opportunitySearch: (() => { try { return localStorage.getItem('moth-pokeidle-market-watch-search-v1') || ''; } catch { return ''; } })(),
         firstSeenCache: new Map(),
         itemInventoryCollapsed: (() => {
@@ -3257,6 +3262,7 @@
             state.nick = String(message.estado?.nick || '');
             mergePlayer(message.estado, true);
             state.orderJournal = loadOrderJournal();
+            state.economyHoldings = loadEconomyHoldings();
             state.exposureCache.clear();
             if (previousAccount !== state.orderJournal?.accountKey) {
                 state.attemptedListings.clear();
@@ -4547,7 +4553,7 @@
             if (panel.dataset.mothWatchShell) delete panel.dataset.mothWatchShell;
             forceViewBuild = true;
         }
-        const views = ['opportunities', 'inventory', 'pricing', 'automation', 'activity'];
+        const views = ['opportunities', 'inventory', 'pricing', 'economy', 'automation', 'activity'];
         if (!views.includes(state.watchView)) state.watchView = 'opportunities';
 
         if (!panel.dataset.mothWatchShell) {
@@ -4559,6 +4565,7 @@
                 '<button type="button" class="moth-mw-tab" data-moth-view="opportunities">' + escapeHtml(tr('Opportunities')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="inventory">' + escapeHtml(tr('Market inventory')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="pricing">' + escapeHtml(tr('Pokémon price evidence')) + '</button>' +
+                '<button type="button" class="moth-mw-tab" data-moth-view="economy">' + escapeHtml(tr('Economy & holdings')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="automation">' + escapeHtml(tr('Automation & budget')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="activity">' + escapeHtml(tr('Activity & references')) + '</button></nav>' +
                 '<div class="moth-mw-workspace"><div id="moth-mw-view-content"></div></div>';
@@ -4632,6 +4639,11 @@
                     escapeHtml(tr('Pokémon price evidence')) + '</h4><span>' +
                     escapeHtml(tr('Read-only completed-sale comparisons. No purchase authorization.')) +
                     '</span></div><div id="moth-mw-pricing-list"></div>';
+            } else if (state.watchView === 'economy') {
+                content.innerHTML = '<div class="moth-mw-section-title"><h4>' +
+                    escapeHtml(tr('Economy & holdings')) + '</h4><span>' +
+                    escapeHtml(tr('Read-only estimates and user-entered holdings; never realized proceeds.')) +
+                    '</span></div><div id="moth-mw-economy"></div>';
             } else if (state.watchView === 'automation') {
                 content.innerHTML =
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Automation status')) + '</h4><span>' +
@@ -4706,6 +4718,10 @@
             const host = q('#moth-mw-pricing-list', content);
             const html = renderPokemonPriceEvidence();
             if (host && host.innerHTML !== html) host.innerHTML = html;
+        } else if (state.watchView === 'economy') {
+            const host = q('#moth-mw-economy', content);
+            const html = renderEconomyDashboard();
+            if (host && host.innerHTML !== html && !host.contains(document.activeElement)) host.innerHTML = html;
         } else if (state.watchView === 'automation') {
             refreshAutomationLive(content);
         } else if (state.watchView === 'activity') {
@@ -4739,7 +4755,7 @@
             const tab = target.closest('[data-moth-view]');
             if (tab) {
                 const view = tab.dataset.mothView;
-                if (!['opportunities', 'inventory', 'pricing', 'automation', 'activity'].includes(view)) return;
+                if (!['opportunities', 'inventory', 'pricing', 'economy', 'automation', 'activity'].includes(view)) return;
                 state.watchView = view;
                 try { localStorage.setItem('moth-pokeidle-market-watch-view-v1', view); } catch {}
                 renderWatch(true);
