@@ -5378,6 +5378,22 @@
 
     function setAutomationNotice(text, kind = 'info') {
         state.automationNotice = { text: String(text || ''), kind, at: Date.now() };
+        // Inline feedback stays visible next to the action that was just clicked.
+        // The global notice at the top of this long page can be off-screen.
+        const active = document.activeElement;
+        const card = active?.closest?.('.moth-mw-rule-add-card');
+        if (card) {
+            let feedback = card.querySelector('.moth-mw-rule-inline-feedback');
+            if (!feedback) {
+                feedback = document.createElement('p');
+                feedback.className = 'moth-mw-rule-notice moth-mw-rule-inline-feedback';
+                feedback.setAttribute('role', 'status');
+                feedback.setAttribute('aria-live', 'polite');
+                card.appendChild(feedback);
+            }
+            feedback.className = 'moth-mw-rule-notice moth-mw-rule-inline-feedback ' + kind;
+            feedback.textContent = String(text || '');
+        }
         queueRender();
         setTimeout(() => {
             if (state.automationNotice && Date.now() - state.automationNotice.at >= 4200) {
@@ -5805,7 +5821,10 @@
             if (searchTerm && ![c.name, c.seller, c.kind, c.listingId].some(value => normalize(value).includes(searchTerm))) return false;
             const manuallyLoaded = c.kind === 'item' && state.loadedItemKeys.has(String(c.itemId) + ':' + c.currency);
             // Unreferenced diamonds remain inspectable. Referenced diamonds must meet the watch threshold.
-            const visibleWithoutReference = manuallyLoaded || (c.kind === 'diamond' && !(Number(c.average) > 0));
+            // A missing or invalid reference is not evidence that a listing is
+            // overpriced. Keep such offers visible for manual inspection.
+            const referenceMissing = !(Number(c.average) > 0) || !Number.isFinite(Number(c.ratio));
+            const visibleWithoutReference = manuallyLoaded || referenceMissing;
             return (visibleWithoutReference || c.ratio <= Math.max(0.01, Number(config.watchPercent) / 100)) && candidateVisible(c);
         });
         // Other tabs still display the matching-listing count, but do not pay
@@ -5865,7 +5884,7 @@
                     filterButton('Diamonds', 'kind', 'diamond', kindFilter === 'diamond', '/img/moeda-gema.png') + '</div>' +
                     sortSelect() + '</div>' +
                     '<div class="moth-mw-inventory-note">' +
-                    escapeHtml(tr('Shiny Pokémon can only be listed for Gems. Old Coin listings are ignored.')) +
+                    escapeHtml(tr('Showing discounted offers and listings without reliable price references. This is not the full market; use Market inventory to inspect other items. Shiny Pokémon require Gems.')) +
                     '</div>' +
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Opportunities')) + '</h4><span id="moth-mw-opportunity-count"></span></div>' +
                     '<div class="moth-mw-list" id="moth-mw-opportunity-list"></div>';
@@ -6050,6 +6069,10 @@
             event.stopPropagation();
             const target = event.target instanceof Element ? event.target : null;
             if (!target) return;
+            // Focus delegated action buttons so validation feedback can be
+            // attached to the correct composer, including mouse clicks.
+            const ruleAdd = target.closest('#moth-add-fixed-rule, #moth-add-any-rule, #moth-add-pokemon-rule');
+            if (ruleAdd) ruleAdd.focus({ preventScroll: true });
             const button = target.closest('[data-moth-snatch]');
             if (button) {
                 const parts = String(button.dataset.mothSnatch || '').split(':');
