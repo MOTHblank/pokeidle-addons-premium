@@ -4108,15 +4108,16 @@
         const hunt =
             currentHunt();
 
-        const baseXp =
-            xpDoNivel(
-                event?.level ||
-                hunt?.nivel ||
-                1
-            );
-
-        observeXpTransition(record, 'trainer', trainerXp, baseXp, now);
-        observeXpTransition(record, 'pokemon', pokemonXp, baseXp, now);
+        // A hunt's nominal level is not evidence of the defeated mob's
+        // actual level. Only compare bonus/catch-up transitions when the
+        // server supplied a trustworthy per-kill level.
+        const exactLevel = receipt.mobLevel;
+        const baseXp = Number.isInteger(exactLevel) && exactLevel >= 1
+            ? xpDoNivel(exactLevel) : null;
+        if (baseXp !== null) {
+            observeXpTransition(record, 'trainer', trainerXp, baseXp, now);
+            observeXpTransition(record, 'pokemon', pokemonXp, baseXp, now);
+        }
         if (
             trainerXp !== null && trainerXp > 0 &&
             baseXp > 0
