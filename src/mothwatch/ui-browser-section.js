@@ -460,6 +460,22 @@
 
     function setAutomationNotice(text, kind = 'info') {
         state.automationNotice = { text: String(text || ''), kind, at: Date.now() };
+        // Inline feedback stays visible next to the action that was just clicked.
+        // The global notice at the top of this long page can be off-screen.
+        const active = document.activeElement;
+        const card = active?.closest?.('.moth-mw-rule-add-card');
+        if (card) {
+            let feedback = card.querySelector('.moth-mw-rule-inline-feedback');
+            if (!feedback) {
+                feedback = document.createElement('p');
+                feedback.className = 'moth-mw-rule-notice moth-mw-rule-inline-feedback';
+                feedback.setAttribute('role', 'status');
+                feedback.setAttribute('aria-live', 'polite');
+                card.appendChild(feedback);
+            }
+            feedback.className = 'moth-mw-rule-notice moth-mw-rule-inline-feedback ' + kind;
+            feedback.textContent = String(text || '');
+        }
         queueRender();
         setTimeout(() => {
             if (state.automationNotice && Date.now() - state.automationNotice.at >= 4200) {
