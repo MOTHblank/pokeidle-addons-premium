@@ -12287,7 +12287,9 @@
         const displayEvidence = estimate => [
             tr('xp.sourceLabel', {source: xpSourceLabel(estimate)}),
             rangeLabel(estimate),
-            estimate?.observed ? null : tr('xp.unboosted'),
+            estimate?.observed ? null :
+                estimate?.bonusSource==='native-game-reported-partial-xp-bonuses'
+                    ? tr('xp.native.modeled') : tr('xp.unboosted'),
             estimate?.fallbackReason
                 ? tr('xp.fallback', {reason: tr('xp.fallback.'+estimate.fallbackReason)}) : null
         ].filter(Boolean).join(' · ');
@@ -12301,6 +12303,46 @@
                     current
                 )
                 : null;
+
+        const nativeBonus=nativeXpBonusReading(
+            state.nativeXpContext,state.playerLevel);
+        const nativePct=n=>currentLocale()==='pt-BR'
+            ?String(n).replace('.',','):String(n);
+        const nativeFactor=n=>nativePct(Math.round(n*1000)/1000);
+        const bonusDescriptions=nativeBonus.sources.map(row=>{
+            if(row.kind==='twitch')return tr('xp.native.twitch',{
+                pct:nativePct(row.pct)});
+            if(row.kind==='guild')return tr('xp.native.guild',{
+                pct:nativePct(row.pct)});
+            if(row.kind==='event')return tr('xp.native.event',{
+                trainer:nativePct(row.trainer),
+                pokemon:nativePct(row.pokemon)});
+            return '';
+        }).filter(Boolean);
+        for(const kind of nativeBonus.unknown) {
+            const key=kind==='shop'?'xp.native.shop':
+                kind==='catchup'?'xp.native.catchup':
+                'xp.native.unknownTwitch';
+            bonusDescriptions.push(tr(key));
+        }
+        const nativeBonusHtml='<section class="mha-native-bonuses">'+
+            '<strong>'+escapeHtml(tr('xp.native.title'))+'</strong>'+
+            '<div class="mha-xp-note">'+escapeHtml(
+                !nativeBonus.reported?tr('xp.native.wait'):
+                bonusDescriptions.length?bonusDescriptions.join(' · '):
+                tr('xp.native.none'))+'</div>'+
+            (nativeBonus.knownFactors?
+                '<div class="mha-xp-note">'+escapeHtml(
+                    tr('xp.native.model',{
+                        trainer:nativeFactor(nativeBonus.trainer),
+                        pokemon:nativeFactor(nativeBonus.pokemon)
+                    }))+'</div>':'')+
+            (currentXp?.observed?
+                '<div class="mha-xp-note">'+escapeHtml(
+                    tr('xp.native.measured'))+'</div>':'')+
+            '<div class="mha-xp-note">'+escapeHtml(
+                tr('xp.native.note'))+'</div>'+
+        '</section>';
 
         const profile =
             combatProfile();
@@ -13052,6 +13094,7 @@
                         )
                     )}
                 </div>
+                ${nativeBonusHtml}
                 ${captureHtml}
                 ${economyHtml}
                 ${rareHtml}
