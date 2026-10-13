@@ -434,6 +434,7 @@
             'econ.estimatedLoot': 'reconstructed static loot · {coverage}% coverage (not verified server drops)',
             'econ.netCaveat': 'Net = realized hunt Coins minus replacement cost of consumed balls/potions/revives, not a wallet-balance change. Unsold loot and potential market sales are excluded.',
             'econ.noPrice': 'Costs unavailable: missing official shop price for {count} uses',
+            'econ.unlinked': 'Net unavailable: {count} throw event(s) could not be reconciled to a unique corpse',
             'econ.stock': 'Stock {count} · runway {hours}h at observed use rate',
             'econ.unknown': '— (insufficient evidence)',
             'xp.sourceLabel': 'source: {source}',
@@ -663,6 +664,7 @@
             'econ.estimatedLoot': 'loot reconstruído do catálogo · cobertura {coverage}% (drops do servidor não verificados)',
             'econ.netCaveat': 'Líquido = moedas realizadas na hunt menos custo de reposição de bolas/poções/revives usados, não variação do saldo. Loot guardado e vendas futuras não entram.',
             'econ.noPrice': 'Custo indisponível: falta preço oficial de {count} usos',
+            'econ.unlinked': 'Líquido indisponível: {count} evento(s) de bola sem associação confiável a um corpo',
             'econ.stock': 'Estoque {count} · duração {hours}h no ritmo observado',
             'econ.unknown': '— (evidência insuficiente)',
             'xp.sourceLabel': 'fonte: {source}',
@@ -2813,7 +2815,7 @@
             captures: 0, shinySeen: 0, shinyCaught: 0,
             potions: 0, revives: 0, bossDeaths: 0
         }, items: new Map(), diagnostics: {malformed: 0, duplicates: 0,
-            noSlot: 0, unlinked: 0}, fieldPresence: new Map()};
+            noSlot: 0, unlinked: 0, uncertainCosts: 0}, fieldPresence: new Map()};
     }
 
     function farmingSpawn(ledger, slot) {
@@ -2837,6 +2839,7 @@
         let corpse = slot !== null ? ledger.slots.get(slot) : null;
         if (['morte', 'bola', 'capturado'].includes(kind) && !slot) {
             ledger.diagnostics.noSlot++;
+            if (kind === 'bola') ledger.diagnostics.uncertainCosts++;
             return false; // Cannot safely deduplicate or correlate a body.
         }
         if (kind === 'morte') {
@@ -2856,6 +2859,7 @@
             ]) ledger.totals[name] += receipt[field] ?? 0;
         } else if (kind === 'bola') {
             if (!corpse?.dead || corpse.thrown) {
+                ledger.diagnostics.uncertainCosts++;
                 ledger.diagnostics.unlinked++;
                 return false;
             }
@@ -5693,6 +5697,10 @@
             ? farmCostRates(record?.rateUseWindow, measuredStart, now,
                 {balls:state.ballPrices,items:state.itemPrices},
                 state.inventoryForCosts) : null;
+        // Missing/unlinked accepted throw events mean the consumed-ball
+        // cost ledger may be incomplete; do not publish an inflated net.
+        const uncertainCosts=state.farmingLedger.diagnostics.uncertainCosts || 0;
+        if (costs && uncertainCosts) costs.coinsH=null;
         const summary = farmFinancialSummary(killsH,modelKillGoldH,
             rates?.killGoldH ?? null,rates?.autoSaleH ?? null,
             loot.perHour,costs);
@@ -5708,6 +5716,7 @@
                         entry.remaining!==null ? entry.remaining/perHour : null};
             }),
             unknownCosts:costs?.unknown??null,
+            unlinkedCosts:uncertainCosts,
             unboosted:!xp?.observed};
     }
 
@@ -11797,7 +11806,10 @@
                 escapeHtml(tr('econ.netCaveat')) + '</div>',
             economic.unknownCosts ? '<div class="mha-xp-note">' +
                 escapeHtml(tr('econ.noPrice',
-                    {count:economic.unknownCosts})) + '</div>' : ''
+                    {count:economic.unknownCosts})) + '</div>' : '',
+            economic.unlinkedCosts ? '<div class="mha-xp-note">' +
+                escapeHtml(tr('econ.unlinked',
+                    {count:economic.unlinkedCosts})) + '</div>' : ''
         ].join('') : '';
 
         const html = `
