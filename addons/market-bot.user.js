@@ -133,6 +133,7 @@
         snatchNativeOffers: new Map(),
         snatchRecoverAt: new Map(),
         snatchWake: null,
+        snatchNotice: '',
         detailQueue: [],
         detailQueued: new Set(),
         detailPending: null,
@@ -3710,20 +3711,35 @@
                 row.querySelector('button');
             if (!marker || !offer || !['item','pokemon'].includes(kind)) continue;
             const button=document.createElement('button');
-            button.type='button'; button.className='moth-mw-btn';
+            button.type='button';
             button.dataset.mothNativeSnatch=key;
             button.dataset.mothSnatchItem=String(Number(offer.itemId)||0);
-            button.textContent=tr(state.snatchManual.has(key)?'Cancel snatch':'Snatch');
+            const syncButton=()=>{
+                const active=state.snatchManual.has(key);
+                button.className='moth-mw-btn moth-mw-snatch-button'+(active?' is-armed':'');
+                button.textContent=tr(active?'Cancel snatch':'Snatch');
+                button.setAttribute('aria-pressed',active?'true':'false');
+                const hint=tr(active
+                    ? 'Cancel the armed purchase for listing #{id}'
+                    : 'Arm an automatic purchase for listing #{id} at its displayed maximum price', {id});
+                button.setAttribute('aria-label',hint);
+                button.title=hint;
+            };
             button.style.marginInlineStart='0.4rem';
             button.addEventListener('click',event=>{
                 event.preventDefault(); event.stopPropagation();
+                const wasArmed=state.snatchManual.has(key);
                 const accepted=snatchMark(kind,currency,id,Number(offer.itemId)||0);
                 if (accepted) {
-                    button.textContent=tr(state.snatchManual.has(key)?'Cancel snatch':'Snatch');
-                    button.setAttribute('aria-pressed',state.snatchManual.has(key)?'true':'false');
-                } else addLog('Snatch not armed · load the listing again');
+                    state.snatchNotice=tr(wasArmed?'Snatch cancelled for listing #{id}.':
+                        'Snatch armed for listing #{id}.', {id});
+                    syncButton();
+                } else {
+                    state.snatchNotice=tr('Could not arm this target; load a current listing first.');
+                    addLog('Snatch not armed · load the listing again');
+                }
             });
-            button.setAttribute('aria-pressed',state.snatchManual.has(key)?'true':'false');
+            syncButton();
             marker.insertAdjacentElement('afterend',button);
         }
     }
@@ -5827,6 +5843,7 @@
                     '<p class="moth-mw-snatch-explainer">' +
                     escapeHtml(tr('Click Snatch beside a market listing to authorize one exact listing at or below its shown price. A matching enabled buying rule can also arm held listings automatically.')) +
                     '</p>' +
+                    '<p class="moth-mw-snatch-feedback" id="moth-mw-snatch-feedback" role="status" aria-live="polite"></p>' +
                     '<div id="moth-mw-snatch-list" aria-live="off"></div>' +
                     '<p class="moth-mw-rule-hint">' +
                     escapeHtml(tr('The game tab must remain connected. The server decides availability; competing buyers may win. Unknown purchase outcomes block retries.')) +
@@ -5928,10 +5945,25 @@
         } else if (state.watchView === 'automation') {
             refreshAutomationLive(content);
         } else if (state.watchView === 'snatches') {
+            const feedback = q('#moth-mw-snatch-feedback', content);
+            if (feedback && feedback.textContent !== state.snatchNotice)
+                feedback.textContent = state.snatchNotice;
             const snatchHost = q('#moth-mw-snatch-list', content);
-            if (snatchHost && !snatchHost.contains(document.activeElement)) {
+            if (snatchHost) {
                 const snatchHtml = snatchQueueHtml();
-                if (snatchHost.innerHTML !== snatchHtml) snatchHost.innerHTML = snatchHtml;
+                if (snatchHost.innerHTML !== snatchHtml) {
+                    const focused = snatchHost.contains(document.activeElement)
+                        ? document.activeElement.getAttribute('data-moth-snatch') : null;
+                    const scroll = snatchHost.scrollTop;
+                    snatchHost.innerHTML = snatchHtml;
+                    snatchHost.scrollTop = scroll;
+                    if (focused) {
+                        const restored = qa('[data-moth-snatch]', snatchHost)
+                            .find(button => button.dataset.mothSnatch === focused);
+                        if (restored) restored.focus({preventScroll:true});
+                        else q('#moth-mw-snatch-tab', panel)?.focus({preventScroll:true});
+                    }
+                }
             }
         } else if (state.watchView === 'activity') {
             const refs = q('#moth-mw-reference-tools', content);
@@ -5977,13 +6009,17 @@
                 const parts = String(button.dataset.mothSnatch || '').split(':');
                 if (parts.length !== 3) return;
                 const [kind,currency,rawId] = parts;
+                const wasArmed = state.snatchManual.has(button.dataset.mothSnatch);
                 const ok = snatchMark(kind,currency,Number(rawId),
                     Number(button.dataset.mothSnatchItem || 0));
+                state.snatchNotice = tr(ok
+                    ? (wasArmed ? 'Snatch cancelled for listing #{id}.' : 'Snatch armed for listing #{id}.')
+                    : 'Could not arm this target; load a current listing first.', {id:rawId});
                 if (ok) addLog('Snatch queue updated · listing #' + rawId);
                 else addLog('Snatch not armed · load the listing again');
                 state.itemInventoryMemo = null;
                 state.pokemonEvidenceMemo = null;
-                renderWatch(true); return;
+                renderWatch(state.watchView !== 'snatches'); return;
             }
             const quickLink = target.closest('[data-moth-goto]');
             if (quickLink?.dataset.mothGoto === 'snatches') {
