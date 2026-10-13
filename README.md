@@ -1,6 +1,6 @@
 # PokéIdle Addons Premium — Moth Watch
 
-Moth Watch lives in this repository starting with **v0.2.0**. The standard `pokeidle-addons` controller does not install or update it automatically.
+Moth Watch lives in this repository starting with **v0.2.1**. The standard `pokeidle-addons` controller does not install or update it automatically.
 
 ## Installation
 

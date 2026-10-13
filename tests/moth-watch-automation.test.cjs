@@ -298,11 +298,15 @@ test('V2 Pokémon references use comparable graded sales, never pool N=3.5 with 
     assert.equal(ref.samples, 3);
     assert.equal(ref.confidence, 'high');
     assert.equal(ref.actionable, true);
-    assert.equal(ref.low, 100);
-    assert.equal(ref.high, 120);
+    assert.equal(ref.low, 110);
+    assert.equal(ref.high, 130);
     const higher = h.pokemonReferenceFor(samplePokemon({ nota: 4.05 }), 'gold');
     assert.equal(higher.actionable, false, 'Only species-level history remains, which is not an alert');
     assert.equal(h.pokemonReferenceFor(samplePokemon({potencia: 5}), 'gold'), null);
+    assert.equal(h.pokemonReferenceFor(samplePokemon({potencia: undefined}), 'gold'), null,
+        'Missing potency must not silently become P1');
+    assert.equal(h.pokemonReferenceFor(samplePokemon({level: undefined}), 'gold').actionable, false,
+        'Missing level must not match the lowest level band');
     assert.equal(h.pokemonReferenceFor(samplePokemon({shiny: true}), 'gold'), null);
     assert.equal(h.pokemonReferenceFor(samplePokemon(), 'orb'), null);
 });

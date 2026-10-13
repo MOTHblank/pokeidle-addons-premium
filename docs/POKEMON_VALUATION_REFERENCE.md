@@ -1,13 +1,13 @@
 # PokéIdle Pokémon grading, combat value, and Moth Watch pricing
 
-**Status:** upstream research and partial implementation reference (premium Moth Watch v0.2.0)  
+**Status:** upstream research and partial implementation reference (premium Moth Watch v0.2.1)  
 **Reviewed:** 2026-10-12  
 **Sources:** the complete PokéIdle wiki supplied by the project owner (especially *Stats, Qualidade e IV*, *Nota, Poder e Calculadora*, *Potência*, *Shiny*, *Combate*, *Evolução*, *Mercado da Comunidade*, and *Todas as taxas*); [pokeidle-upstream](https://github.com/MOTHblank/pokeidle-upstream) `master`; and this repository's [Moth Watch](../addons/market-bot.user.js).  
 **Source authority:** wiki = stated live game rules; upstream mirror = inspected client/shared implementation; Moth Watch = existing behavior. Where a server-only calculation, message shape, live transaction sample, or buyer preference is missing, this document says so rather than guessing.
 
-## Premium Moth Watch v0.2.0: implemented valuation safeguards
+## Premium Moth Watch v0.2.1: implemented valuation safeguards
 
-**Released in the premium repository source; live-game market payloads remain unverified.** The main research below predates the migration. In v0.2.0:
+**Released in the premium repository source; live-game market payloads remain unverified.** The main research below predates the migration. In v0.2.1:
 
 - Completed sale references are rebuilt in a **v2 local cache**, kept separate for currency, species/form ID, shiny state and potency. The legacy v1 cache is not treated as graded comparables; the historical scan must be refreshed before Pokémon opportunities appear.
 - History snapshots preserve non-identifying information only: gross completed-sale price, broad level band, game-provided numeric N (if present), quality (if present), individual IVs (only when an unambiguous keyed six-stat vector is present), and refinement (only when keyed values are available). No seller, owner or personal Pokémon IDs are stored in the reference.
