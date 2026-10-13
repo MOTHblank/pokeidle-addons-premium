@@ -30,7 +30,7 @@
 ### Consumable replacement cost and inventory
 
 - The existing server-event listener counts *accepted* `bola` once per corpse, `cura` and `revive` at their respective item IDs. It does **not** charge a second cost for purchases; `compra` is an acknowledgement, not another used ball.
-- Consumable uses are aggregated into bounded 30-second time buckets for the same measurement window, with max 33 buckets per active profile. Separate ball/item pricing maps come from the running game's catalog. Unpriced use blocks a confident net result; a Diamond-only price is displayed as **Diamonds/h**, not free Coins and not converted to a Coins total.
+- Consumable uses are aggregated into bounded 30-second time buckets for the same measurement window, with max 33 buckets per active profile. Separate ball/item pricing maps come from the running game's catalog. Unpriced use blocks a confident net result; a Diamond-only price is displayed as **Diamonds/h**, not free Coins and not converted to a Coins total. Missing or unlinked accepted ball events can also block net Coins/h, since their cost would otherwise be understated; the panel explains the missing evidence.
 - If snapshot `balls`/`items` uses a known ID→quantity shape, current stock and runway at the observed usage rate appear in the details. A different/unknown snapshot shape yields no runway rather than invented holdings.
 - **Net** uses an explicit *replacement cost* convention. It is not the observed wallet-balance delta: buying ten potions today and consuming one across hunts would otherwise be counted twice. Beast/Diamond rates stay separate, and the final net Coin result **does not** assert profit after unobserved fees, premium currency or market sales.
 
