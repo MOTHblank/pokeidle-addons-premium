@@ -1414,3 +1414,15 @@ test('Snatch UX: dedicated queue, focus recovery and responsive controls are wir
         'Snatch armed for listing #{id}.','Competing for purchase'])
         assert.ok(dict[key],key+' must be translated to PT-BR');
 });
+
+
+test('Snatch hardening: progressive acknowledged-refusal retries and protected release window', () => {
+    const source=fs.readFileSync(path.join(__dirname,'..','src','mothwatch','snatch-section.js'),'utf8');
+    const body=section('    function snatchRetryDelay(', '    function snatchKey(');
+    const retry=new Function('SNATCH_RETRY_MS',body+'\nreturn snatchRetryDelay;')(400);
+    assert.deepEqual([0,29,30,89,90,250].map(retry),[400,400,1500,1500,5000,5000]);
+    assert.doesNotMatch(source,/SNATCH_ATTEMPT_LIMIT/);
+    assert.match(source,/releaseAt-now < 3200/);
+    assert.match(source,/snatchRetryDelay\(entry\.attempts\)/);
+    assert.match(source,/rule target expired/);
+});
