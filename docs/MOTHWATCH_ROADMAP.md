@@ -1,7 +1,7 @@
 # Moth Watch development roadmap
 
 **Baseline:** premium Moth Watch `v0.3.0` (`addons/market-bot.user.js`), reviewed **2026-10-13**.  
-**Scope:** market monitoring, opt-in buy rules, Pokémon/item valuation and an optional market-economy view.  
+**Scope:** market monitoring, opt-in buy rules, evidence-backed Pokémon/item valuation, eligibility inspection and a lightweight transaction/fee view.  
 **Purpose:** implementation-ready work queue for future agents. These are **proposals, not completed features or scheduled release promises**. Check a task only after the relevant code/documentation is actually updated.
 
 ## Ground rules
@@ -51,7 +51,7 @@ Legend: **P0** purchase correctness / player funds; **P1** trustworthy price com
 - **MW-06:** hard bounds on candidate/detail caches and queue size, 3-second background spacing, a rotating any-item target cursor, serialized Pokémon/Diamond requests, history timeouts and existing rate-limit backoff. **Still requires hours-long CPU/memory measurements and native-market interaction testing**.
 - **MW-07:** README, operator EN/PT-BR statuses, pause/budget UI and [protocol reference](./MARKET_PROTOCOL_REFERENCE.md) have been updated. A missing/unknown response is displayed as uncertain, not as a failed order.
 
-**Gate remaining:** deployed empty-page packet shapes, authoritative purchase/partial-fill receipts, live balance/inventory reconciliation and 24-hour resource behavior need **owner-led live validation**. Synthetic CI tests are not live trading evidence.
+**MW-03 follow-up (2026-10-13):** confirmed matching acknowledgements now preserve explicit bounded fill quantity and total only when both are supplied with recognized field names. The original quoted upper bound remains charged for budget safety. Server field-name/semantic verification and authoritative inventory/balance reconciliation are still outstanding; no inferred fill is permitted. **Gate remaining:** deployed empty-page packet shapes, verified receipt semantics, live balance/inventory reconciliation and 24-hour resource behavior need owner-led validation. Synthetic CI tests are not live trading evidence.
 
 **Deliverable:** price-ceiling rules can be left running without ambiguous outcomes, runaway spending or interference with the native market.
 
@@ -72,6 +72,8 @@ Legend: **P0** purchase correctness / player funds; **P1** trustworthy price com
 **Suggested first implementation sequence:** **MW-01 → MW-02 → MW-03 → MW-05 → MW-04 → MW-06 → MW-07**. A read-only protocol inspection is not permission to make live purchases. Existing fixed-item behavior and test coverage should remain intact.
 
 ### Milestone B — Evidence-backed Pokémon pricing (P1; proposed v0.4.x)
+
+**Scope decision (2026-10-13):** MW-10 speculative combat-derived valuation is cancelled. Do not implement combat effectiveness as an independent price premium; completed-sale evidence and clearly qualified comparables are sufficient.
 
 **Deliverable:** useful, inspectable **price ranges** rather than a deceptively precise “ideal price.”
 
@@ -94,17 +96,19 @@ Legend: **P0** purchase correctness / player funds; **P1** trustworthy price com
 
 - [ ] **MW-12 · Read-only “deal inspection” vs absolute-price buying.** Keep discovery/valuation signals and user-owned buying rules in separate code and UI paths. Offer a preview of which rules **would match**, which limits apply and why an opportunity does **not** qualify. An analytical recommendation never toggles `buyEnabled`, changes `buyMax` or sends `market.comprar`. **Done when:** reference model changes cannot silently modify transaction behavior. **Source:** Valuation §6; Market Protocol §§4–5.
 
-### Milestone C — Real economy context, without speculative automation (P2; proposed v0.5.x)
+### Milestone C — Item eligibility and transaction context (P2)
+
+**Scope decision (2026-10-13):** MW-15 inventory valuation and MW-16 farming telemetry integration are cancelled. Manual holdings and farming-context panels were removed from the current UI. Keep the fee simulator, actual purchase journal exposure and explicit eligibility evidence. Legacy storage is left untouched to avoid deleting user data unexpectedly.
 
 **Deliverable:** explain item value and market exposure without conflating market asks, NPC sale value or expected hunt loot.
 
-**Implementation update (2026-10-13, v0.5.0):** the **Economy & holdings** workspace is implemented, with bounded catalog provenance, account-separated *manual* holding quantities, strict recent 7-day completed-sale reference gating, a distinct acquisition-exposure ledger and an exact Gem/uncertain Coin seller-fee simulator. An optional low-resource versioned session telemetry reader is present but **no telemetry producer or authoritative inventory feed is yet integrated**. [Milestone C source/field contract](./MOTHWATCH_MILESTONE_C_ECONOMY.md) details the unknowns.
+**Historical implementation update (2026-10-13, v0.5.0; superseded scope):** the **Economy & holdings** workspace is implemented, with bounded catalog provenance, account-separated *manual* holding quantities, strict recent 7-day completed-sale reference gating, a distinct acquisition-exposure ledger and an exact Gem/uncertain Coin seller-fee simulator. An optional low-resource versioned session telemetry reader is present but **no telemetry producer or authoritative inventory feed is yet integrated**. [Milestone C source/field contract](./MOTHWATCH_MILESTONE_C_ECONOMY.md) details the unknowns.
 
 - **MW-13 (partial):** game market catalog identity/category and explicit optional eligibility fields are normalized; no name-based RMT/NPC assumptions. Comprehensive live-verified eligibility map, house/bike/TM classifications and Diamond eligibility packets remain **pending**.
 - **MW-14 (implemented, live fee verification pending):** distinct buyer gross, seller commission/net, integer marginal Gem fee brackets, flat Gem fees for other kinds, Coin fee bounds and Pokémon prepaid holding Coins. The simulation never records a seller receipt or creates a sale.
 - **MW-15 (partial):** manually entered items by account/currency; no game inventory feed is guessed. Three-or-more completed sale units and 24-hour-fresh server average are prerequisites for hypothetical gross estimates; no-sales and other categories stay **unknown**, acquisition ledger separate. True inventory reconciliation/liquidity metrics require an observed inventory and sold/unsold history contract.
 - **MW-16 (partial):** strict optional `MOTH_ECONOMY_TELEMETRY_V1` snapshot reader; observed hunting Coins, NPC auto-sale inclusion flag, consumables, observed rare drops and separate modeled rare-drop units/h. No socket or polling additions. Actual native-session/Auto Catch+/Hunt Atlas producer integration, captures and specialized replacement costs remain **pending**.
-- **Gate remains:** owner-verified redacted field matrices for item tradability/NPC eligibility, Diamond origin, Coin seller payouts, confirmed inventory receipts, seller sales and optional session contract. No live game acceptance tests were run.
+- **MW-13 follow-up (2026-10-13):** the UI now displays observed catalog categories and counts of explicit eligible/excluded/unknown items, plus conservative Diamond-origin warnings. This does not create an eligibility whitelist: deployed seller-side permission and Diamond-origin packet semantics still need evidence. Fee handling remains read-only. No live game acceptance tests were run.
 
 - [ ] **MW-13 · Item provenance/tradability matrix.** Normalize catalog IDs and category for ordinary loot, evolution stones, TMs, Bronze Boss Tokens, fragments, crafted houses/bikes, eligible Diamonds and other collectible assets. Label RMT eligibility **only when verified** by the game/catalog, not from name similarity or NPC `priceGold`. Treat Diamonds purchased in the market as distinct from Diamonds eligible for resale. **Done when:** unsupported/NPC-ineligible assets cannot acquire fictitious player-market or NPC valuations. **Source:** Hunt Rewards §§3, 10, 12; Market Protocol §9; Wiki Mechanics §§5–6.
 
