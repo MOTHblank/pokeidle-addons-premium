@@ -437,7 +437,7 @@
             'catch.observed': 'Observed: {throws} accepted throws, {caught} captures, {seen} shiny seen, {shiny} shiny caught; {fraction}% of killed corpses thrown at',
             'catch.observedBall': 'Selected ball: {throws} accepted · {caught} confirmed captures (small samples are noisy)',
             'catch.limit': 'Cross-hunt estimate is an upper bound IF every killed body gets one accepted throw. Current-hunt observed throws replace that assumption only after a usable sample. No free retries after failed throws.',
-            'catch.source': 'Wiki-conditional model, unverified server capture formula or active boosts · model coverage {coverage}% · {source}',
+            'catch.source': 'Estimated catch rate · coverage {coverage}% (active boosts unverified)',
             'catch.shiny': 'Shiny is rolled per eligible accepted throw (1/24,000 base; 1/12,000 with applicable Lure), NOT per kill. Caught shiny needs both rolls to succeed. No guarantee or saleable specimen implied.',
             'catch.outland': 'Outland shiny capture eligibility unresolved; shiny estimates withheld.',
             'catch.clamp': 'Beast ×8 does not always double Ultra ×4 after the 10% cap.',
@@ -751,7 +751,7 @@
             'catch.observed': 'Observado: {throws} bolas aceitas, {caught} capturas, {seen} shinies vistos, {shiny} shinies capturados; {fraction}% dos corpos derrotados receberam bola',
             'catch.observedBall': 'Bola selecionada: {throws} aceitas · {caught} capturas confirmadas (amostras pequenas oscilam)',
             'catch.limit': 'Outras hunts: previsão é TETO condicional a arremessar uma bola aceita em todo corpo derrotado. Na hunt atual, o ritmo observado substitui essa hipótese apenas após amostra suficiente. Sem repetição grátis após falha.',
-            'catch.source': 'Modelo condicional da wiki, fórmula real/bônus ativos não verificados · cobertura {coverage}% · {source}',
+            'catch.source': 'Previsão de captura · cobertura {coverage}% (bônus ativos não verificados)',
             'catch.shiny': 'O shiny é sorteado por arremesso aceito elegível (1/24.000 normal; 1/12.000 com Lure aplicável), NÃO por abate. Capturar shiny exige sucesso em ambos os sorteios. Sem garantia de drop ou Pokémon vendável.',
             'catch.outland': 'Elegibilidade de shiny na Outland não verificada; projeção de shiny omitida.',
             'catch.clamp': 'Beast ×8 nem sempre dobra a chance da Ultra ×4 após o teto de 10%.',
@@ -12360,8 +12360,7 @@
             escapeHtml(value)+'</div>';
         const observedCapture=chosen?.observed;
         const capEvidence=chosen?
-            tr('catch.source',{coverage:chosen.coverage,
-                source:chosen.source}):tr('catch.unknown');
+            tr('catch.source',{coverage:chosen.coverage}):tr('catch.unknown');
         const captureHtml=[
             '<div class="mha-xp-list-title">'+escapeHtml(tr('catch.title'))+'</div>',
             '<div class="mha-xp-note"><label>'+escapeHtml(tr('catch.ball'))+
@@ -12377,8 +12376,7 @@
             captureLine(tr('catch.current',{hunt:captureHunt?.nome||
                 captureHunt?.slug||'?'}),[
                     'Ultra '+pct(ultra?.chance),
-                    'Beast '+pct(beast?.chance),
-                    chosen?.ball?.source
+                    'Beast '+pct(beast?.chance)
                 ].filter(Boolean).join(' · ')),
             chosen ? captureLine(tr('catch.percent',{
                 chance:formatProbability(chosen.chance)
