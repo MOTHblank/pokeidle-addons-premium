@@ -11841,6 +11841,8 @@
                     if (
                         !isMapModalOpen() ||
                         event.key !== '/' ||
+                        event.altKey || event.ctrlKey || event.metaKey ||
+                        document.activeElement?.isContentEditable ||
                         [
                             'INPUT',
                             'SELECT',
@@ -11991,7 +11993,7 @@
                     }
 
                     state.resultLimit = 120;
-                    if(key==='search'){
+                    if(['search','minLevel','maxLevel'].includes(key)){
                         // Type without a full 120-card rebuild per keystroke.
                         if(state.searchRenderTimer!==null)
                             clearTimeout(state.searchRenderTimer);
@@ -12277,8 +12279,8 @@
         if (clearButton) clearButton.disabled = activeCount === 0;
         const toggle=q('[data-mha-filter-toggle]',drawer);
         if(toggle){
-            toggle.textContent=tr(state.filtersExpanded?
-                'filter.hidePanel':'filter.showPanel');
+            toggle.textContent=tr('filter.panelTitle')+' · '+
+                tr(state.filtersExpanded?'filter.hidePanel':'filter.showPanel');
             toggle.setAttribute('aria-expanded',String(state.filtersExpanded));
         }
         const grid=q('#mha-filter-grid',drawer);
@@ -13424,7 +13426,9 @@
                     )}</button>
                 ` : ''}
 
-                <button type="button" class="mha-xp-toggle" data-mha-xp-toggle>
+                <button type="button" class="mha-xp-toggle"
+                    data-mha-xp-toggle aria-controls="mha-best-results"
+                    aria-expanded="${state.xpDetailsOpen?'true':'false'}">
                     ${tr(
                         state.xpDetailsOpen
                             ? 'xp.hideTopFive'
@@ -13433,7 +13437,8 @@
                 </button>
             </div>
 
-            <div class="mha-xp-details" ${state.xpDetailsOpen ? '' : 'hidden'}>
+            <div class="mha-xp-details" id="mha-best-results"
+                ${state.xpDetailsOpen ? '' : 'hidden'}>
                 <div class="mha-xp-list-title">
                     ${escapeHtml(
                         tr(
@@ -13895,6 +13900,7 @@
         ) {
             status.textContent =
                 statusText;
+            status.title = statusText;
         }
 
         const count =
