@@ -12529,8 +12529,17 @@
             (value?' · '+escapeHtml(value):'')+'</div>';
         const observedCapture=chosen?.observed;
         const selectedThrows=observedCapture?.byBall?.[activeCaptureId]??0;
-        const observedBallChance=captureMeasuredChance(selectedThrows,
-            observedCapture?.byBallCaught?.[activeCaptureId]??0);
+        const attributedThrows=Object.values(observedCapture?.byBall??{})
+            .reduce((n,v)=>n+v,0);
+        const attributedCaptures=Object.values(observedCapture?.byBallCaught??{})
+            .reduce((n,v)=>n+v,0);
+        // A measured success fraction is meaningful only if EVERY accepted
+        // use and confirmed capture has a recognized ball association.
+        const observedBallChance=observedCapture &&
+            attributedThrows===observedCapture.throws &&
+            attributedCaptures===observedCapture.captures
+            ? captureMeasuredChance(selectedThrows,
+                observedCapture.byBallCaught?.[activeCaptureId]??0) : null;
         const capEvidence=chosen?
             tr('catch.source',{coverage:chosen.coverage}):tr('catch.unknown');
         const mysticArena = state.currentHuntSlug === 'arena_mistica';
