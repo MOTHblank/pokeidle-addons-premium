@@ -1695,8 +1695,8 @@
         for (const listing of offers) {
             if (!listing || isOwnListing(listing)) continue;
             const price = Number(listing.preco);
-            const qty = Math.max(1, Number(listing.qtd || 1));
-            if (!Number.isFinite(price) || price <= 0) continue;
+            const qty = Number(listing.qtd);
+            if (!Number.isSafeInteger(qty) || qty <= 0 || !Number.isFinite(price) || price <= 0) continue;
             const ratio = ref && Number(ref.average) > 0 ? price / Number(ref.average) : 1;
             if (ref && ratio > scanRatio && !explicitlyLoaded) continue;
             addCandidate({
@@ -2273,8 +2273,8 @@
             if (listing.moeda && listing.moeda !== currency) continue;
 
             const price = Number(listing.preco);
-            const qty = Math.max(1, Number(listing.qtd || 1));
-            if (!Number.isFinite(price) || price <= 0) continue;
+            const qty = Number(listing.qtd);
+            if (!Number.isSafeInteger(qty) || qty <= 0 || !Number.isFinite(price) || price <= 0) continue;
 
             addCandidate({
                 key: group + listing.id,
@@ -2332,7 +2332,8 @@
         for (const listing of lines) {
             if (!listing || !listing.ficha || isOwnListing(listing)) continue;
             if (!pokemonCurrencyAllowed(listing.ficha, currency)) continue;
-            const price = Number(listing.preco) * Math.max(1, Number(listing.qtd || 1));
+            const price = Number(listing.preco);
+            if (!Number.isSafeInteger(Number(listing.qtd)) || Number(listing.qtd) !== 1) continue;
             if (!Number.isFinite(price) || price <= 0) continue;
 
             const ref = pokemonReferenceFor(listing.ficha, currency);
@@ -2357,7 +2358,7 @@
                 samples: ref.samples,
                 pokemonValuation: ref,
                 ratio: ratio,
-                qty: Math.max(1, Number(listing.qtd || 1)),
+                qty: 1,
                 seller: String(listing.vendedor || '—'),
                 retainedUntil: retentionUntil(listing),
                 firstSeenAt: Date.now(),
@@ -2402,7 +2403,7 @@
 
         if (!(unitPrice > 0) || budget < unitPrice) return 0;
 
-        if (candidate.kind === 'pokemon') return 1;
+        if (candidate.kind === 'pokemon') return exposure.quantity >= 1 ? 1 : 0;
 
         return Math.max(0, Math.min(
             exposure.quantity,
@@ -2420,7 +2421,8 @@
         const rule = !manual && fixedRule ? activeRuleById(fixedRule.id) : null;
         const quotedPrice = Number(candidate.unitPrice || candidate.price);
         if (!manual && !currentRuleMatches(rule, candidate, quotedPrice)) return false;
-        if (!candidate || state.pendingBuy) return false;
+        if (!candidate || state.pendingBuy ||
+            state.orderJournal?.orders.length >= 2500) return false;
         if (candidate.kind === 'pokemon' &&
             !pokemonCurrencyAllowed(candidate.ficha, candidate.currency)) {
             if (manual) addLog('Skipped: shiny Pokémon require Gems');
@@ -2960,6 +2962,7 @@
             if (candidate.retainedUntil && candidate.retainedUntil > nowServer) continue;
             if (candidate.seenAt < cutoff) state.candidates.delete(key);
         }
+        pruneDetailCache();
         for (const [id, until] of state.attemptedListings) {
             if (until < Date.now()) state.attemptedListings.delete(id);
         }
