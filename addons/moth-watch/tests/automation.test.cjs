@@ -1704,8 +1704,9 @@ test('Snatch timer respects blocked-listing deadlines rather than busy-spinning'
     state.snatchObserved.set('item:gold:789',{candidate,releaseAt:now-1000,retryAt:0});
     state.attemptedListings.set(789,now+400);
     const schedule=new Function('state','Date','setTimeout','clearTimeout',
-        'serverNow','SNATCH_PREPARE_MS',src+'\nreturn snatchSchedule;')(
-        state,DateClock,(fn,ms)=>{timers.push(ms);return {fn,ms};},()=>{},()=>server,45000);
+        'serverNow','SNATCH_PREPARE_MS','snatchTick',src+'\nreturn snatchSchedule;')(
+        state,DateClock,(fn,ms)=>{timers.push(ms);return {fn,ms};},
+        ()=>{},()=>server,45000,()=>{});
     schedule();
     assert.equal(timers.at(-1),400,'wake when the listing can actually retry');
     now+=400;server+=400;
