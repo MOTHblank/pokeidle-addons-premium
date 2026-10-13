@@ -1,3 +1,5 @@
+> **Atualização v1.9.13:** a ordenação por menor custo em Moedas/captura foi retirada da interface e do ranking, e o Top 5 agora aparece sempre, sem botão de expansão. As seções abaixo registram o comportamento original da entrega v1.9.9; os cálculos de eficiência das bolas para captura permanecem independentes.
+
 # Hunt Atlas Milestone F — goal-specific recommendations, compact UX and resource safeguards
 
 **Implemented in experimental premium v1.9.9, 2026-10-13.** Regression tests are deterministic fixtures; **the owner is responsible for live-game verification**. This document supplements the [roadmap](HUNTATLAS_ROADMAP.md), [capture math](HUNTATLAS_MILESTONE_E.md), [economy](HUNTATLAS_MILESTONE_C.md) and [rare model](HUNTATLAS_MILESTONE_D.md).
