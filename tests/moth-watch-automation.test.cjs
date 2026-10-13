@@ -94,7 +94,7 @@ test('Purchase quantity honors the whole available offer, balance, reserves and 
 });
 
 test('Multiple fixed rules are checked fairly, including after an unaffordable rule', () => {
-    const state = { socket: { readyState: 1 }, pendingBuy: null, automationLastRunAt: 0, ruleItemKeys: new Set() };
+    const state = { socket: { readyState: 1 }, pendingBuy: null, automationLastRunAt: 0, ruleItemKeys: new Set(), detailQueue: [] };
     const rules = [
         { itemId: 106, currency: 'gold', buyMax: 30000, buyEnabled: true },
         { itemId: 107, currency: 'orb', buyMax: 50, buyEnabled: true }
