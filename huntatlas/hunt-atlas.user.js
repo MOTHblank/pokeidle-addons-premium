@@ -2817,12 +2817,19 @@
         let row = rows[rows.length - 1];
         if (!row || row.bucket !== bucket) {
             row = {bucket, at, kills: 0, productiveMs: 0,
-                trainerXp: 0, pokemonXp: 0, gold: 0};
+                trainerXp: 0, pokemonXp: 0, gold: 0,
+                trainerKnown: 0, pokemonKnown: 0};
             rows.push(row);
         }
         row.kills++;
-        row.trainerXp += sample.trainerXp ?? 0;
-        row.pokemonXp += sample.pokemonXp ?? 0;
+        if (sample.trainerXp !== null && Number.isFinite(sample.trainerXp)) {
+            row.trainerXp += sample.trainerXp;
+            row.trainerKnown++;
+        }
+        if (sample.pokemonXp !== null && Number.isFinite(sample.pokemonXp)) {
+            row.pokemonXp += sample.pokemonXp;
+            row.pokemonKnown++;
+        }
         row.gold += sample.gold ?? 0;
         if (!reset) {
             const gap = at - window.lastAt;
@@ -2848,8 +2855,12 @@
         const sum = field => rows.reduce((total, row) => total + row[field], 0);
         const productiveMs = sum('productiveMs');
         return {killsH, killMs: 3600000 / killsH,
-            trainerXpH: sum('trainerXp') * 3600000 / elapsedMs,
-            pokemonXpH: sum('pokemonXp') * 3600000 / elapsedMs,
+            trainerXpH: sum('trainerKnown') === samples
+                ? sum('trainerXp') * 3600000 / elapsedMs : null,
+            pokemonXpH: sum('pokemonKnown') === samples
+                ? sum('pokemonXp') * 3600000 / elapsedMs : null,
+            trainerKnown: sum('trainerKnown'),
+            pokemonKnown: sum('pokemonKnown'),
             goldH: sum('gold') * 3600000 / elapsedMs,
             productiveKillsH: productiveMs >= FARM_MIN_WINDOW_MS
                 ? samples * 3600000 / productiveMs : null,
@@ -2858,6 +2869,137 @@
                 farmingConfidence(samples, elapsedMs, false)};
     }
     // HA MILESTONE A PURE END.
+
+
+    // HA MILESTONE B PURE BEGIN: no live bonus is inferred from a prior kill.
+    const XP_BONUS_FIELDS = Object.freeze([
+        'xpBoost', 'pokemonXpBoost', 'vip', 'guildBoost',
+        'guildRank', 'streamBonusPct', 'twitchBonusPct', 'kickBonusPct',
+        'eventXp', 'xpEvent', 'catchupBoost', 'catchupTarget',
+        'xpTreinadorBoost', 'xpPokemonBoost'
+    ]);
+    function xpBonusSnapshot(delta) {
+        if (!delta || typeof delta !== 'object') return null;
+        const result = {};
+        for (const section of [delta, delta.bonuses, delta.boosts]) {
+            if (!section || typeof section !== 'object' ||
+                Array.isArray(section)) continue;
+            for (const key of XP_BONUS_FIELDS) {
+                if (!Object.hasOwn(section, key)) continue;
+                const value = section[key];
+                // Only finite scalar numbers and booleans are safely scoped.
+                if (typeof value === 'boolean' ||
+                    (typeof value === 'number' && Number.isFinite(value)))
+                    result[key] = value;
+                else if (value === null) result[key] = null;
+                else if (typeof value === 'object' && value !== null) {
+                    const safe = {};
+                    for (const field of ['active','ativo','expiresAt','expiraEm',
+                        'until','multiplier','multiplicador','targetLevel']) {
+                        const v = value[field];
+                        if (typeof v === 'boolean' ||
+                            (typeof v === 'number' && Number.isFinite(v)))
+                            safe[field] = v;
+                    }
+                    result[key] = Object.keys(safe).length ? safe : 'unverified';
+                } else result[key] = 'unverified';
+            }
+        }
+        return Object.keys(result).length ? result : null;
+    }
+
+    function xpBonusScope(snapshot) {
+        if (!snapshot || typeof snapshot !== 'object') return 'unknown';
+        // Fixed ordering means a delta with identical semantics won't reset data.
+        return JSON.stringify(Object.keys(snapshot).sort()
+            .map(key => [key, snapshot[key]]));
+    }
+
+    function xpRewardReceipt(receipt) {
+        return {
+            trainerXp: Number.isFinite(receipt?.trainerXp)
+                ? receipt.trainerXp : null,
+            pokemonXp: Number.isFinite(receipt?.pokemonXp)
+                ? receipt.pokemonXp : null,
+            source: 'observed-server/event'
+        };
+    }
+
+    function xpGlobalAttackFloor(speedIv) {
+        // The Speed-IV rule is wiki-derived because server scheduling is absent.
+        const iv = Number(speedIv);
+        return Number.isInteger(iv) && iv >= 1 && iv <= 32
+            ? Math.max(400, 900 - 10 * iv) : 900;
+    }
+
+    function xpMoveCooldown(baseCooldownMs, baseSpeed, speedIv, alreadyAdjusted = false) {
+        const cooldown = Number(baseCooldownMs), speed = Number(baseSpeed);
+        const iv = Number(speedIv);
+        if (!(cooldown > 0) || !Number.isFinite(cooldown))
+            return null;
+        if (alreadyAdjusted) return Math.round(cooldown);
+        if (!(speed >= 0) || !Number.isInteger(iv) || iv < 1 || iv > 32)
+            return null; // Do not fake known runtime cooldown from unknown IVs.
+        const potential = Math.min(7, speed <= 120 ?
+            speed / 20 : 6 + (speed - 120) / 40);
+        return Math.round(cooldown * (1 - (potential * iv / 32) / 100));
+    }
+
+    function xpCooldownFromPower(power) {
+        const p = Math.max(15, Number(power) || 15);
+        const seconds = p <= 100 ? 10 + (p - 15) * (20 / 85)
+            : 30 + (p - 100) * (30 / 500);
+        return Math.round(seconds * 10) * 100;
+    }
+
+    function xpPredictionBand(estimate) {
+        const value = Number(estimate?.value);
+        if (!Number.isFinite(value) || value <= 0) return null;
+        const observed = estimate.observed === true;
+        const samples = Number(estimate.samples) || 0;
+        const coverage = Number(estimate.coverage);
+        const high = observed && samples >= 30 &&
+            Number(estimate.windowMs) >= 300000;
+        // These are explicitly heuristic uncertainty ranges, NOT statistical CIs.
+        const fraction = observed ? (high ? .12 : .28)
+            : estimate.source === 'baseline model' ? .65
+            : coverage < 100 || samples < 16 ? .5 : .3;
+        return {
+            low: Math.max(0, value * (1 - fraction)),
+            high: value * (1 + fraction),
+            kind: 'heuristic',
+            width: fraction
+        };
+    }
+
+    function xpCompareForecasts(a, b) {
+        const av = Number(a?.value) || 0, bv = Number(b?.value) || 0;
+        const ar = xpPredictionBand(a), br = xpPredictionBand(b);
+        if (ar && br && Math.abs(av - bv) <= Math.max(
+            ar.width * av, br.width * bv
+        )) {
+            // A ranking must not privilege an uncertain cold-start estimate
+            // merely because its point estimate is slightly larger.
+            const quality = x => x?.observed ? 3
+                : x?.source === 'named-move model' && x?.coverage === 100 ? 2
+                : x?.source === 'combat model' && x?.coverage === 100 ? 1 : 0;
+            if (quality(a) !== quality(b)) return quality(b) - quality(a);
+        }
+        return bv - av;
+    }
+
+    function xpForecastResidual(predictedKillMs, observedKillMs) {
+        if (!(Number(predictedKillMs) > 0) || !(Number(observedKillMs) > 0) ||
+            !Number.isFinite(predictedKillMs) || !Number.isFinite(observedKillMs))
+            return null;
+        const ratio = observedKillMs / predictedKillMs;
+        return {
+            ratio: Math.max(.5, Math.min(2, ratio)),
+            errorPct: Math.round(100 * (predictedKillMs - observedKillMs) /
+                observedKillMs)
+        };
+    }
+    // HA MILESTONE B PURE END.
 
     function recordDeathEvent(
         event
@@ -2914,12 +3056,13 @@
             1;
 
         // Distinct server receipts. Generic event.xp is not both streams.
-        const trainerXp = receipt.trainerXp ?? 0;
-        const pokemonXp = receipt.pokemonXp ?? 0;
+        const {trainerXp, pokemonXp} = xpRewardReceipt(receipt);
         const gold = (receipt.killCoins ?? 0) +
             (receipt.autoSaleCoins ?? 0);
-        record.trainerXp = Number(record.trainerXp || 0) + trainerXp;
-        record.pokemonXp = Number(record.pokemonXp || 0) + pokemonXp;
+        if (trainerXp !== null)
+            record.trainerXp = Number(record.trainerXp || 0) + trainerXp;
+        if (pokemonXp !== null)
+            record.pokemonXp = Number(record.pokemonXp || 0) + pokemonXp;
         record.gold = Number(record.gold || 0) + gold;
         record.goldKill = Number(record.goldKill || 0) +
             (receipt.killCoins ?? 0);
@@ -2945,7 +3088,7 @@
             );
 
         if (
-            trainerXp > 0 &&
+            trainerXp !== null && trainerXp > 0 &&
             baseXp > 0
         ) {
             pushSample(
@@ -2958,7 +3101,7 @@
         }
 
         if (
-            pokemonXp > 0 &&
+            pokemonXp !== null && pokemonXp > 0 &&
             baseXp > 0
         ) {
             pushSample(
@@ -6763,12 +6906,13 @@
          * Always check the live measurement before using a cached model.
          * Measurements evolve during a hunt and must take precedence.
          */
-        if (observed) {
+        if (observed && observed.trainerXpH !== null) {
             return {
                 value:
                     observed.trainerXpH,
-                pokemonValue:
-                    observed.pokemonXpH,
+                pokemonValue: observed.pokemonXpH,
+                trainerKnown: observed.trainerKnown,
+                pokemonKnown: observed.pokemonKnown,
                 goldValue:
                     observed.goldH,
                 killsH:
@@ -6782,7 +6926,8 @@
                 confidence: observed.confidence,
                 samples: observed.samples,
                 windowMs: observed.windowMs,
-                denominator: observed.denominator
+                denominator: observed.denominator,
+                bonusSource: 'observed-server/event'
             };
         }
 
@@ -6899,23 +7044,11 @@
                 1
             );
 
-        const trainerXpPerKill =
-            Math.round(
-                baseXp *
-                (
-                    Number(profile?.trainerXpMult) ||
-                    1
-                )
-            );
-
-        const pokemonXpPerKill =
-            Math.round(
-                baseXp *
-                (
-                    Number(profile?.pokemonXpMult) ||
-                    1
-                )
-            );
+        // The bonus stack differs per XP stream and catch-up can cross a
+        // threshold mid-session. Never copy historical per-kill multipliers
+        // into an unvisited hunt, even from this same lead.
+        const trainerXpPerKill = baseXp;
+        const pokemonXpPerKill = baseXp;
 
         return remember({
             value:
@@ -6931,6 +7064,8 @@
             killMs,
             observed:
                 false,
+            bonusSource: 'unboosted-upstream-shared',
+            bonusCaveat: 'active boosts unverified; model does not include them',
             source:
                 !hasPersonalizedModel
                     ? 'baseline model'
