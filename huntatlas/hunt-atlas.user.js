@@ -518,6 +518,11 @@
             'econ.unlinked': 'Net unavailable: {count} throw event(s) could not be reconciled to a unique corpse',
             'econ.stock': 'Stock {count} · runway {hours}h at observed use rate',
             'econ.unknown': '— (insufficient evidence)',
+            'outland.quickLabel': 'Outland tier (quick change)',
+            'outland.quickActive': 'Active: {tier}',
+            'outland.quickUnknown': 'Current tier not reported by game',
+            'outland.quickAction': 'Switch to this tier',
+            'outland.quickAlready': 'Tier already active',
             'rare.heading': 'Rare farming · tier preview',
             'rare.outland': 'Outland rare drops',
             'rare.egg': 'Shiny Egg Fragment',
@@ -854,6 +859,11 @@
             'econ.unlinked': 'Líquido indisponível: {count} evento(s) de bola sem associação confiável a um corpo',
             'econ.stock': 'Estoque {count} · duração {hours}h no ritmo observado',
             'econ.unknown': '— (evidência insuficiente)',
+            'outland.quickLabel': 'Tier Outland (troca rápida)',
+            'outland.quickActive': 'Ativo: {tier}',
+            'outland.quickUnknown': 'Jogo não informou o tier atual',
+            'outland.quickAction': 'Mudar para este tier',
+            'outland.quickAlready': 'Tier já está ativo',
             'rare.heading': 'Farming raro · prévia do tier',
             'rare.outland': 'Drops raros da Outland',
             'rare.egg': 'Fragmento de Ovo Shiny',
@@ -12882,6 +12892,23 @@
         const activateTier=Boolean(tierInfo && state.outlandTierSeen &&
             nativeTier!==null && nativeTier!==selectedTier &&
             !state.pendingOutlandTier && socketReady());
+        // Main-row shortcut: don't require disabling Atlas or opening
+        // the advanced details just to change the native Outland tier.
+        // Selecting a tier is only a preview until the user presses Switch.
+        const quickOutlandHtml=previewHunt?'<div class="mha-xp-note mha-outland-quick">'+
+            '<strong>'+escapeHtml(tr('outland.quickLabel'))+'</strong> · '+
+            '<select data-mha-quick-outland aria-label="'+
+                escapeHtml(tr('outland.quickLabel'))+'">'+previewOptions+
+            '</select> · '+escapeHtml(nativeTier!==null?
+                tr('outland.quickActive',{tier:nativeTier}):
+                tr('outland.quickUnknown'))+
+            (!tierInfo?' · '+escapeHtml(tr('rare.locked',{level:tierGate})):'')+
+            (activateTier?' · <button type="button" data-mha-quick-tier-apply>'+
+                escapeHtml(tr('outland.quickAction'))+'</button>':
+                (state.pendingOutlandTier?' · '+escapeHtml(tr('rare.pending')):
+                 tierInfo&&nativeTier===selectedTier?' · '+escapeHtml(tr('outland.quickAlready')):
+                 ' · '+escapeHtml(tr('rare.noCommand'))))+
+            '</div>':'';
         const rareHtml=[
             '<div class="mha-xp-list-title">'+escapeHtml(tr('rare.heading'))+'</div>',
             '<div class="mha-xp-note"><label>'+escapeHtml(tr('rare.preview'))+
@@ -13120,6 +13147,7 @@
             </div>
 
             ${rareChoiceHtml}
+            ${quickOutlandHtml}
             ${ballSortHtml}
             <div class="mha-xp-primary">
                 <div class="mha-xp-primary-main">
@@ -13301,6 +13329,17 @@
                 renderXpSummary(drawer,results);
             });
         }
+        q('[data-mha-quick-outland]',host)?.addEventListener('change',event=>{
+            const tier=Number(event.target.value);
+            if(!Number.isInteger(tier)||tier<1||tier>8)return;
+            state.filters.outlandPreviewTier=tier;
+            saveFilters();
+            renderDrawer();
+        });
+        q('[data-mha-quick-tier-apply]',host)?.addEventListener('click',()=>{
+            requestOutlandTier(state.filters.outlandPreviewTier);
+            renderXpSummary(drawer,results);
+        });
         q('[data-mha-sort-outland-tier]',host)?.addEventListener('change',event=>{
             const tier=Number(event.target.value);
             if(!Number.isInteger(tier)||tier<1||tier>8)return;
