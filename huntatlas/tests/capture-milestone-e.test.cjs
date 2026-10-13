@@ -154,3 +154,26 @@ test('representative measured species mix can replace theoretical spawn weights'
     assert.match(source,/mixKills===observed.kills/); // no partial sample normalization
     assert.match(source,/captureSortCache/);
 });
+
+test('absent shiny fields stay unknown, not falsely counted as non-shiny rolls',()=>{
+    const ledger=h.makeFarmingLedger();
+    h.farmingSpawn(ledger,'3');
+    const kill=h.normalizeFarmingEvent({k:'morte',quem:'selvagem',slot:'3',pokeId:1});
+    assert.ok(h.acceptFarmingEvent(ledger,kill));
+    const ball=h.normalizeFarmingEvent({k:'bola',slot:'3',ballId:4});
+    assert.equal(ball.shinySeen,null);
+    assert.ok(h.acceptFarmingEvent(ledger,ball));
+    const caught=h.normalizeFarmingEvent({k:'capturado',slot:'3',pokemon:{}});
+    assert.equal(caught.shinyCaught,null);
+    assert.ok(h.acceptFarmingEvent(ledger,caught));
+    let window=null;
+    for(let i=0;i<6;i++)
+        window=h.captureAppend(window,{kind:'morte'},100000+i*25000,1);
+    window=h.captureAppend(window,ball,230000,1);
+    window=h.captureAppend(window,caught,230500,1);
+    const obs=h.captureObservedWindow(window,90000,231000);
+    assert.equal(obs.throws,1);
+    assert.equal(obs.captures,1);
+    assert.equal(obs.shinySeen,null);
+    assert.equal(obs.shinyCaught,null);
+});
