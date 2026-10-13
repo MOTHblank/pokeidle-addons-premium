@@ -406,6 +406,7 @@
         "Newest comparable sale: {days} days ago": "Venda comparável mais recente: há {days} dias",
         "Median {median} · IQR {low}–{high} · P10–P90 {p10}–{p90}": "Mediana {median} · intervalo central {low}–{high} · P10–P90 {p10}–{p90}",
         "Role: {role} ({source})": "Papel de combate: {role} ({source})",
+        "Role-comparable sales: {count} · relevant-IV difference: {gap}": "Vendas com papel comparável: {count} · diferença de IVs relevantes: {gap}",
         "physical": "físico",
         "special": "especial",
         "mixed": "misto",
@@ -1999,7 +2000,8 @@
                 ? levelBand(level) : null,
             score: pokemonScore(ficha), quality: pokemonQuality(ficha), ivs,
             refinement: pokemonRefinement(ficha),
-            traits: pokemonCollectibles(ficha), missing
+            traits: pokemonCollectibles(ficha),
+            combatRole: pokemonCombatRole(ficha), missing
         };
     }
 
@@ -2173,6 +2175,17 @@
             const recent = snapshotFresh && dateCoverage === 1 && newestSoldAt != null &&
                 Date.now() - newestSoldAt <= POKEMON_HISTORY_FRESH_MS;
             const gradeMatched = stage.options.grade !== false && listing.score != null;
+            const role = listing.combatRole;
+            const matchingRole = role.role === 'unknown' ? [] : matches.filter(sale =>
+                sale.combatRole?.role === role.role &&
+                sale.combatRole?.confidence === 'observed');
+            const ivPositions = { hp: 0, atk: 1, def: 2, spAtk: 3, spDef: 4, speed: 5 };
+            const relevantIvGaps = role.focus.length && listing.ivs
+                ? matchingRole.filter(sale => sale.ivs).map(sale =>
+                    role.focus.reduce((sum, stat) => sum + Math.abs(
+                        sale.ivs[ivPositions[stat]] - listing.ivs[ivPositions[stat]]
+                    ), 0) / role.focus.length) : [];
+            const roleIVGap = relevantIvGaps.length ? median(relevantIvGaps) : null;
             // Incomplete or undated samples remain contextual, never bargain alerts.
             const actionable = stage.actionable !== false && gradeMatched &&
                 recent && traitCoverage && dispersion <= 1.75;
@@ -2186,6 +2199,10 @@
                 actionable, missingScore: listing.score == null,
                 missingIVs: !listing.ivs, collectedAt: state.pokemonReference.capturedAt,
                 ageDays, dateCoverage, newestSoldAt, oldestSoldAt, source: 'completed sales',
+                roleComparison: {
+                    role: role.role, source: role.source, confidence: role.confidence,
+                    observedRoleSales: matchingRole.length, relevantIvGap: roleIVGap
+                },
                 limitations: [
                     ...(!recent ? ['sale dates missing or stale'] : []),
                     ...(!traitCoverage ? ['collectible extras unverified'] : []),
@@ -3942,7 +3959,7 @@
         const status = Number.isFinite(age) && age >= 0 && age <= QUOTE_MAX_AGE_MS
             ? tr('Recent listing observation') : tr('Stale listing observation');
         const missing = facts.missing.length ? facts.missing.join(', ') : tr('None');
-        const limitation = ref?.limitations?.length ? ref.limitations.join(', ') :
+        const limitation = ref?.limitations?.length ? ref.limitations.map(key => tr(key)).join(', ') :
             tr('No verified completed-sale reference');
         const percent = ref && ref.value > 0 && Number.isFinite(price)
             ? tr('Asking/reference ratio: {percent}%', {
@@ -3969,6 +3986,11 @@
                 date: new Date(ref.collectedAt).toLocaleString(currentLocale())
             })) : '') + '</p>' +
             '<p>' + escapeHtml(priceLabel) + ' · ' + escapeHtml(percent) + '</p>' +
+            '<p>' + escapeHtml(tr('Role-comparable sales: {count} · relevant-IV difference: {gap}', {
+                count: num(ref?.roleComparison?.observedRoleSales || 0),
+                gap: ref?.roleComparison?.relevantIvGap == null ? '?' :
+                    Number(ref.roleComparison.relevantIvGap).toFixed(1)
+            })) + '</p>' +
             '<p>' + escapeHtml(tr('Comparison: {stage}', {
                 stage: ref?.comparison ? tr(ref.comparison) : tr('None')
             })) + ' · ' + escapeHtml(tr('Limits: {details}', { details: limitation })) + '</p>' +
