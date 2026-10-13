@@ -24,6 +24,15 @@
             }
         }
         queueRender();
+        if (status !== 'unknown' && hasAnyBuyingRules() && !config.purchasesPaused) {
+            // Do not wait for the next one-second scanner tick after a server
+            // acknowledgement. Give any just-unlocked Snatch the first chance,
+            // then immediately buy the next distinct eligible listing.
+            setTimeout(() => {
+                if (state.snatchObserved?.size) snatchTick();
+                if (!state.pendingBuy) runMarketAutomation(true);
+            }, 0);
+        }
     }
 
     function requestItemSummary(forceForAutomation = false) {
@@ -245,7 +254,7 @@
         return best;
     }
 
-    function runMarketAutomation() {
+    function runMarketAutomation(justSettled = false) {
         if (!hasAnyBuyingRules() || gameIsLoading()) {
             state.ruleItemKeys.clear();
             return;
@@ -257,7 +266,7 @@
         // Only background requests that could repaint it are restricted.
         if (state.pendingBuy || config.purchasesPaused) return;
         const now = Date.now();
-        if (now - Number(state.automationLastRunAt || 0) < 1000) return;
+        if (!justSettled && now - Number(state.automationLastRunAt || 0) < 250) return;
         state.automationLastRunAt = now;
         const fixed = sanitizeFixedItemRules(config.fixedItemRules)
             .filter(rule => rule.buyEnabled && rule.buyMax > 0);
@@ -279,9 +288,8 @@
                 automationDetail(target.itemId, target.currency);
             }
         }
-        // Reserve the single purchase slot for an armed release; do not send
-        // a routine buy that could still be pending when a snatch unlocks.
-        if (snatchCriticalWindow()) return;
+        // Ordinary buying is not paused by Snatch's short background-traffic
+        // quiet window. A due Snatch gets priority after each acknowledged buy.
         // Serialized purchases share balances, reserves, caps and cooldowns.
         for (const rule of fixed) {
             const candidate = fixedRuleCandidate(rule);

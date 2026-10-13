@@ -1478,7 +1478,7 @@ test('Throughput: native browsing does not suspend buys, but snatch release wins
     assert.equal(bought,1,'native community-market modal must not disable rule buys');
     critical=true;state.automationLastRunAt=0;
     run();
-    assert.equal(bought,1,'snatch critical window reserves the purchase slot');
+    assert.equal(bought,2,'ordinary buys must continue despite the Snatch quiet window');
 });
 
 test('Throughput: verified broad-rule details survive target rotation', () => {
@@ -1546,4 +1546,43 @@ test('Snatch: repeated server refusals generate multiple post-release orders', (
     assert.equal(h.purchaseCalls.length,5,'snatch remains armed after several losses');
     h.api.snatchOutcome(789,'confirmed');
     assert.equal(h.state.snatchObserved.has(h.key),false);
+});
+
+// A released Snatch must not go to sleep for 10 seconds behind an unrelated
+// pending purchase, and a server result must immediately resume the pipeline.
+test('Snatch: pending unrelated purchase is revisited within 250ms', () => {
+    const h=heldSnatchHarness();
+    h.setServer(h.candidate.retainedUntil);
+    h.state.pendingBuy={listingId:999,sentAt:Date.now()};
+    h.api.snatchTick();
+    assert.equal(h.purchaseCalls.length,0);
+    assert.equal(h.timers.at(-1).ms,250);
+    h.state.pendingBuy=null;
+    h.api.snatchTick();
+    assert.equal(h.purchaseCalls.length,1);
+});
+
+test('Throughput: settlement schedules another authorized buy without a 1s stall', () => {
+    const src=section('    function finishPendingBuy(', '    function requestItemSummary(');
+    const state={pendingBuy:{
+        order:{listingId:201,status:'submitted'},listingId:201,candidateKey:'rule:201',
+        kind:'item',itemId:106,currency:'gold'
+    },candidates:new Map(),snatchObserved:new Map(),
+        itemInventoryMemo:{},ruleItemKeys:new Set(),lastDetailRequest:new Map()};
+    const config={purchasesPaused:false};
+    const scheduled=[];
+    let purchased=0, refreshed=0;
+    const fn=new Function('state','config','settleOrder','diagnosticOutcome',
+        'snatchCriticalWindow','hasAnyBuyingRules','activeAnyItemRules',
+        'queueItemDetail','startPokemonScan','queueRender','setTimeout',
+        'snatchTick','runMarketAutomation',src+'\nreturn finishPendingBuy;')(
+        state,config,()=>{},()=>{},()=>false,()=>true,()=>[],
+        ()=>refreshed++,()=>{},()=>{},(callback,ms)=>{scheduled.push({callback,ms});},
+        ()=>{},()=>purchased++);
+    fn('server-confirmed');
+    assert.equal(state.pendingBuy,null);
+    assert.equal(refreshed,1);
+    assert.ok(scheduled.some(x=>x.ms===0),'next buy is scheduled immediately');
+    scheduled.find(x=>x.ms===0).callback();
+    assert.equal(purchased,1);
 });
