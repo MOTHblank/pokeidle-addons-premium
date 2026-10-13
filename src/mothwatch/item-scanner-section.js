@@ -189,6 +189,7 @@
              */
             if (candidate.retainedUntil && candidate.retainedUntil > now) continue;
             state.candidates.delete(key);
+            state.itemInventoryMemo = null;
         }
     }
 
@@ -254,6 +255,8 @@
         candidate.firstSeenAt = Number(candidate.firstSeenAt) > 0 ? Number(candidate.firstSeenAt) : now;
         state.firstSeenCache.set(candidate.key, { firstSeenAt: candidate.firstSeenAt, lastSeenAt: now });
         state.candidates.set(candidate.key, candidate);
+        if (candidate.kind === 'item' && state.selectedItemFocus?.key ===
+            String(candidate.itemId) + ':' + candidate.currency) state.itemInventoryMemo = null;
         while (state.candidates.size > MAX_CANDIDATES) {
             const oldest = state.candidates.keys().next().value;
             const evicted = state.candidates.get(oldest);
