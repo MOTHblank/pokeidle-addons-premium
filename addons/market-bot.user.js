@@ -220,6 +220,15 @@
     const PT_BR = Object.freeze({
         "Underpriced listings and market sniper settings": "Ofertas abaixo do preço e configurações de compra no mercado",
         "Scan now": "Escanear agora",
+        "Snatch": "Arrematar",
+        "Cancel snatch": "Cancelar arremate",
+        "Armed snatches": "Arremates preparados",
+        "No snatches armed.": "Nenhum arremate preparado.",
+        "Waiting for purchase": "Aguardando compra",
+        "Waiting for a fresh listing": "Aguardando oferta atualizada",
+        "Held · {seconds}s": "Retido · {seconds}s",
+        "Buy this exact listing automatically at its displayed price when eligible, even if you leave the market view.": "Comprar automaticamente este anúncio específico pelo preço exibido quando ficar disponível, mesmo após sair da tela do mercado.",
+        "Targets saved per account. The game tab must remain connected; competing buyers may win.": "Alvos salvos por conta. A aba do jogo precisa continuar conectada; outros compradores podem vencer.",
         "Moth Watch views": "Seções do Moth Watch",
         "Warning: this broad rule has no cumulative spending or purchase-count limit. If enabled, it may repeatedly spend the available {currency}. Continue?": "Atenção: esta regra abrangente não tem limite acumulado de gastos ou compras. Se ativada, pode gastar repetidamente o saldo em {currency}. Continuar?",
         "Warning: enabling the master switch activates {count} broad buying rules without cumulative caps. Available balances may be spent repeatedly. Continue?": "Atenção: ativar a chave geral habilitará {count} regras abrangentes sem limites acumulados. Os saldos poderão ser gastos repetidamente. Continuar?",
@@ -3722,6 +3731,7 @@
             button.dataset.mothNativeSnatch=key;
             button.dataset.mothSnatchItem=String(Number(offer.itemId)||0);
             button.textContent=tr(state.snatchManual.has(key)?'Cancel snatch':'Snatch');
+            button.title=tr('Buy this exact listing automatically at its displayed price when eligible, even if you leave the market view.');
             button.style.marginInlineStart='0.4rem';
             button.addEventListener('click',event=>{
                 event.preventDefault(); event.stopPropagation();
@@ -3759,6 +3769,7 @@
         const active = state.snatchManual.has(key);
         return '<button type="button" class="moth-mw-btn" data-moth-snatch="' +
             escapeHtml(key) + '" data-moth-snatch-item="' + Number(itemId||0) +
+            '" title="' + escapeHtml(tr('Buy this exact listing automatically at its displayed price when eligible, even if you leave the market view.')) +
             '" aria-pressed="' + (active?'true':'false') + '">' +
             escapeHtml(tr(active ? 'Cancel snatch' : 'Snatch')) + '</button>';
     }
