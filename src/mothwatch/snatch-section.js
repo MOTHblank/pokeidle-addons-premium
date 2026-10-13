@@ -213,12 +213,12 @@
         state.snatchWake = null;
         if (!(state.snatchManual?.size || state.snatchObserved?.size)) return;
         const server = serverNow();
-        let wait = override || 2000;
+        let wait = override || 30000;
         if (!override) {
             for (const entry of state.snatchObserved.values()) {
                 const until = entry.releaseAt || 0;
                 if (until > server + 18000) wait = Math.min(wait,Math.max(50,until-server-18000));
-                else if (until > server) wait = Math.min(wait,Math.max(25,until-server+30));
+                else if (until > server) wait = Math.min(wait,until-server < 2000 ? Math.max(25,until-server+30) : 2000);
                 else wait = Math.min(wait,Math.max(200,entry.retryAt-Date.now()));
             }
         }
