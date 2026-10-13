@@ -2791,17 +2791,33 @@
         return true;
     }
 
+    // Thirty-second buckets keep multi-hour sessions small, even at extreme K/h.
+    // The entire window is counted; dropping individual fast kills would
+    // underestimate the rate when the ring buffer fills.
     function appendFarmingKill(window, sample) {
         const at = Number(sample?.at);
         if (!Number.isFinite(at)) return window;
-        const start = !window || !Number.isFinite(window.lastAt) ||
+        const reset = !window || !Number.isFinite(window.lastAt) ||
             at < window.lastAt || at - window.lastAt > FARM_STALE_MS;
-        const rows = start ? [] : window.rows.filter(row =>
-            row.at >= at - FARM_RATE_WINDOW_MS);
-        rows.push({at, trainerXp: sample.trainerXp ?? 0,
-            pokemonXp: sample.pokemonXp ?? 0, gold: sample.gold ?? 0});
-        if (rows.length > 240) rows.splice(0, rows.length - 240);
-        return {startedAt: start ? at : Math.max(window.startedAt,
+        const bucket = Math.floor(at / 30000);
+        const rows = reset ? [] : window.rows.filter(row =>
+            row.at >= at - FARM_RATE_WINDOW_MS - 30000);
+        let row = rows[rows.length - 1];
+        if (!row || row.bucket !== bucket) {
+            row = {bucket, at, kills: 0, productiveMs: 0,
+                trainerXp: 0, pokemonXp: 0, gold: 0};
+            rows.push(row);
+        }
+        row.kills++;
+        row.trainerXp += sample.trainerXp ?? 0;
+        row.pokemonXp += sample.pokemonXp ?? 0;
+        row.gold += sample.gold ?? 0;
+        if (!reset) {
+            const gap = at - window.lastAt;
+            if (gap >= 0 && gap <= 60000) row.productiveMs += gap;
+        }
+        if (rows.length > 33) rows.splice(0, rows.length - 33);
+        return {startedAt: reset ? at : Math.max(window.startedAt,
             at - FARM_RATE_WINDOW_MS), lastAt: at, rows};
     }
 
@@ -2810,19 +2826,24 @@
             !Number.isFinite(now) || now < window.lastAt) return null;
         const stale = now - window.lastAt > FARM_STALE_MS;
         const start = Math.max(window.startedAt, now - FARM_RATE_WINDOW_MS);
-        const rows = window.rows.filter(row => row.at >= start && row.at <= now);
-        const elapsedMs = now - start; // wall-clock, includes waves/healing/idle.
-        if (farmingConfidence(rows.length, elapsedMs, stale) === 'warming' ||
-            stale || !rows.length) return null;
-        const killsH = rows.length * 3600000 / elapsedMs;
+        const rows = window.rows.filter(row =>
+            row.at >= start - 30000 && row.at <= now);
+        const samples = rows.reduce((total, row) => total + row.kills, 0);
+        const elapsedMs = now - start; // wall-clock: includes restock/idle.
+        if (farmingConfidence(samples, elapsedMs, stale) === 'warming' ||
+            stale || !samples) return null;
+        const killsH = samples * 3600000 / elapsedMs;
         const sum = field => rows.reduce((total, row) => total + row[field], 0);
+        const productiveMs = sum('productiveMs');
         return {killsH, killMs: 3600000 / killsH,
             trainerXpH: sum('trainerXp') * 3600000 / elapsedMs,
             pokemonXpH: sum('pokemonXp') * 3600000 / elapsedMs,
             goldH: sum('gold') * 3600000 / elapsedMs,
-            windowMs: elapsedMs, samples: rows.length,
+            productiveKillsH: productiveMs >= FARM_MIN_WINDOW_MS
+                ? samples * 3600000 / productiveMs : null,
+            productiveMs, windowMs: elapsedMs, samples,
             denominator: 'wall', confidence:
-                farmingConfidence(rows.length, elapsedMs, false)};
+                farmingConfidence(samples, elapsedMs, false)};
     }
     // HA MILESTONE A PURE END.
 
