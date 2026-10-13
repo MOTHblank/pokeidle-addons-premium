@@ -99,12 +99,16 @@ test('rare roll counts ingest server drops without conflating item classes',()=>
 });
 test('read-only market references require completed sale, sufficient sample and currency',()=>{
     const item=probabilityFor(1,'key',150);
-    assert.equal(h.rareMarketEvidence(item,{source:'listing',currency:'gold',price:1000,samples:50,sampledAt:123}),null);
-    assert.equal(h.rareMarketEvidence(item,{source:'completed-sale',currency:'gold',price:1000,samples:2,sampledAt:123}),null);
-    assert.equal(h.rareMarketEvidence(item,{source:'completed-sale',currency:'diamond',price:1000,samples:3,sampledAt:123}),null);
-    const result=h.rareMarketEvidence(item,{source:'completed-sale',currency:'orb',price:1000,samples:3,sampledAt:123});
+    assert.equal(h.rareMarketEvidence(item,{source:'listing',currency:'gold',price:1000,samples:50,sampledAt:1000000000},1000000100),null);
+    assert.equal(h.rareMarketEvidence(item,{source:'completed-sale',currency:'gold',price:1000,samples:2,sampledAt:1000000000},1000000100),null);
+    assert.equal(h.rareMarketEvidence(item,{source:'completed-sale',currency:'diamond',price:1000,samples:3,sampledAt:1000000000},1000000100),null);
+    const result=h.rareMarketEvidence(item,{source:'completed-sale',currency:'orb',price:1000,samples:3,sampledAt:1000000000},1000000100);
     assert.equal(result.expectedMarketValueH,item.unitsH*1000);
     assert.equal(result.currency,'orb');
+    assert.equal(result.ageDays,100/86400000);
+    assert.equal(h.rareMarketEvidence(item,{source:'completed-sale',
+        currency:'orb',price:1000,samples:4,
+        sampledAt:1000000000},1000000000+31*86400000),null);
     assert.match(result.source,/not-realized/);
 });
 test('preview is independent of saved hunt and in-game tier changes',()=>{
