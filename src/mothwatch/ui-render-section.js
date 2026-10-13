@@ -157,6 +157,7 @@
                     '<p class="moth-mw-snatch-explainer">' +
                     escapeHtml(tr('Click Snatch beside a market listing to authorize one exact listing at or below its shown price. A matching enabled buying rule can also arm held listings automatically.')) +
                     '</p>' +
+                    '<p class="moth-mw-snatch-feedback" id="moth-mw-snatch-feedback" role="status" aria-live="polite"></p>' +
                     '<div id="moth-mw-snatch-list" aria-live="off"></div>' +
                     '<p class="moth-mw-rule-hint">' +
                     escapeHtml(tr('The game tab must remain connected. The server decides availability; competing buyers may win. Unknown purchase outcomes block retries.')) +
@@ -258,10 +259,25 @@
         } else if (state.watchView === 'automation') {
             refreshAutomationLive(content);
         } else if (state.watchView === 'snatches') {
+            const feedback = q('#moth-mw-snatch-feedback', content);
+            if (feedback && feedback.textContent !== state.snatchNotice)
+                feedback.textContent = state.snatchNotice;
             const snatchHost = q('#moth-mw-snatch-list', content);
-            if (snatchHost && !snatchHost.contains(document.activeElement)) {
+            if (snatchHost) {
                 const snatchHtml = snatchQueueHtml();
-                if (snatchHost.innerHTML !== snatchHtml) snatchHost.innerHTML = snatchHtml;
+                if (snatchHost.innerHTML !== snatchHtml) {
+                    const focused = snatchHost.contains(document.activeElement)
+                        ? document.activeElement.getAttribute('data-moth-snatch') : null;
+                    const scroll = snatchHost.scrollTop;
+                    snatchHost.innerHTML = snatchHtml;
+                    snatchHost.scrollTop = scroll;
+                    if (focused) {
+                        const restored = qa('[data-moth-snatch]', snatchHost)
+                            .find(button => button.dataset.mothSnatch === focused);
+                        if (restored) restored.focus({preventScroll:true});
+                        else q('#moth-mw-snatch-tab', panel)?.focus({preventScroll:true});
+                    }
+                }
             }
         } else if (state.watchView === 'activity') {
             const refs = q('#moth-mw-reference-tools', content);
