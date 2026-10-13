@@ -1,6 +1,6 @@
 # PokéIdle Hunt Atlas
 
-> **Versão experimental 1.9.9.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
+> **Versão experimental 1.9.10.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
 >
 > Não há mapa visual novo. O Atlas continua sendo uma lista pesquisável; o índice `map-markers.json` só adiciona contexto textual de localização para hunts com slug correspondente. O índice `moves-index.json` oferece golpes possíveis por espécie/nível, não uma lista de golpes equipados. Agora o Atlas compara os golpes dos índices com o catálogo mais recente de Pokémon e mostra divergências. Quando o jogo fornece nomes de golpes, o modelo usa **amostras por execução**, sem contar várias vítimas de um ataque em área como vários golpes. Quando o nome não chega, mantém o modelo por tipo. XP/h **medido** continua acima de qualquer projeção. Os índices são opcionais e podem estar desatualizados.
 >
@@ -48,6 +48,12 @@ No painel **Planejador de capturas e shinies**, a escolha Ultra/Beast e a simula
 **Dados medidos** vêm de `morte`, `bola` e `capturado` correlacionados: ao menos seis abates e 60 segundos, com denominador de tempo corrido, separando tentativas aceitas, capturas confirmadas e shiny visto/capturado. Para outras hunts, as projeções indicam claramente um **teto condicional se uma bola for aceita por corpo**, não que o Auto Catch alcance esse ritmo. Quando um Pokémon não fornece raridade econômica confiável, a chance fica indisponível; não usamos preço de venda MKT/RMT. A chance é o **modelo da wiki, ainda não confirmado com a fórmula do servidor**. Na Outland, a elegibilidade para shiny continua não verificada, portanto não é inventada. Arena Mística usa tabela própria e ticket por tentativa.
 
 Veja [contrato técnico, cenários de teste e limitações](../docs/HUNTATLAS_MILESTONE_E.md). O addon não compra bolas automaticamente nem altera o Auto Catch+.
+
+### Cenários de referência PokeIdle Tools (v1.9.10)
+
+Dentro de **Detalhes da hunt → Cenários de bônus de referência externa**, há uma simulação opcional, **desligada por padrão**, que incorpora os coeficientes matemáticos que o site externo realmente usa: bônus shiny e de captura ×1,5, hipóteses de Kick ×1,15, percentuais de eventos e multiplicadores de loot/guilda/evento/Kick para os drops raros. Todos os valores são escolhidos manualmente e a interface deixa claro que **não foram observados nem confirmados no servidor**. Kick é apenas uma hipótese numérica, não uma reintegração ao Controller.
+
+O cenário usa o modelo de espécie/Ultra/Beast e a taxa de bolas aceitas do próprio Atlas; para raros, parte da probabilidade já ajustada pelo tier Outland. Exibe também a probabilidade complementar de **nenhuma ocorrência em 24h** e utiliza mais casas decimais para chances muito pequenas. **Não altera rankings, medições reais, bônus usados automaticamente, automações nem os cálculos padrão**, e não consulta a rede. Quando faltar chance, ritmo ou elegibilidade do shiny na Outland, permanece **—**. Os detalhes e a comparação de funcionalidades estão em [PokeIdle Tools vs HuntAtlas](../docs/references/pokeidle-tools/HUNTATLAS_COMPARISON.md). Os simuladores XP/moedas, IV e DPS anunciados no site externo ainda não estão implementados nele.
 
 ### Rankings, detalhes compactos e desempenho (v1.9.9 · Marco F)
 
