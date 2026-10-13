@@ -28,6 +28,7 @@ Research formerly held in `pokeidle-addons/docs` has moved to [`docs/`](docs/):
 
 - [Auto Catch capture economics](docs/AUTOCATCH_CAPTURE_ECONOMICS.md)
 - [Hunt rewards and rare loot](docs/HUNT_REWARDS_AND_RARE_LOOT.md)
+- [Community Market protocol, fees and transaction safeguards](docs/MARKET_PROTOCOL_REFERENCE.md)
 - [PokéIdle wiki/upstream mechanics map](docs/POKEIDLE_WIKI_UPSTREAM_MECHANICS_MAP.md)
 - [Pokémon valuation reference — current premium edition](docs/POKEMON_VALUATION_REFERENCE.md)
 - [Original public valuation reference — exact archived copy](docs/archive/POKEMON_VALUATION_REFERENCE_ORIGINAL.md)
