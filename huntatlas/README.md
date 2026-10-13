@@ -1,6 +1,6 @@
 # PokéIdle Hunt Atlas
 
-> **Versão experimental 1.9.7.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
+> **Versão experimental 1.9.8.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
 >
 > Não há mapa visual novo. O Atlas continua sendo uma lista pesquisável; o índice `map-markers.json` só adiciona contexto textual de localização para hunts com slug correspondente. O índice `moves-index.json` oferece golpes possíveis por espécie/nível, não uma lista de golpes equipados. Agora o Atlas compara os golpes dos índices com o catálogo mais recente de Pokémon e mostra divergências. Quando o jogo fornece nomes de golpes, o modelo usa **amostras por execução**, sem contar várias vítimas de um ataque em área como vários golpes. Quando o nome não chega, mantém o modelo por tipo. XP/h **medido** continua acima de qualquer projeção. Os índices são opcionais e podem estar desatualizados.
 >
@@ -38,6 +38,16 @@ Os drops NPC são calculados de um catálogo reconstruído com regras compartilh
 - O **Fragmento de Ovo Shiny** aparece somente nas hunts elegíveis de Unova para frente, com os 30 degraus fixos de nível. O custo de 10 fragmentos e as 168h adicionais de incubação aparecem em separado. **Outland nunca recebe o Ovo Shiny**.
 - Probabilidades são **sem bônus não confirmados** e indicam expectativas, **não garantias**. Drops efetivamente vistos nesta sessão aparecem separados da previsão, sem confundir tiers. Preços de mercado ficam **—** na ausência de vendas concluídas verificadas; nada é comprado/vendido.
 - Detalhes e limitações: [Marco D](../docs/HUNTATLAS_MILESTONE_D.md).
+
+### Captura, Ultra/Beast e shiny (v1.9.8 · Marco E)
+
+**Ultra Ball ×4 é o padrão**, com **Beast Ball ×8 como opção**, sem inventar câmbio de Diamantes para Moedas. Na lista de hunts, cada espécie informa **chance condicional de captura para Ultra e Beast**, **capturas/h estimadas do alvo** e **shinies capturados/h estimados**, ponderando quantas vezes a espécie aparece. Agora é possível ordenar por **capturas/h** e **shinies capturados/h** do Pokémon desejado, com a bola escolhida.
+
+No painel **Planejador de capturas e shinies**, a escolha Ultra/Beast e a simulação de **Shiny Secret Lure ×2** (explicitamente hipotética, sem afirmar que está ativa) atualizam chances, capturas/h, shinies vistos/h e capturados/h, tempo médio para shiny e chance de conseguir pelo menos um em 24h. **Shiny é sorteado por arremesso aceito elegível (1/24.000 normalmente), NÃO por abate**; mesmo após um shiny ser visto, ainda é preciso conseguir capturá-lo. A Beast não é sempre duas vezes melhor após o teto de 10% de captura.
+
+**Dados medidos** vêm de `morte`, `bola` e `capturado` correlacionados: ao menos seis abates e 60 segundos, com denominador de tempo corrido, separando tentativas aceitas, capturas confirmadas e shiny visto/capturado. Para outras hunts, as projeções indicam claramente um **teto condicional se uma bola for aceita por corpo**, não que o Auto Catch alcance esse ritmo. Quando um Pokémon não fornece raridade econômica confiável, a chance fica indisponível; não usamos preço de venda MKT/RMT. A chance é o **modelo da wiki, ainda não confirmado com a fórmula do servidor**. Na Outland, a elegibilidade para shiny continua não verificada, portanto não é inventada. Arena Mística usa tabela própria e ticket por tentativa.
+
+Veja [contrato técnico, cenários de teste e limitações](../docs/HUNTATLAS_MILESTONE_E.md). O addon não compra bolas automaticamente nem altera o Auto Catch+.
 
 ### 🎮 Correio Maluco — minigame experimental (1.9.3)
 
@@ -153,6 +163,16 @@ Ordinary loot is derived from a **reconstructed shared-upstream catalog**, not a
 - **Shiny Egg Fragments** follow the exact fixed 30-level ladder in eligible non-Outland hunts. Ten fragments craft an egg; a separate 168-hour incubation follows. Outland never receives these egg drops.
 - All probabilities are **unboosted expectations, not guarantees**. Real observed drops remain separate from projections, and another preview tier cannot borrow the active tier's drop totals. Market prices show **—** until verified completed-sale evidence exists; no buying/selling is added.
 - See the [Milestone D contract](../docs/HUNTATLAS_MILESTONE_D.md) for evidence and limitations.
+
+### Capture, Ultra/Beast and shiny planning (v1.9.8 · Milestone E)
+
+**Ultra Ball ×4 is the default**, with **Beast Ball ×8 as an option**, keeping Diamonds separate from Coins. Each hunt species now shows its **conditional Ultra/Beast success chance**, **estimated captures/hour for that target** and **target shiny catches/hour** weighted by encounter prevalence. Sort by target **captures/hour** or **shiny catches/hour** using your selected ball.
+
+In the **Catch and shiny planner**, switching Ultra/Beast or simulating **Shiny Secret Lure ×2** (explicitly hypothetical, **not** inferred as active) updates expected captures/hour, shinies seen/hour vs actually caught/hour, mean wait for a shiny catch and probability of one or more in 24 hours. Shiny is rolled **per eligible accepted ball, not per kill** (1/24,000 normal), and a seen shiny can still fail its capture roll. Beast need not double Ultra's odds near the 10% cap.
+
+**Measured throughput** is based on correlated `morte`, accepted `bola` and confirmed `capturado` server events, requiring at least six kills and 60 seconds. For unvisited hunts, estimates are explicitly **ceilings conditional on one accepted ball per fallen body**, not guarantees that automation will reach that rate. Missing trustworthy species economic rarity yields an unknown chance, never the Pokémon's sale/listing price. This is the **wiki-conditional capture equation, not a deployed-server-verified formula**. Outland shiny eligibility stays unknown; Mystic Arena has a separate ticket-gated capture table.
+
+Read the [technical contract, tests and limitations](../docs/HUNTATLAS_MILESTONE_E.md). No automatic buying or changes to Auto Catch+ were introduced.
 
 ### 🎮 Parcel Panic — experimental mini-game (1.9.3)
 
