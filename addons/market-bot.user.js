@@ -933,6 +933,7 @@
             state.attemptedListings.set(order.listingId, Number.MAX_SAFE_INTEGER);
             addLog('Purchase outcome unverified · listing #' + order.listingId);
         }
+        snatchOutcome(order.listingId,status);
         queueRender();
         return true;
     }
@@ -1862,6 +1863,7 @@
     function processItemListingPayload(itemId, currency, lines) {
         const detailKey = String(itemId) + ':' + currency;
         const offers = Array.isArray(lines) ? lines.slice(0, 120) : [];
+        snatchConfirmItemListingSet(itemId,currency,offers);
         const explicitlyLoaded = state.loadedItemKeys.has(detailKey);
         const selected = state.selectedItemFocus?.key === detailKey;
         const neededForRecommendation = state.sellRecommendationKey === detailKey;
@@ -3014,6 +3016,7 @@
         const status = reason === 'server-confirmed' ? 'confirmed' :
             reason === 'refused' ? 'refused' : 'unknown';
         settleOrder(pending.order, status);
+        snatchOutcome(pending.listingId,status);
         diagnosticOutcome(status);
         if (status === 'confirmed') {
             state.candidates.delete(pending.candidateKey);
@@ -3722,6 +3725,7 @@
             state.nick = String(message.estado?.nick || '');
             mergePlayer(message.estado, true);
             state.orderJournal = loadOrderJournal();
+            snatchRestore();
             state.economyHoldings = loadEconomyHoldings();
             state.economyNotice = '';
             state.exposureCache.clear();
@@ -3795,6 +3799,7 @@
         }
 
         if (message.t !== 'market') return;
+        snatchObservePacket(message);
 
         if (message.mediaDiamante && typeof message.mediaDiamante === 'object') {
             state.liveDiamondAverages = message.mediaDiamante;
