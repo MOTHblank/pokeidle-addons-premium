@@ -1214,3 +1214,23 @@ test('MothWatch v0.6.1: off-tab view updates avoid candidate sorting and setting
     assert.doesNotMatch(src, /host\.innerHTML !== html\)\s*\{\s*const oldScroller/,
         'do not serialize the entire inventory DOM every 250 ms');
 });
+
+
+test('MothWatch v0.6.1: cached Buy controls invalidate only for focused item quote changes', () => {
+    const state = {
+        candidates: new Map(), firstSeenCache: new Map(),
+        releaseTimers: new Map(), itemInventoryMemo: {html:'old'},
+        selectedItemFocus: {key:'106:gold'}, lastItem: null
+    };
+    const src = section('    function addCandidate(', '    function pruneDetailCache(');
+    const insert = new Function('state','MAX_CANDIDATES','MAX_FIRST_SEEN',
+        'scheduleCandidateRelease','queueRender',
+        src + '\nreturn addCandidate;')(state, 600, 1800, () => {}, () => {});
+    insert({key:'item:107:gold:1',kind:'item',itemId:107,currency:'gold',
+        listingId:1,price:3,seenAt:Date.now()});
+    assert.ok(state.itemInventoryMemo,'unrelated offer should not force large inventory redraw');
+    insert({key:'item:106:gold:2',kind:'item',itemId:106,currency:'gold',
+        listingId:2,price:3,seenAt:Date.now()});
+    assert.equal(state.itemInventoryMemo,null,'selected item quote must redraw Buy actions');
+    assert.match(script,/if \(status === 'confirmed'\) \{\s*state\.candidates\.delete\(pending\.candidateKey\);\s*state\.itemInventoryMemo = null;/);
+});
