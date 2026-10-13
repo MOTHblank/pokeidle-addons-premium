@@ -1073,7 +1073,8 @@
     }
 
     function sendBackground(payload) {
-        if (backgroundDelayMs() > 0) return false;
+        // Reserve the shared WebSocket during the contested unlock window.
+        if (snatchCriticalWindow() || backgroundDelayMs() > 0) return false;
         const sent = send(payload);
         if (sent) diagnosticOutbound(payload);
         return sent;
@@ -3021,14 +3022,15 @@
         const status = reason === 'server-confirmed' ? 'confirmed' :
             reason === 'refused' ? 'refused' : 'unknown';
         settleOrder(pending.order, status);
-        snatchOutcome(pending.listingId,status);
         diagnosticOutcome(status);
         if (status === 'confirmed') {
             state.candidates.delete(pending.candidateKey);
             state.itemInventoryMemo = null;
         }
-        requestItemSummary(activeAnyItemRules().length > 0);
-        setTimeout(startPokemonScan, 250);
+        if (!snatchCriticalWindow()) {
+            requestItemSummary(activeAnyItemRules().length > 0);
+            setTimeout(startPokemonScan, 250);
+        }
         queueRender();
     }
 
@@ -3593,7 +3595,10 @@
             }
             if (entry.releaseAt > server + 18000) continue;
             if (entry.releaseAt > server) {
-                if (entry.releaseAt - server > 1500) snatchRefresh(entry,now);
+                // Do not fill the wire with scans immediately before unlock.
+                if (entry.releaseAt - server > 5000 &&
+                    now - Number(c.seenAt||0) > SNATCH_MAX_QUOTE_AGE_MS - 12000)
+                    snatchRefresh(entry,now);
                 continue;
             }
             if (!freshQuote(c,!!manual) && !snatchReleaseQuote(c)) {
@@ -3622,6 +3627,19 @@
         snatchSchedule();
     }
 
+    function snatchCriticalWindow() {
+        const now=serverNow();
+        for (const entry of state.snatchObserved.values()) {
+            if ((state.snatchManual.has(snatchKey(entry.candidate.kind,
+                    entry.candidate.currency,entry.candidate.listingId)) ||
+                activeRuleById(entry.ruleId)) &&
+                entry.releaseAt > 0 && entry.releaseAt-now < 1500 &&
+                entry.releaseAt-now > -10000 &&
+                entry.attempts < SNATCH_ATTEMPT_LIMIT) return true;
+        }
+        return false;
+    }
+
     function snatchSchedule(override = 0) {
         if (state.snatchWake) clearTimeout(state.snatchWake);
         state.snatchWake = null;
@@ -3648,9 +3666,8 @@
             }
             entry.retryAt = Date.now() + SNATCH_RETRY_MS;
             state.attemptedListings.set(listingId,entry.retryAt);
-            // First retry does not wait for a market scan. Later selective
-            // refreshes can establish that the listing disappeared.
-            snatchRefresh(entry,Date.now());
+            // Retry on the next release timer, not on a bulk market scan.
+            // Targeted listing reconciliation happens separately, when idle.
         }
         snatchSchedule();
     }
