@@ -114,6 +114,8 @@
         anyItemTargetsCache: null,
         pokemonAutoOffers: new Map(),
         pokemonEvidenceMemo: null,
+        itemInventoryMemo: null,
+        lastInventoryPaint: null,
         economyHoldings: [],
         economyInput: { itemId: 0, quantity: 1, holdingCurrency: 'gold', feeCurrency: 'gold', feeKind: 'item', feeUnit: 100, feeQuantity: 1, holdingDays: 1 },
         economyUiCache: null,
@@ -1147,6 +1149,7 @@
     }
 
     function refreshCatalogNames() {
+        state.itemInventoryMemo = null;
         for (const candidate of state.candidates.values()) {
             if (candidate.kind === 'item') {
                 candidate.name = catalogName(candidate.itemId);
@@ -5814,6 +5817,8 @@
 
     function closeWatch() {
         state.watchOpen = false;
+        state.itemInventoryMemo = null;
+        state.lastInventoryPaint = null;
 
         /*
          * The native modal reuses #modal-corpo when navigating between RMT
