@@ -217,6 +217,7 @@
         "Warning: this broad rule has no cumulative spending or purchase-count limit. If enabled, it may repeatedly spend the available {currency}. Continue?": "Atenção: esta regra abrangente não tem limite acumulado de gastos ou compras. Se ativada, pode gastar repetidamente o saldo em {currency}. Continuar?",
         "Warning: enabling the master switch activates {count} broad buying rules without cumulative caps. Available balances may be spent repeatedly. Continue?": "Atenção: ativar a chave geral habilitará {count} regras abrangentes sem limites acumulados. Os saldos poderão ser gastos repetidamente. Continuar?",
         "Activation cancelled; no settings changed.": "Ativação cancelada; nenhuma configuração alterada.",
+        "Warning: this change removes the last cumulative protection from an active broad-buying rule. Repeated orders may exhaust your balance. Continue?": "Atenção: esta alteração elimina o último limite acumulado de uma regra de compra abrangente ativa. Compras repetidas podem esgotar o saldo. Continuar?",
         "Maximum {amount} {currency} {unit}. {pages} {risk}": "Máximo de {amount} {currency} {unit}. {pages} {risk}",
         "per Pokémon": "por Pokémon",
         "per unit": "por unidade",
@@ -4913,6 +4914,10 @@
         }));
     }
 
+    function confirmRemovingLastBroadCap() {
+        return window.confirm(tr('Warning: this change removes the last cumulative protection from an active broad-buying rule. Repeated orders may exhaust your balance. Continue?'));
+    }
+
     function ruleRiskSummary(rule, type) {
         const priceType = type === 'pokemon' ? 'per Pokémon' : 'per unit';
         const pages = type === 'pokemon'
@@ -5555,6 +5560,7 @@
                 const sanitize = type === 'any' ? sanitizeAnyItemRules : sanitizePokemonBuyRules;
                 const rules = sanitize(config[key]), rule = rules.find(r => r.id === target.dataset.ruleId);
                 if (!rule) return;
+                const previouslyUnbounded = broadRuleUnbounded(rule);
                 const field = target.getAttribute(attr);
                 if (['maxSpendSession', 'maxSpendDay', 'maxPurchasesSession', 'maxQuantitySession'].includes(field)) {
                     const cap = Number(target.value);
@@ -5588,6 +5594,11 @@
                     }
                     rule.currency = currency;
                 } else return;
+                if (config.fixedRulesEnabled && !previouslyUnbounded &&
+                    broadRuleUnbounded(rule) && !confirmRemovingLastBroadCap()) {
+                    setAutomationNotice(tr('Activation cancelled; no settings changed.'), 'warn');
+                    renderWatch(true); return;
+                }
                 config[key] = rules; saveConfig(); renderWatch(true); return;
             }
             if (target.matches('#moth-pokemon-kind')) {
@@ -5630,7 +5641,16 @@
                     setAutomationNotice(tr('Activation cancelled; no settings changed.'), 'warn');
                     renderWatch(true); return;
                 }
+                const oldUnboundedCount = enabledUnboundedBroadRules().length;
+                const oldValue = config[key];
                 config[key] = nextValue;
+                if (config.fixedRulesEnabled && !oldUnboundedCount &&
+                    enabledUnboundedBroadRules().length > 0 &&
+                    key !== 'fixedRulesEnabled' && !confirmRemovingLastBroadCap()) {
+                    config[key] = oldValue;
+                    setAutomationNotice(tr('Activation cancelled; no settings changed.'), 'warn');
+                    renderWatch(true); return;
+                }
                 if (target.matches('input[type="range"]')) {
                     const output = q('[data-moth-cfg-value="' + key + '"]', panel);
                     if (output) output.textContent = config[key] + '%';
