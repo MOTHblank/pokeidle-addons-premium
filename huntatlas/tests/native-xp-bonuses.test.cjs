@@ -18,7 +18,7 @@ test('the game fields detected by Moth Controller yield separate trainer and Pok
     const game=model.nativeXpBonusDelta({},{
         twitch:{pctAtual:15,assistindoEm:['one','two']},
         evento:{xpTreinadorPct:20,xpPokemonPct:30},
-        guildBonusPct:10,
+        guildBonusPct:10,guild:{boostAte:0},
         loja:{boosts:{},atrasados:null}
     },true);
     const bonus=model.nativeXpBonusReading(game,250);
@@ -59,13 +59,14 @@ test('delta packets retain unrelated fields, explicit null clears a field',()=>{
 
 test('shop and catch-up effects are detected but not incorrectly multiplied',()=>{
     const game=model.nativeXpBonusDelta({},{
-        loja:{boosts:{xp:{until:100000}},atrasados:{alvo:1000,mult:10}},
+        loja:{boosts:{xp:Date.now()+600000},atrasados:{alvo:1000,mult:10}},
         guildBonusPct:10
     },true);
     const result=model.nativeXpBonusReading(game,500);
     close(result.trainer,1.1);
     close(result.pokemon,1.1);
-    assert.ok(result.unknown.includes('shop'));
+    assert.ok(result.unknown.includes('shopTrainer'));
+    assert.ok(!result.sources.some(row=>row.kind==='shopTrainer'));
     assert.ok(result.unknown.includes('catchup'));
     assert.equal(result.complete,false);
     assert.ok(!result.unknown.includes('twitch'));
@@ -93,4 +94,46 @@ test('model projections include native known XP factors but measured values do n
     assert.match(src,/state\.nativeXpContext = nativeXpBonusDelta/);
     assert.match(src,/nativeXpBonusScope\(state\.nativeXpContext\)/);
     assert.match(src,/\$\{nativeBonusHtml\}/);
+});
+
+test('upstream VIP and guild bank XP boosts follow native expiry timestamps',()=>{
+    const now=1750000000000;
+    const state=model.nativeXpBonusDelta({},{
+        loja:{vipAte:now+5000,boosts:{}},
+        guild:{boostAte:now+3000}
+    },true);
+    const before=model.nativeXpBonusReading(state,300,now);
+    close(before.trainer,1.5*1.1);
+    close(before.pokemon,1.5*1.1);
+    assert.ok(before.sources.some(row=>row.kind==='vip'));
+    assert.ok(before.sources.some(row=>row.kind==='guildBank'));
+    const after=model.nativeXpBonusReading(state,300,now+6000);
+    close(after.trainer,1);
+    assert.notEqual(model.nativeXpBonusScope(state,now),
+        model.nativeXpBonusScope(state,now+6000));
+});
+test('upstream XP Boost and Pokémon XP Boost are separate, catalog-scoped multipliers',()=>{
+    const now=1750000000000;
+    const state=model.nativeXpBonusDelta({},{
+        loja:{boosts:{xp:now+5000,pokexp:now+5000}},
+        tiposBoost:[{chave:'xp',mult:1.5},{chave:'pokexp',mult:1.8}]
+    },true);
+    const r=model.nativeXpBonusReading(state,200,now);
+    close(r.trainer,1.5);
+    close(r.pokemon,1.8);
+    assert.ok(r.sources.some(x=>x.kind==='shopTrainer'));
+    assert.ok(r.sources.some(x=>x.kind==='shopPokemon'));
+    const expired=model.nativeXpBonusReading(state,200,now+6000);
+    close(expired.trainer,1);
+    close(expired.pokemon,1);
+});
+test('boost catalog is read from game welcome, never synthesized for unknown shop boosts',()=>{
+    assert.match(src,/message\.tiposBoost/);
+    const now=1750000000000;
+    const noCatalog=model.nativeXpBonusDelta({},{
+        loja:{boosts:{xp:now+5000}}
+    },true);
+    const b=model.nativeXpBonusReading(noCatalog,200,now);
+    close(b.trainer,1);
+    assert.ok(b.unknown.includes('shopTrainer'));
 });
