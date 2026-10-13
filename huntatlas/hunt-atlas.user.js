@@ -4003,9 +4003,16 @@
         const high = observed && samples >= 30 &&
             Number(estimate.windowMs) >= 300000;
         // These are explicitly heuristic uncertainty ranges, NOT statistical CIs.
-        const fraction = observed ? (high ? .12 : .28)
+        const baseline = observed ? (high ? .12 : .28)
             : estimate.source === 'baseline model' ? .65
             : coverage < 100 || samples < 16 ? .5 : .3;
+        // Observed out-of-sample errors may widen, never shrink, the
+        // heuristic band. These are NOT statistical confidence intervals.
+        const verifiedError = Number(estimate.validationErrorPct);
+        const fraction = !observed && Number.isFinite(verifiedError) &&
+            verifiedError >= 0 && Number(estimate.validationCount) >= 3
+            ? Math.max(baseline, Math.min(1.5, verifiedError / 100))
+            : baseline;
         return {
             low: Math.max(0, value * (1 - fraction)),
             high: value * (1 + fraction),
@@ -8212,10 +8219,18 @@
         const cases = key ? state.calibrationEvidence.get(key) : null;
         const values = cases ? [...cases.values()].filter(row =>
             Date.now() - row.at < 90 * 60000) : [];
+        // Quantile of genuinely later-measured, per-hunt forecast errors.
+        // At least three distinct hunts are required before using the error
+        // to widen extrapolated ranges; one repeated session is not evidence.
+        const sortedErrors = values.map(row => Math.abs(row.errorPct))
+            .filter(Number.isFinite).sort((a,b)=>a-b);
+        const p80 = sortedErrors.length >= 3
+            ? sortedErrors[Math.ceil(.8 * sortedErrors.length)-1] : null;
         return {
             hunts: values.length,
-            medianErrorPct: values.length
-                ? Math.round(median(values.map(row => Math.abs(row.errorPct))))
+            p80ErrorPct: p80,
+            medianErrorPct: sortedErrors.length
+                ? Math.round(median(sortedErrors))
                 : null,
             source: 'personalized-model-validation',
             // Transferring between hunts is an experimental heuristic.
@@ -8463,6 +8478,8 @@
             calibration: calibrationDiagnostics(),
             ...coverageFields
         };
+        forecast.validationCount = forecast.calibration.hunts;
+        forecast.validationErrorPct = forecast.calibration.p80ErrorPct;
         forecast.range = xpPredictionBand(forecast);
         return remember(forecast);
     }
