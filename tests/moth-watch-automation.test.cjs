@@ -184,11 +184,13 @@ test('General scans slow to 30 seconds only while background rule buying is acti
     const runScan = new Function('state', 'config', 'Date', 'BACKGROUND_SCAN_WITH_RULES_MS',
         'gameIsLoading', 'requestItemSummary', 'ensurePokemonHistory',
         'startPokemonScan', 'requestDiamondListings', 'pruneCandidates', 'queueRender',
+        'hasAnyBuyingRules', 'activeAnyItemRules', 'activePokemonRules',
         section('    function runScan(force)', '    function pruneCandidates(') +
         '\nreturn runScan;')(state, config, {now: () => clock}, 30000,
         () => false, () => calls.push('items'), () => calls.push('history'),
         () => calls.push('pokemon'), () => calls.push('diamond'),
-        () => calls.push('prune'), () => calls.push('render'));
+        () => calls.push('prune'), () => calls.push('render'),
+        () => config.fixedRulesEnabled && state.ruleItemKeys.size > 0, () => [], () => []);
     runScan(false);
     assert.equal(calls.filter(x => x === 'items').length, 1);
     clock += 20000;
