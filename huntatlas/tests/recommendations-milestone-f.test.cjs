@@ -16,22 +16,21 @@ const h=vm.runInNewContext(helpers+'\n({' + names.join(',') + '})',{});
 const row=(slug,score,level=100)=>({hunt:{slug,nivel:level},score});
 test('explicit multiple real ranking dimensions, no implicit trainer XP substitution',()=>{
     assert.deepEqual(Array.from(h.HA_RANK_METRICS),[
-        'xp','pokemonXp','coins','npcLoot','netCoins','rare',
+        'xp','coins','npcLoot','rare',
         'capture','shinyCatch','ballEfficiency']);
     const data={xp:{value:100,pokemonValue:75},
         economy:{killCoinsH:4,npcLootEvH:20,netH:-2},
         rare:{unitsH:.04},
         capture:{catchesH:3,shinyCaughtH:.001,coinsPerCapture:200}};
-    const expected={xp:100,pokemonXp:75,coins:4,npcLoot:20,
-        netCoins:-2,rare:.04,capture:3,shinyCatch:.001,ballEfficiency:200};
+    const expected={xp:100,coins:4,npcLoot:20,
+        rare:.04,capture:3,shinyCatch:.001,ballEfficiency:200};
     for(const [key,value] of Object.entries(expected))
         assert.equal(h.haMetricValue(key,data),value,key);
     assert.equal(h.haMetricValue('rare',{xp:{value:9999}}),null);
     assert.equal(h.haMetricValue('npcLoot',{xp:{value:9999}}),null);
-    assert.equal(h.haMetricValue('pokemonXp',{xp:{value:9999}}),null);
+    assert.equal(h.haMetricValue('pokemonXp',data),null);
     assert.equal(h.haMetricValue('shinyCatch',{capture:{catchesH:999}}),null);
-    assert.equal(h.haMetricValue('netCoins',{economy:{netH:0}}),0);
-    assert.equal(h.haMetricValue('netCoins',{economy:{netH:-12}}),-12);
+    assert.equal(h.haMetricValue('netCoins',data),null);
     assert.equal(h.haMetricValue('xp',{xp:{value:NaN}}),null);
 });
 test('ranking respects selected direction and null last without allowing missing XP to win',()=>{
@@ -68,7 +67,15 @@ test('Outland rare preview must select actual desired item, validate tier gate a
     assert.ok(h.haMetricRare({area:'unova',nivel:5000},1,25000,1000,70017));
     assert.deepEqual(Array.from(h.HA_RARE_SORT_IDS),[70000,70011,70012,70013,70017]);
 });
-test('UI selection, top five and species list use the real chosen metric',()=>{
+test('UI selection, top five and species list use only supported sorting metrics',()=>{
+    const sortAllowlist=src.match(/const validSorts = \[([\s\S]*?)\];/)?.[1];
+    assert.ok(sortAllowlist);
+    assert.doesNotMatch(sortAllowlist,/pokemonXp|netCoins/);
+    assert.doesNotMatch(src,/<option value="(?:pokemonXp|netCoins)"/);
+    assert.doesNotMatch(src,/(?:arcade|parcel panic|correio maluco)/i);
+    // Removed sorting choices do not disable underlying read-only metrics.
+    assert.match(src,/netCoinsH:econ\.netH/);
+    assert.match(src,/xp\?\.pokemonValue/);
     assert.match(src,/const objective=HA_RANK_METRICS.includes\(state.filters.sort\)/);
     assert.match(src,/const score=haMetricValue\(metric,\{xp,economy,rare,capture\}\)/);
     assert.match(src,/haRankMetricRows\(rows,state.filters.sortDirection,metric\)/);
@@ -83,7 +90,7 @@ test('UI selection, top five and species list use the real chosen metric',()=>{
 });
 test('background budget: bounded event data and no 3s full Atlas scans in closed mode',()=>{
     assert.match(src,/state\.drawerRenderTimer=setTimeout/);
-    assert.match(src,/if\(!state\.drawerOpen \|\| !state\.atlasEnabled \|\| arcade\.open/);
+    assert.match(src,/if\(!state\.drawerOpen \|\| !state\.atlasEnabled \|\|/);
     assert.match(src,/Math\.max\(0,1500-\(Date\.now\(\)-state\.lastDrawerRenderAt\)\)/);
     assert.match(src,/Date\.now\(\)-state\.lastDrawerRenderAt>=12000/);
     assert.match(src,/if\(!wasOpen\) renderDrawer\(\)/);
