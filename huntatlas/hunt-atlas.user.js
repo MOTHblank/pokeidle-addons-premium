@@ -525,6 +525,7 @@
             'outland.quickPreview': 'Selecting a tier only previews it; use Switch to apply.',
             'outland.quickDisconnected': 'Game connection unavailable. Reconnect to change the tier.',
             'outland.quickWaiting': 'Waiting for the game to report the active tier.',
+            'outland.quickTimedOut': 'The game did not confirm the change. Check the active tier and retry.',
             'outland.quickLabel': 'Outland tier (quick change)',
             'outland.quickActive': 'Active: {tier}',
             'outland.quickUnknown': 'Current tier not reported by game',
@@ -873,6 +874,7 @@
             'outland.quickPreview': 'Escolher o tier apenas mostra a prévia; use Mudar para aplicar.',
             'outland.quickDisconnected': 'Sem conexão com o jogo. Reconecte para mudar o tier.',
             'outland.quickWaiting': 'Aguardando o jogo informar o tier ativo.',
+            'outland.quickTimedOut': 'O jogo não confirmou a troca. Confira o tier ativo e tente novamente.',
             'outland.quickLabel': 'Tier Outland (troca rápida)',
             'outland.quickActive': 'Ativo: {tier}',
             'outland.quickUnknown': 'Jogo não informou o tier atual',
@@ -1143,6 +1145,7 @@
         farmingSnapshot: {},
         outlandTierSeen: false,
         pendingOutlandTier: null,
+        outlandTierLastOutcome: null,
         outlandCatalogTiers: null,
         xpBonusState: {},
         itemCatalogStatus: 'idle',
@@ -4506,8 +4509,12 @@
             Object.hasOwn(gameState,'outland_tier')) {
             state.outlandTierSeen=true;
             if(state.pendingOutlandTier &&
-                state.farmingSnapshot.outlandTier === state.pendingOutlandTier.tier)
+                state.farmingSnapshot.outlandTier === state.pendingOutlandTier.tier){
+                state.outlandTierLastOutcome={
+                    tier:state.pendingOutlandTier.tier,status:'confirmed'
+                };
                 state.pendingOutlandTier=null;
+            }
         }
         const incomingXpBonuses = xpBonusSnapshot(gameState);
         if (incomingXpBonuses) Object.assign(state.xpBonusState, incomingXpBonuses);
@@ -4917,6 +4924,7 @@
             state.farmingSnapshot = {};
             state.outlandTierSeen = false;
             state.pendingOutlandTier = null;
+            state.outlandTierLastOutcome = null;
             state.outlandCatalogTiers = null;
             state.xpBonusState = {};
             state.captureChanceEvidence = {seen:0,min:null,max:null};
@@ -6593,10 +6601,14 @@
         try{
             state.activeSocket.send(JSON.stringify({t:'outland.tier',tier:requested}));
             const sentAt=Date.now();
+            state.outlandTierLastOutcome=null;
             state.pendingOutlandTier={tier:requested,sentAt};
             setTimeout(()=>{
                 if(state.pendingOutlandTier?.sentAt===sentAt){
                     state.pendingOutlandTier=null;
+                    state.outlandTierLastOutcome={
+                        tier:requested,status:'timeout'
+                    };
                     queueRender();
                 }
             },6000);
@@ -13092,6 +13104,9 @@
             !state.outlandTierSeen||nativeTier===null?
                 tr('outland.quickWaiting'):
             nativeTier===selectedTier?tr('outland.quickAlready'):
+            state.outlandTierLastOutcome?.status==='timeout'&&
+                state.outlandTierLastOutcome.tier===selectedTier?
+                    tr('outland.quickTimedOut'):
                 tr('outland.quickPreview');
         const quickOutlandHtml=previewHunt?'<div class="mha-outland-quick">'+
             '<strong class="mha-outland-title">'+
