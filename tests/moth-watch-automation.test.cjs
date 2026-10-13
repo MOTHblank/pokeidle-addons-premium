@@ -452,3 +452,32 @@ test('Broad item purchasing refreshes summaries even if passive item watch is di
     runner(true);
     assert.deepEqual(requested, [true]);
 });
+
+test('Automated Pokémon orders require master permission and remain serialized', () => {
+    const config = {enabled:true,fixedRulesEnabled:false,fixedItemRules:[],
+        anyItemRules:[],pokemonBuyRules:[{id:'p',kind:'shiny',currency:'orb',buyMax:5,buyEnabled:true}]};
+    const state = {socket:{readyState:1},ruleItemKeys:new Set(),itemSummary:{},
+        detailQueue:[],detailPending:null,pendingBuy:null,automationLastRunAt:0};
+    const submitted=[];
+    const candidate={key:'rule:pokemon:7',kind:'pokemon',listingId:7,currency:'orb',
+        price:5,unitPrice:5,qty:1,ficha:{shiny:true,potencia:5}};
+    const runner=new Function('config','state','gameIsLoading','q',
+        'hasAnyBuyingRules','sanitizeFixedItemRules','activeAnyItemRules',
+        'activePokemonRules','anyItemRuleTargets','automationDetail',
+        'fixedRuleCandidate','anyItemRuleCandidate','pokemonRuleCandidate',
+        'purchaseQuantity','tryBuy',
+        section('    function runMarketAutomation(', '    function runScan(force)') +
+        '\nreturn runMarketAutomation;')(
+        config,state,()=>false,()=>null,
+        ()=>config.enabled && config.fixedRulesEnabled,
+        ()=>[],()=>[],()=>config.pokemonBuyRules,()=>[],()=>{},
+        ()=>null,()=>null,()=>candidate,()=>1,
+        item=>{submitted.push(item.listingId);state.pendingBuy=item;return true;}
+    );
+    runner();
+    assert.deepEqual(submitted,[]);
+    config.fixedRulesEnabled=true;
+    runner();
+    runner();
+    assert.deepEqual(submitted,[7]);
+});
