@@ -4034,6 +4034,43 @@
                 });
                 return;
             }
+
+            for (const type of ['any', 'pokemon']) {
+                if (!target.closest('#moth-add-' + type + '-rule')) continue;
+                const pokemon = type === 'pokemon';
+                const kind = pokemon ? q('#moth-pokemon-kind', panel)?.value : null;
+                if (pokemon && !['any', 'shiny', 'p5'].includes(kind)) return;
+                const currency = q('#moth-' + type + '-currency', panel)?.value === 'orb' ? 'orb' : 'gold';
+                if (pokemon && kind === 'shiny' && currency !== 'orb') {
+                    setAutomationNotice(tr('Shiny purchases require Gems.'), 'warn');
+                    q('#moth-pokemon-currency', panel).value = 'orb'; return;
+                }
+                const buyMax = Number(q('#moth-' + type + '-buy', panel)?.value);
+                if (!Number.isSafeInteger(buyMax) || buyMax <= 0) {
+                    setAutomationNotice(tr('Set a positive maximum buy price.'), 'warn'); return;
+                }
+                const key = pokemon ? 'pokemonBuyRules' : 'anyItemRules';
+                const rules = pokemon ? sanitizePokemonBuyRules(config[key]) : sanitizeAnyItemRules(config[key]);
+                if (rules.some(r => r.currency === currency && (!pokemon || r.kind === kind))) {
+                    setAutomationNotice(tr('An equivalent rule already exists for this currency.'), 'warn'); return;
+                }
+                const rule = {id: newAutomationRuleId(type), currency, buyMax, buyEnabled: true};
+                if (pokemon) rule.kind = kind;
+                rules.push(rule);
+                config[key] = rules; saveConfig();
+                setAutomationNotice(tr(config.fixedRulesEnabled ? 'Rule added: {name}.' :
+                    'Rule configured — buying remains off until master switch is enabled.',
+                    {name: pokemon ? tr('Pokémon') : tr('Any item')}), 'ok');
+                renderWatch(true); return;
+            }
+            for (const type of ['any', 'pokemon']) {
+                const button = target.closest('[data-moth-remove-' + type + ']');
+                if (!button) continue;
+                const key = type === 'any' ? 'anyItemRules' : 'pokemonBuyRules';
+                const id = button.getAttribute('data-moth-remove-' + type);
+                config[key] = config[key].filter(rule => rule.id !== id);
+                saveConfig(); renderWatch(true); return;
+            }
             if (target.closest('#moth-add-fixed-rule')) {
                 const itemId = Number(q('#moth-fixed-item', panel)?.value);
                 if (!(itemId > 0)) { setAutomationNotice(tr('Choose an item before adding a rule.'), 'warn'); return; }
@@ -4127,6 +4164,38 @@
         panel.addEventListener('change', event => {
             const target = event.target instanceof Element ? event.target : null;
             if (!target) return;
+
+            for (const type of ['any', 'pokemon']) {
+                const attr = 'data-moth-' + type + '-field';
+                if (!target.hasAttribute(attr)) continue;
+                const key = type === 'any' ? 'anyItemRules' : 'pokemonBuyRules';
+                const sanitize = type === 'any' ? sanitizeAnyItemRules : sanitizePokemonBuyRules;
+                const rules = sanitize(config[key]), rule = rules.find(r => r.id === target.dataset.ruleId);
+                if (!rule) return;
+                const field = target.getAttribute(attr);
+                if (field === 'buyMax') {
+                    const max = Number(target.value);
+                    if (!Number.isSafeInteger(max) || max <= 0) {
+                        setAutomationNotice(tr('Set a positive maximum buy price.'), 'warn');
+                        renderWatch(true); return;
+                    }
+                    rule.buyMax = max;
+                } else if (field === 'buyEnabled') rule.buyEnabled = target.checked;
+                else if (field === 'currency') {
+                    const currency = target.value === 'orb' ? 'orb' : 'gold';
+                    if (type === 'pokemon' && rule.kind === 'shiny' && currency !== 'orb') {
+                        setAutomationNotice(tr('Shiny purchases require Gems.'), 'warn');
+                        renderWatch(true); return;
+                    }
+                    if (rules.some(r => r.id !== rule.id && r.currency === currency &&
+                        (type === 'any' || r.kind === rule.kind))) {
+                        setAutomationNotice(tr('An equivalent rule already exists for this currency.'), 'warn');
+                        renderWatch(true); return;
+                    }
+                    rule.currency = currency;
+                } else return;
+                config[key] = rules; saveConfig(); renderWatch(true); return;
+            }
             if (target.matches('[data-moth-fixed-field]')) {
                 const id = target.dataset.ruleId;
                 const field = target.dataset.mothFixedField;
