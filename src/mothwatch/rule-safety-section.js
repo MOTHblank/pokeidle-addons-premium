@@ -32,6 +32,10 @@
         }));
     }
 
+    function confirmRemovingLastBroadCap() {
+        return window.confirm(tr('Warning: this change removes the last cumulative protection from an active broad-buying rule. Repeated orders may exhaust your balance. Continue?'));
+    }
+
     function ruleRiskSummary(rule, type) {
         const priceType = type === 'pokemon' ? 'per Pokémon' : 'per unit';
         const pages = type === 'pokemon'
