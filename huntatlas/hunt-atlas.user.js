@@ -6820,98 +6820,86 @@
         if (!coverage.complete) return null;
 
         const mobsPerWave = Math.max(1, Math.min(16, coverage.total));
+        const lead = typeof leadPokemon === 'function' ? leadPokemon() : null;
+        const iv = lead?.speedIV ?? lead?.speedIv ??
+            lead?.ivs?.speed ?? lead?.iv?.speed;
+        const firstAttackMs = typeof xpGlobalAttackFloor === 'function'
+            ? xpGlobalAttackFloor(iv) : UPSTREAM_GLOBAL_ATTACK_MS;
         const transitionMs =
-            profile.movementMs + UPSTREAM_WAVE_MS / mobsPerWave;
+            (Number(profile.movementMs) || 600) + UPSTREAM_WAVE_MS / mobsPerWave;
         let weightedMs = 0;
         for (const row of coverage.entries) {
             const attacksNeeded = Math.max(1, Math.ceil(row.hp / row.damage));
-            const killMs = transitionMs + UPSTREAM_GLOBAL_ATTACK_MS +
+            const killMs = transitionMs + firstAttackMs +
                 Math.max(0, attacksNeeded - 1) *
-                Math.max(UPSTREAM_GLOBAL_ATTACK_MS,
+                Math.max(firstAttackMs,
                     Number(profile.cadenceMs) || UPSTREAM_GLOBAL_ATTACK_MS);
             weightedMs += killMs * row.weight;
         }
         return weightedMs / coverage.total;
     }
 
-    function predictionCalibration(
-        profile
-    ) {
-        if (
-            profile &&
-            Number.isFinite(
-                profile._calibration
-            )
-        ) {
-            return profile._calibration;
+    // Validation is out-of-sample: freeze an early model estimate BEFORE
+    // sustained kills are available, then compare with later actual results.
+    function calibrationContextKey() {
+        const lead = leadSignature();
+        return lead ? lead + '|' + farmingSnapshotScope() : null;
+    }
+
+    function recordForecastResidual(hunt, record, observed, now = Date.now()) {
+        const prediction = record?.predictedBeforeMeasurement;
+        if (!hunt || !prediction || !observed || !(observed.samples >= 6) ||
+            observed.windowMs < 60000 ||
+            prediction.hunt !== hunt.slug || prediction.scope !== farmingSnapshotScope())
+            return null;
+        const residual = xpForecastResidual(prediction.killMs, observed.killMs);
+        if (!residual) return null;
+        const key = calibrationContextKey();
+        if (!key) return null;
+        let cases = state.calibrationEvidence.get(key);
+        if (!cases) {
+            cases = new Map();
+            state.calibrationEvidence.set(key, cases);
         }
-
-        const ratios = [];
-
-        for (
-            const record of
-            profile?.records ||
-            []
-        ) {
-            const observed =
-                observedRates(
-                    record
-                );
-
-            if (!observed) {
-                continue;
-            }
-
-            const hunt =
-                state.hunts.find(
-                    item =>
-                        item.slug ===
-                        record.huntSlug
-                );
-
-            if (!hunt) {
-                continue;
-            }
-
-            const predicted =
-                rawPredictedKillMs(
-                    hunt,
-                    profile
-                );
-
-            if (
-                Number.isFinite(predicted) &&
-                predicted > 0
-            ) {
-                ratios.push(
-                    observed.killMs /
-                    predicted
-                );
-            }
+        const previous = cases.get(hunt.slug);
+        if (!previous || now - previous.at >= 60000) {
+            cases.set(hunt.slug, {ratio: residual.ratio, errorPct: residual.errorPct,
+                at: now, samples: observed.samples, source: prediction.source});
+            while (cases.size > 12) cases.delete(cases.keys().next().value);
+            while (state.calibrationEvidence.size > 4)
+                state.calibrationEvidence.delete(state.calibrationEvidence.keys().next().value);
+            state.estimateCache.clear();
+            // This mutation is deliberately outside the per-kill handler to
+            // avoid costly recomputation on every high-frequency battle event.
         }
+        return residual;
+    }
 
-        const ratio =
-            robustMean(
-                ratios
-            );
+    function predictionCalibration(profile) {
+        const key = calibrationContextKey();
+        const cases = key ? state.calibrationEvidence.get(key) : null;
+        const ratios = cases ? [...cases.values()].filter(row =>
+            Date.now() - row.at < 90 * 60000 && row.samples >= 6)
+                .map(row => row.ratio) : [];
+        const ratio = robustMean(ratios);
+        return ratio && ratios.length
+            ? Math.max(.65, Math.min(1.65, ratio)) : 1;
+    }
 
-        const calibrated =
-            !ratio
-                ? 1
-                : Math.max(
-                    0.4,
-                    Math.min(
-                        3,
-                        ratio
-                    )
-                );
-
-        if (profile) {
-            profile._calibration =
-                calibrated;
-        }
-
-        return calibrated;
+    function calibrationDiagnostics() {
+        const key = calibrationContextKey();
+        const cases = key ? state.calibrationEvidence.get(key) : null;
+        const values = cases ? [...cases.values()].filter(row =>
+            Date.now() - row.at < 90 * 60000) : [];
+        return {
+            hunts: values.length,
+            medianErrorPct: values.length
+                ? Math.round(median(values.map(row => Math.abs(row.errorPct))))
+                : null,
+            source: 'personalized-model-validation',
+            // Transferring between hunts is an experimental heuristic.
+            confidence: values.length >= 3 ? 'medium' : 'low'
+        };
     }
 
     function huntXpEstimate(
@@ -6955,7 +6943,8 @@
          * Measurements evolve during a hunt and must take precedence.
          */
         if (observed && observed.trainerXpH !== null) {
-            return {
+            const residual = recordForecastResidual(hunt, record, observed);
+            const result = {
                 value:
                     observed.trainerXpH,
                 pokemonValue: observed.pokemonXpH,
@@ -6975,8 +6964,14 @@
                 samples: observed.samples,
                 windowMs: observed.windowMs,
                 denominator: observed.denominator,
-                bonusSource: 'observed-server/event'
+                bonusSource: 'observed-server/event',
+                residualErrorPct: residual?.errorPct ?? null,
+                fallbackReason: null,
+                range: xpPredictionBand({value: observed.trainerXpH,
+                    observed: true, samples: observed.samples,
+                    windowMs: observed.windowMs})
             };
+            return result;
         }
 
         if (
@@ -7027,6 +7022,7 @@
             value: 0, pokemonValue: 0, goldValue: null,
             killsH: 0, killMs: Infinity, observed: false,
             source: 'immune combat model', confidence: 'low',
+            fallbackReason: 'known-immunity',
             samples: Number(profile?.moveSamples) || 0,
             ...coverageFields
         };
@@ -7076,6 +7072,15 @@
             2000 +
             UPSTREAM_WAVE_MS / mobsPerWave;
 
+        if (record && hasPersonalizedModel && !record.predictedBeforeMeasurement &&
+            profile.moveSamples >= 6 && !(record.rateWindow?.rows?.reduce(
+                (count, row) => count + row.kills, 0) >= 6)) {
+            record.predictedBeforeMeasurement = {
+                hunt: hunt.slug, scope: farmingSnapshotScope(),
+                killMs: rawKillMs, source: 'personalized-model'
+            };
+        }
+
         const killMs =
             hasPersonalizedModel
                 ? rawKillMs *
@@ -7098,7 +7103,7 @@
         const trainerXpPerKill = baseXp;
         const pokemonXpPerKill = baseXp;
 
-        return remember({
+        const forecast = {
             value:
                 trainerXpPerKill *
                 killsH,
@@ -7123,8 +7128,15 @@
             confidence: hasPersonalizedModel ? moveConfidence : 'low',
             samples:
                 Number(profile?.moveSamples) || 0,
+            fallbackReason: !profile ? 'no-lead-combat-samples'
+                : !coverage.complete ? 'incomplete-spawn-coverage'
+                : !hasPersonalizedModel ? 'insufficient-personalized-model'
+                : 'observed-attacks-with-unknown-live-scheduler',
+            calibration: calibrationDiagnostics(),
             ...coverageFields
-        });
+        };
+        forecast.range = xpPredictionBand(forecast);
+        return remember(forecast);
     }
 
     function rankedUnlockedHunts(
@@ -7175,7 +7187,7 @@
                     if (
                         av !== bv
                     ) {
-                        return bv - av;
+                        return xpCompareForecasts(a.xp, b.xp);
                     }
 
                     const levelDifference =
