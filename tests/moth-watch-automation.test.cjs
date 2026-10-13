@@ -988,7 +988,8 @@ test('Milestone D: diagnostics source is synchronized with standalone userscript
     const source=fs.readFileSync(path.join(__dirname,'..','src','mothwatch',
         'diagnostics-section.js'),'utf8').trimEnd();
     const embedded=section('    // BEGIN MOTHWATCH DIAGNOSTICS GENERATED\n',
-        '    // END MOTHWATCH DIAGNOSTICS GENERATED').trimEnd();
+        '    // END MOTHWATCH DIAGNOSTICS GENERATED')
+        .replace(/^    \/\/ BEGIN MOTHWATCH DIAGNOSTICS GENERATED\n/, '').trimEnd();
     assert.equal(embedded,source,'module must exactly match generated userscript section');
     const tool=fs.readFileSync(path.join(__dirname,'..','tools','build-mothwatch.cjs'),'utf8');
     assert.match(tool,/--check/);
