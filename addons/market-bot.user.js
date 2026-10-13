@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.6.1
+// @version      0.7.0
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -14,7 +14,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.1');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.7.0');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -3840,7 +3840,7 @@
         return {
             format: 'mothwatch-redacted-v1',
             generatedAt: new Date().toISOString(),
-            addonVersion: '0.6.0',
+            addonVersion: '0.7.0',
             enabled: !!stats.enabled,
             sessionSeconds: Math.max(0, Math.floor((Date.now() - stats.since) / 1000)),
             inboundPackets: stats.count,
