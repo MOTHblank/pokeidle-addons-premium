@@ -29,7 +29,7 @@
             Number.isFinite(age) && age >= 0 && age <= SNATCH_MAX_QUOTE_AGE_MS &&
             Number.isFinite(retained) && retained > 0 && retained <= serverNow() &&
             !!state.nick && !!candidate.seller && candidate.seller !== '—' &&
-            !isOwnListing({vendedor:candidate.seller}) && !unresolvedListing(id) &&
+            !isOwnListing({vendedor:candidate.seller}) &&
             (candidate.kind !== 'pokemon' || candidate.qty === 1 &&
                 typeof candidate.ficha?.shiny === 'boolean' &&
                 Number.isSafeInteger(Number(candidate.ficha?.potencia)) &&
@@ -121,7 +121,7 @@
             key:'snatch:' + key, kind, currency, listingId:id, itemId,
             ficha:kind === 'pokemon' ? offer.ficha : null, price, unitPrice:price,
             qty, seller:String(offer.vendedor || ''), seenAt:Date.now(),
-            retainedUntil:held ? until : 0, name:kind === 'item' ? catalogName(itemId) :
+            retainedUntil:held ? until : old?.releaseAt || 0, name:kind === 'item' ? catalogName(itemId) :
                 pokemonListingName(offer.ficha), average:0, ratio:1
         };
         state.snatchObserved.set(key, {
@@ -234,11 +234,8 @@
             !state.gameSocket || state.gameSocket.readyState !== 1 || gameIsLoading()) {
             snatchSchedule(10000); return;
         }
-        if (state.pendingBuy) {
-            // An unrelated purchase may settle around this target's unlock.
-            // Wake promptly when its outcome becomes known; never sleep 10s.
-            snatchSchedule(250); return;
-        }
+        // Previously sent orders do not block a released target.
+        // Distinct listings and bounded repeated Snatch attempts may overlap.
         const server = serverNow();
         const entries = [...state.snatchObserved.entries()].sort((a,b)=>
             Number(a[1].releaseAt || 0) - Number(b[1].releaseAt || 0));
@@ -290,7 +287,7 @@
                 break;
             }
             // An unsent attempt was not accepted as an order. Avoid spinning.
-            entry.retryAt = now + 1000;
+            entry.retryAt = now + 250;
         }
         snatchSchedule();
     }
@@ -302,8 +299,7 @@
                     entry.candidate.currency,entry.candidate.listingId)) ||
                 activeRuleById(entry.ruleId)) &&
                 entry.releaseAt > 0 && entry.releaseAt-now < 1200 &&
-                entry.releaseAt-now > -1500 &&
-                (!state.pendingBuy || state.pendingBuy.listingId === entry.candidate.listingId)) return true;
+                entry.releaseAt-now > -1500) return true;
         }
         return false;
     }
@@ -330,9 +326,11 @@
     function snatchOutcome(listingId,status) {
         for (const [key,entry] of [...state.snatchObserved]) {
             if (entry.candidate.listingId !== listingId) continue;
-            if (status === 'confirmed' || status === 'unknown') {
+            if (status === 'confirmed') {
                 snatchStop(key,status); continue;
             }
+            // Unknown means the acknowledgement did not arrive, not that a
+            // competitor won. Keep retrying while the release quote is valid.
             entry.retryAt = Date.now() + snatchRetryDelay(entry.attempts);
             state.attemptedListings.set(listingId,entry.retryAt);
             // Retry on the next release timer, not on a bulk market scan.

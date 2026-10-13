@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.6.8
+// @version      0.6.9
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -14,7 +14,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.8');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.9');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -39,6 +39,9 @@
     const POKEMON_SALE_WINDOW_MS = 90 * 86400000;
     const POKEMON_HISTORY_FRESH_MS = 30 * 86400000;
     const BACKGROUND_MIN_GAP_MS = 2000;
+    const MAX_PENDING_BUYS = 5;
+    const MAX_SNATCH_PENDING_PER_LISTING = 3;
+    const BUY_DISPATCH_GAP_MS = 120;
     const BACKGROUND_SCAN_WITH_RULES_MS = 15000;
     const RULE_DETAIL_REFRESH_MS = 30000;
     const RATE_LIMIT_BACKOFF_MS = 15000;
@@ -143,6 +146,8 @@
         itemOfferDetails: new Map(),
         sellRecommendationKey: null,
         pendingBuy: null,
+        pendingBuys: new Map(),
+        lastPurchaseSendAt: 0,
         lastPurchaseOutcome: 'idle',
         marketReply: null,
         orderJournal: null,
@@ -1003,12 +1008,18 @@
     }
 
     function resolveOrder(listingId, status, receipt = null) {
-        if (state.pendingBuy?.listingId === listingId) {
+        // Several different listings, and bounded Snatch attempts for one
+        // listing, can be waiting simultaneously. Resolve one server receipt
+        // against one submitted attempt, never an unrelated order.
+        const pending = state.pendingBuys?.get(listingId)?.[0] ||
+            (state.pendingBuy?.listingId === listingId ? state.pendingBuy : null);
+        if (pending) {
             if (status === 'confirmed' && receipt) {
-                const fill = verifiedOrderFill(receipt, state.pendingBuy.order);
-                if (fill) Object.assign(state.pendingBuy.order, fill);
+                const fill = verifiedOrderFill(receipt, pending.order);
+                if (fill) Object.assign(pending.order, fill);
             }
-            finishPendingBuy(status === 'confirmed' ? 'server-confirmed' : 'refused');
+            finishPendingBuy(status === 'confirmed' ? 'server-confirmed' : 'refused',
+                listingId, pending);
             return true;
         }
         const order = [...(state.orderJournal?.orders || [])].reverse().find(o =>
@@ -2857,10 +2868,20 @@
         const rule = !manual && fixedRule ? activeRuleById(fixedRule.id) : null;
         const quotedPrice = Number(candidate.unitPrice || candidate.price);
         if (!manual && !currentRuleMatches(rule, candidate, quotedPrice)) return false;
-        if (!candidate || state.pendingBuy || !state.orderJournal?.sessionId ||
+        if (!candidate || !state.orderJournal?.sessionId ||
             !state.gameSocket || state.gameSocket.readyState !== 1 ||
             state.orderJournal?.accountKey !== orderAccountKey() ||
             state.orderJournal.orders.length >= 2500) return false;
+        const pendingCount = [...(state.pendingBuys?.values() || [])]
+            .reduce((n, entries) => n + entries.length, 0) ||
+            (state.pendingBuys?.size ? 0 : Number(!!state.pendingBuy));
+        const listingPending = state.pendingBuys?.get(candidate.listingId)?.length ||
+            Number(state.pendingBuy?.listingId === candidate.listingId);
+        if (pendingCount >= MAX_PENDING_BUYS ||
+            (listingPending && (!snatchRelease ||
+                listingPending >= MAX_SNATCH_PENDING_PER_LISTING))) return false;
+        if (Date.now() < Number(state.rateLimitedUntil || 0) ||
+            Date.now() < Number(state.lastPurchaseSendAt || 0) + BUY_DISPATCH_GAP_MS) return false;
         if (candidate.kind === 'pokemon' &&
             !pokemonCurrencyAllowed(candidate.ficha, candidate.currency)) {
             if (manual) addLog('Skipped: shiny Pokémon require Gems');
@@ -2897,7 +2918,7 @@
         };
         if (!reserveOrder(order)) return false;
         diagnosticOutcome('prepared');
-        state.pendingBuy = {
+        const pending = {
             order,
             listingId: candidate.listingId,
             candidateKey: candidate.key,
@@ -2911,7 +2932,13 @@
             sentAt: now,
             manual: !!manual
         };
-        state.attemptedListings.set(candidate.listingId, now + 15000);
+        if (!state.pendingBuys) state.pendingBuys = new Map();
+        const sameListing = state.pendingBuys.get(candidate.listingId) || [];
+        sameListing.push(pending);
+        state.pendingBuys.set(candidate.listingId, sameListing);
+        state.pendingBuy = state.pendingBuy || pending;
+        state.attemptedListings.set(candidate.listingId,
+            now + (snatchRelease ? SNATCH_RETRY_MS : 15000));
 
         const sent = send({
             t: 'market.comprar',
@@ -2922,7 +2949,10 @@
         });
 
         if (!sent) {
-            state.pendingBuy = null;
+            const queue = state.pendingBuys.get(candidate.listingId) || [];
+            queue.splice(queue.indexOf(pending), 1);
+            if (!queue.length) state.pendingBuys.delete(candidate.listingId);
+            state.pendingBuy = [...state.pendingBuys.values()][0]?.[0] || null;
             state.orderJournal.orders.splice(state.orderJournal.orders.indexOf(order), 1);
             saveOrderJournal();
             state.attemptedListings.delete(candidate.listingId);
@@ -2930,6 +2960,7 @@
         }
 
         order.status = 'submitted';
+        state.lastPurchaseSendAt = Date.now();
         diagnosticOutcome('submitted');
         saveOrderJournal();
         state.lastPurchaseOutcome = 'awaiting acknowledgement';
@@ -2942,11 +2973,12 @@
         queueRender();
 
         setTimeout(() => {
-            if (state.pendingBuy && state.pendingBuy.listingId === candidate.listingId) {
-                finishPendingBuy('settle-timeout');
+            if (state.pendingBuys?.get(candidate.listingId)?.includes(pending)) {
+                finishPendingBuy('settle-timeout', candidate.listingId, pending);
             }
-        }, 5000);
-
+        }, snatchRelease ? 1600 : 5000);
+        // Fill free slots without waiting for the one-second scanner.
+        if (!snatchRelease) setTimeout(() => runMarketAutomation(true), BUY_DISPATCH_GAP_MS);
         return true;
     }
 
@@ -3099,10 +3131,16 @@
     }
 
     // BEGIN MOTHWATCH AUTO_SCANNER GENERATED
-    function finishPendingBuy(reason) {
-        const pending = state.pendingBuy;
-        if (!pending) return;
-        state.pendingBuy = null;
+    function finishPendingBuy(reason, listingId = state.pendingBuy?.listingId, expected = null) {
+        const queue = state.pendingBuys?.get(Number(listingId));
+        const pending = expected || queue?.[0] ||
+            (state.pendingBuy?.listingId === Number(listingId) ? state.pendingBuy : null);
+        if (!pending || expected && queue && !queue.includes(expected)) return;
+        if (queue) {
+            queue.splice(queue.indexOf(pending), 1);
+            if (!queue.length) state.pendingBuys.delete(Number(listingId));
+            state.pendingBuy = [...state.pendingBuys.values()][0]?.[0] || null;
+        } else state.pendingBuy = null;
         const status = reason === 'server-confirmed' ? 'confirmed' :
             reason === 'refused' ? 'refused' : 'unknown';
         settleOrder(pending.order, status);
@@ -3125,13 +3163,14 @@
             }
         }
         queueRender();
-        if (status !== 'unknown' && hasAnyBuyingRules() && !config.purchasesPaused) {
+        if (reason !== 'disconnect' && reason !== 'account-refresh' &&
+            hasAnyBuyingRules() && !config.purchasesPaused) {
             // Do not wait for the next one-second scanner tick after a server
             // acknowledgement. Give any just-unlocked Snatch the first chance,
             // then immediately buy the next distinct eligible listing.
             setTimeout(() => {
                 if (state.snatchObserved?.size) snatchTick();
-                if (!state.pendingBuy) runMarketAutomation(true);
+                runMarketAutomation(true);
             }, 0);
         }
     }
@@ -3365,7 +3404,7 @@
         // mere DOM presence must not disable all background automation.
         // Browsing the native market must not pause authorized purchases.
         // Only background requests that could repaint it are restricted.
-        if (state.pendingBuy || config.purchasesPaused) return;
+        if (config.purchasesPaused) return;
         const now = Date.now();
         if (!justSettled && now - Number(state.automationLastRunAt || 0) < 250) return;
         state.automationLastRunAt = now;
@@ -3391,7 +3430,8 @@
         }
         // Ordinary buying is not paused by Snatch's short background-traffic
         // quiet window. A due Snatch gets priority after each acknowledged buy.
-        // Serialized purchases share balances, reserves, caps and cooldowns.
+        // The bounded in-flight queue shares balances, reserves, caps and
+        // listing-specific cooldowns. Do not block on unrelated acknowledgements.
         for (const rule of fixed) {
             const candidate = fixedRuleCandidate(rule);
             if (candidate && purchaseQuantity(candidate, rule.id) > 0 &&
@@ -3491,7 +3531,7 @@
             Number.isFinite(age) && age >= 0 && age <= SNATCH_MAX_QUOTE_AGE_MS &&
             Number.isFinite(retained) && retained > 0 && retained <= serverNow() &&
             !!state.nick && !!candidate.seller && candidate.seller !== '—' &&
-            !isOwnListing({vendedor:candidate.seller}) && !unresolvedListing(id) &&
+            !isOwnListing({vendedor:candidate.seller}) &&
             (candidate.kind !== 'pokemon' || candidate.qty === 1 &&
                 typeof candidate.ficha?.shiny === 'boolean' &&
                 Number.isSafeInteger(Number(candidate.ficha?.potencia)) &&
@@ -3583,7 +3623,7 @@
             key:'snatch:' + key, kind, currency, listingId:id, itemId,
             ficha:kind === 'pokemon' ? offer.ficha : null, price, unitPrice:price,
             qty, seller:String(offer.vendedor || ''), seenAt:Date.now(),
-            retainedUntil:held ? until : 0, name:kind === 'item' ? catalogName(itemId) :
+            retainedUntil:held ? until : old?.releaseAt || 0, name:kind === 'item' ? catalogName(itemId) :
                 pokemonListingName(offer.ficha), average:0, ratio:1
         };
         state.snatchObserved.set(key, {
@@ -3696,11 +3736,8 @@
             !state.gameSocket || state.gameSocket.readyState !== 1 || gameIsLoading()) {
             snatchSchedule(10000); return;
         }
-        if (state.pendingBuy) {
-            // An unrelated purchase may settle around this target's unlock.
-            // Wake promptly when its outcome becomes known; never sleep 10s.
-            snatchSchedule(250); return;
-        }
+        // Previously sent orders do not block a released target.
+        // Distinct listings and bounded repeated Snatch attempts may overlap.
         const server = serverNow();
         const entries = [...state.snatchObserved.entries()].sort((a,b)=>
             Number(a[1].releaseAt || 0) - Number(b[1].releaseAt || 0));
@@ -3752,7 +3789,7 @@
                 break;
             }
             // An unsent attempt was not accepted as an order. Avoid spinning.
-            entry.retryAt = now + 1000;
+            entry.retryAt = now + 250;
         }
         snatchSchedule();
     }
@@ -3764,8 +3801,7 @@
                     entry.candidate.currency,entry.candidate.listingId)) ||
                 activeRuleById(entry.ruleId)) &&
                 entry.releaseAt > 0 && entry.releaseAt-now < 1200 &&
-                entry.releaseAt-now > -1500 &&
-                (!state.pendingBuy || state.pendingBuy.listingId === entry.candidate.listingId)) return true;
+                entry.releaseAt-now > -1500) return true;
         }
         return false;
     }
@@ -3792,9 +3828,11 @@
     function snatchOutcome(listingId,status) {
         for (const [key,entry] of [...state.snatchObserved]) {
             if (entry.candidate.listingId !== listingId) continue;
-            if (status === 'confirmed' || status === 'unknown') {
+            if (status === 'confirmed') {
                 snatchStop(key,status); continue;
             }
+            // Unknown means the acknowledgement did not arrive, not that a
+            // competitor won. Keep retrying while the release quote is valid.
             entry.retryAt = Date.now() + snatchRetryDelay(entry.attempts);
             state.attemptedListings.set(listingId,entry.retryAt);
             // Retry on the next release timer, not on a bulk market scan.
@@ -4090,6 +4128,11 @@
 
         if (message.t === 'welcome') {
             // Never let two authenticated accounts share a spending journal.
+            for (const queue of [...(state.pendingBuys?.values() || [])]) {
+                for (const pending of [...queue]) {
+                    finishPendingBuy('account-refresh', pending.listingId, pending);
+                }
+            }
             if (state.pendingBuy) finishPendingBuy('account-refresh');
             const previousAccount = state.orderJournal?.accountKey;
             state.nick = String(message.estado?.nick || '');
@@ -4235,6 +4278,11 @@
             if (!state.socket) {
                 state.itemStatus = 'disconnected';
                 state.pokemonStatus = 'disconnected';
+                for (const queue of [...(state.pendingBuys?.values() || [])]) {
+                    for (const pending of [...queue]) {
+                        finishPendingBuy('disconnect', pending.listingId, pending);
+                    }
+                }
                 if (state.pendingBuy) finishPendingBuy('disconnect');
                 state.marketReply = null;
                 state.pokemonScan = null;
@@ -6920,8 +6968,11 @@
                 pumpItemDetails();
             }
             runScan(false);
-            if (state.pendingBuy && Date.now() - state.pendingBuy.sentAt > 5000) {
-                finishPendingBuy('watchdog');
+            for (const queue of [...(state.pendingBuys?.values() || [])]) {
+                for (const pending of [...queue]) {
+                    if (Date.now() - pending.sentAt > 5500)
+                        finishPendingBuy('watchdog', pending.listingId, pending);
+                }
             }
             }, 1000);
 

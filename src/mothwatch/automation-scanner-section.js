@@ -1,7 +1,13 @@
-    function finishPendingBuy(reason) {
-        const pending = state.pendingBuy;
-        if (!pending) return;
-        state.pendingBuy = null;
+    function finishPendingBuy(reason, listingId = state.pendingBuy?.listingId, expected = null) {
+        const queue = state.pendingBuys?.get(Number(listingId));
+        const pending = expected || queue?.[0] ||
+            (state.pendingBuy?.listingId === Number(listingId) ? state.pendingBuy : null);
+        if (!pending || expected && queue && !queue.includes(expected)) return;
+        if (queue) {
+            queue.splice(queue.indexOf(pending), 1);
+            if (!queue.length) state.pendingBuys.delete(Number(listingId));
+            state.pendingBuy = [...state.pendingBuys.values()][0]?.[0] || null;
+        } else state.pendingBuy = null;
         const status = reason === 'server-confirmed' ? 'confirmed' :
             reason === 'refused' ? 'refused' : 'unknown';
         settleOrder(pending.order, status);
@@ -24,13 +30,14 @@
             }
         }
         queueRender();
-        if (status !== 'unknown' && hasAnyBuyingRules() && !config.purchasesPaused) {
+        if (reason !== 'disconnect' && reason !== 'account-refresh' &&
+            hasAnyBuyingRules() && !config.purchasesPaused) {
             // Do not wait for the next one-second scanner tick after a server
             // acknowledgement. Give any just-unlocked Snatch the first chance,
             // then immediately buy the next distinct eligible listing.
             setTimeout(() => {
                 if (state.snatchObserved?.size) snatchTick();
-                if (!state.pendingBuy) runMarketAutomation(true);
+                runMarketAutomation(true);
             }, 0);
         }
     }
@@ -264,7 +271,7 @@
         // mere DOM presence must not disable all background automation.
         // Browsing the native market must not pause authorized purchases.
         // Only background requests that could repaint it are restricted.
-        if (state.pendingBuy || config.purchasesPaused) return;
+        if (config.purchasesPaused) return;
         const now = Date.now();
         if (!justSettled && now - Number(state.automationLastRunAt || 0) < 250) return;
         state.automationLastRunAt = now;
@@ -290,7 +297,8 @@
         }
         // Ordinary buying is not paused by Snatch's short background-traffic
         // quiet window. A due Snatch gets priority after each acknowledged buy.
-        // Serialized purchases share balances, reserves, caps and cooldowns.
+        // The bounded in-flight queue shares balances, reserves, caps and
+        // listing-specific cooldowns. Do not block on unrelated acknowledgements.
         for (const rule of fixed) {
             const candidate = fixedRuleCandidate(rule);
             if (candidate && purchaseQuantity(candidate, rule.id) > 0 &&

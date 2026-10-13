@@ -185,12 +185,18 @@
     }
 
     function resolveOrder(listingId, status, receipt = null) {
-        if (state.pendingBuy?.listingId === listingId) {
+        // Several different listings, and bounded Snatch attempts for one
+        // listing, can be waiting simultaneously. Resolve one server receipt
+        // against one submitted attempt, never an unrelated order.
+        const pending = state.pendingBuys?.get(listingId)?.[0] ||
+            (state.pendingBuy?.listingId === listingId ? state.pendingBuy : null);
+        if (pending) {
             if (status === 'confirmed' && receipt) {
-                const fill = verifiedOrderFill(receipt, state.pendingBuy.order);
-                if (fill) Object.assign(state.pendingBuy.order, fill);
+                const fill = verifiedOrderFill(receipt, pending.order);
+                if (fill) Object.assign(pending.order, fill);
             }
-            finishPendingBuy(status === 'confirmed' ? 'server-confirmed' : 'refused');
+            finishPendingBuy(status === 'confirmed' ? 'server-confirmed' : 'refused',
+                listingId, pending);
             return true;
         }
         const order = [...(state.orderJournal?.orders || [])].reverse().find(o =>

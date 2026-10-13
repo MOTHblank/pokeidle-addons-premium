@@ -944,7 +944,7 @@ test('Milestone C: optional session telemetry avoids duplicate NPC sales', () =>
 test('Milestone C: independent economy UI cannot start selling automation', () => {
     assert.match(script,/data-moth-view="economy"/);
     assert.match(script,/Read-only fees, market eligibility, and recorded purchase exposure/);
-    assert.match(script,/@version\s+0\.6\.8/);
+    assert.match(script,/@version\s+0\.6\.9/);
     assert.doesNotMatch(script,/market\.criar|autoSellRules|sendItemSale/);
 });
 
@@ -1024,7 +1024,7 @@ test('Milestone D: diagnostics source is synchronized with standalone userscript
     assert.equal(embedded,source,'module must exactly match generated userscript section');
     const tool=fs.readFileSync(path.join(__dirname,'..','tools','build-mothwatch.cjs'),'utf8');
     assert.match(tool,/--check/);
-    assert.match(script,/@version\s+0\.6\.8/);
+    assert.match(script,/@version\s+0\.6\.9/);
     assert.doesNotMatch(script,/^\s*\/\/\s*@(?:downloadURL|updateURL)/m,
         'private repo must not advertise inaccessible raw auto-update endpoints');
 });
@@ -1155,7 +1155,7 @@ test('MothWatch v0.6.1: source sections match the single distributable userscrip
         const moduleSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'mothwatch', name), 'utf8').trimEnd();
         assert.equal(script.slice(a + begin.length, b), moduleSource, 'generated parity: ' + id);
     }
-    assert.match(script, /@version\s+0\.6\.8/);
+    assert.match(script, /@version\s+0\.6\.9/);
     assert.doesNotMatch(script, /\bimport\s*\(|\brequire\s*\(/,
         'one Violentmonkey userscript must not require runtime module loading');
 });
@@ -1268,7 +1268,7 @@ test('MothWatch v0.6.1: cached Buy controls invalidate only for focused item quo
 
 
 function heldSnatchHarness() {
-    const now = Date.now();
+    let now = Date.now();
     let server=now-2000, purchaseCalls=[], refreshCalls=0, timers=[], pending=false,
         unknown=false, sentAt=0;
     const DateClock=class extends Date { static now() {return now;} };
@@ -1315,7 +1315,7 @@ function heldSnatchHarness() {
         retryAt:0,attempts:0,refreshedAt:now,observedAt:now});
     return {state,config,key,candidate,api,purchaseCalls,timers,
         setServer:t=>{server=t;},setUnknown:v=>{unknown=v;},
-        getSentAt:()=>sentAt};
+        advance:ms=>{now+=ms;server+=ms;},getSentAt:()=>sentAt};
 }
 
 test('Snatch: verified two-minute hold is prearmed; first buy needs no market scan', () => {
@@ -1550,16 +1550,13 @@ test('Snatch: repeated server refusals generate multiple post-release orders', (
 
 // A released Snatch must not go to sleep for 10 seconds behind an unrelated
 // pending purchase, and a server result must immediately resume the pipeline.
-test('Snatch: pending unrelated purchase is revisited within 250ms', () => {
+test('Snatch: unrelated pending purchases never block a due release', () => {
     const h=heldSnatchHarness();
     h.setServer(h.candidate.retainedUntil);
     h.state.pendingBuy={listingId:999,sentAt:Date.now()};
     h.api.snatchTick();
-    assert.equal(h.purchaseCalls.length,0);
-    assert.equal(h.timers.at(-1).ms,250);
-    h.state.pendingBuy=null;
-    h.api.snatchTick();
-    assert.equal(h.purchaseCalls.length,1);
+    assert.equal(h.purchaseCalls.length,1,
+        'released Snatch dispatches without waiting for another order');
 });
 
 test('Throughput: settlement schedules another authorized buy without a 1s stall', () => {
@@ -1585,4 +1582,65 @@ test('Throughput: settlement schedules another authorized buy without a 1s stall
     assert.ok(scheduled.some(x=>x.ms===0),'next buy is scheduled immediately');
     scheduled.find(x=>x.ms===0).callback();
     assert.equal(purchased,1);
+});
+
+test('Snatch: retries repeatedly after release before any acknowledgement', () => {
+    const h=heldSnatchHarness();
+    h.setServer(h.candidate.retainedUntil);
+    h.api.snatchTick();
+    for (let count=2;count<=3;count++) {
+        h.advance(400);
+        h.api.snatchTick();
+        assert.equal(h.purchaseCalls.length,count,
+            'Snatch must reissue orders even while prior attempts await a response');
+    }
+    h.api.snatchOutcome(789,'unknown');
+    assert.equal(h.state.snatchObserved.has(h.key),true,
+        'missing acknowledgement is not evidence that the listing sold');
+    h.api.snatchOutcome(789,'confirmed');
+    assert.equal(h.state.snatchObserved.has(h.key),false,
+        'a server-confirmed purchase immediately disarms the Snatch');
+});
+
+test('Snatch: multiple pending orders respect bounded same-listing burst', () => {
+    const src=section('    function tryBuy(', '    function controllerResult(');
+    let now=Date.now(),sent=[],tasks=[];
+    const Clock=class extends Date {static now(){return now;}};
+    const state={
+        nick:'buyer',gameSocket:{readyState:1},
+        orderJournal:{accountKey:'acct',sessionId:'sess',orders:[]},
+        pendingBuy:null,pendingBuys:new Map(),lastPurchaseSendAt:0,
+        attemptedListings:new Map(),rateLimitedUntil:0
+    };
+    const fn=new Function('state','config','Date','freshQuote','snatchReleaseQuote',
+        'activeRuleById','currentRuleMatches','orderAccountKey','pokemonCurrencyAllowed',
+        'serverNow','purchaseQuantity','orderDay','balanceFor','reserveOrder',
+        'diagnosticOutcome','send','saveOrderJournal','addLog','num','queueRender',
+        'setTimeout','runMarketAutomation','MAX_PENDING_BUYS',
+        'MAX_SNATCH_PENDING_PER_LISTING','BUY_DISPATCH_GAP_MS','SNATCH_RETRY_MS',
+        src+'\nreturn tryBuy;')(
+        state,{purchasesPaused:false},Clock,()=>true,()=>true,
+        ()=>null,()=>true,()=> 'acct',()=>true,()=>now,()=>1,
+        ()=> '2026-10-13',()=>1000,
+        order=>{state.orderJournal.orders.push(order);return true;},
+        ()=>{},order=>{sent.push(order);return true;},()=>true,()=>{},String,()=>{},
+        (callback,ms)=>{tasks.push({callback,ms});},()=>{},5,3,120,400);
+    const c={kind:'item',listingId:789,key:'snatch:item:gold:789',
+        itemId:106,name:'Item',currency:'gold',price:10,qty:1,
+        seller:'other',seenAt:now,retainedUntil:0};
+    assert.equal(fn(c,true,1,false,true),true);
+    for(let i=0;i<2;i++){
+        now+=400;
+        assert.equal(fn(c,true,1,false,true),true);
+    }
+    now+=400;
+    assert.equal(fn(c,true,1,false,true),false,
+        'unacknowledged same-listing burst stops at three submissions');
+    assert.equal(state.pendingBuys.get(789).length,3);
+    assert.equal(state.orderJournal.orders.length,3,
+        'every network attempt is recorded as a separate reserved order');
+    assert.equal(fn({...c,listingId:790},true,1,false,true),true,
+        'a different eligible listing may buy while Snatch requests are outstanding');
+    assert.equal(sent.length,4);
+    assert.equal(state.pendingBuys.get(790).length,1);
 });
