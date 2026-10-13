@@ -582,6 +582,7 @@
             'xp.native.shop': 'Shop boosts present (exact effect not yet verified)',
             'xp.native.catchup': 'Catch-up boost reported (threshold affects exact XP)',
             'xp.native.unknownTwitch': 'Twitch percentage reported; credited channels not confirmed',
+            'xp.native.twitchAvailable': 'Twitch XP bonus is available but no credited chat is detected',
             'xp.native.model': 'Model uses the detected percentages: trainer ×{trainer} · Pokémon ×{pokemon}. Other boosts may still be missing.',
             'xp.native.measured': 'Measured XP/h already includes active bonuses; nothing is multiplied again.',
             'xp.native.note': 'Read directly from game state, like Moth Controller; no connection to Controller is required. Only XP bonuses shown here; capture/shiny/loot boosts need separate verified fields.',
@@ -932,6 +933,7 @@
             'xp.native.shop': 'Boosts da Loja presentes (efeito exato não verificado)',
             'xp.native.catchup': 'Boost de recuperação informado (o nível-alvo afeta o XP real)',
             'xp.native.unknownTwitch': 'Percentual Twitch informado; canais creditados não confirmados',
+            'xp.native.twitchAvailable': 'Bônus de XP da Twitch disponível, mas nenhum chat creditado foi detectado',
             'xp.native.model': 'Modelo usa os percentuais detectados: treinador ×{trainer} · Pokémon ×{pokemon}. Outros bônus ainda podem faltar.',
             'xp.native.measured': 'XP/h medido já inclui os bônus ativos; nenhum multiplicador é aplicado novamente.',
             'xp.native.note': 'Leitura direta do estado do jogo, como no Moth Controller; não exige conexão com o Controller. Aqui aparecem apenas bônus de XP; captura/shiny/loot precisam de campos próprios verificados.',
@@ -4051,6 +4053,8 @@
                 sources.push({kind:'twitch',pct:p});
             } else if(values.twitch.watching===null) {
                 unknown.push('twitch');
+            } else {
+                unknown.push('twitchAvailable');
             }
         }
         if(pct(values.evento?.trainer)||pct(values.evento?.pokemon)) {
@@ -12322,6 +12326,7 @@
         for(const kind of nativeBonus.unknown) {
             const key=kind==='shop'?'xp.native.shop':
                 kind==='catchup'?'xp.native.catchup':
+                kind==='twitchAvailable'?'xp.native.twitchAvailable':
                 'xp.native.unknownTwitch';
             bonusDescriptions.push(tr(key));
         }
