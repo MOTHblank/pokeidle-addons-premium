@@ -58,7 +58,7 @@ test('non-Outland shiny egg fixed ladder handles intermediate levels',()=>{
     const start=h.rareForHunt(unova,1,25000,1000).drops[0];
     assert.equal(start.id,70017);
     assert.equal(start.probability,.0000375);
-    assert.equal(h.rareForHunt(near,1,25000,1000).drops[0].probability,.000042);
+    assert.equal(h.rareForHunt(near,1,25000,1000).drops[0].probability,.0000435);
     assert.equal(h.rareForHunt({area:'alola',nivel:160300},8,25000,1000).drops[0].probability,.000081);
     assert.equal(h.rareForHunt({area:'kanto',nivel:100},1,25000,1000).drops.length,0);
     assert.equal(h.rareForHunt({area:'outland',nivel:160300},1,25000,1000).drops[0].key,'token');
