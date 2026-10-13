@@ -1,20 +1,30 @@
 # PokéIdle Pokémon grading, combat value, and Moth Watch pricing
 
-**Status:** upstream research and partial implementation reference (premium Moth Watch v0.2.1)  
+**Status:** upstream research, premium Moth Watch v0.3.0 pricing and rule-engine reference  
 **Reviewed:** 2026-10-12  
 **Sources:** the complete PokéIdle wiki supplied by the project owner (especially *Stats, Qualidade e IV*, *Nota, Poder e Calculadora*, *Potência*, *Shiny*, *Combate*, *Evolução*, *Mercado da Comunidade*, and *Todas as taxas*); [pokeidle-upstream](https://github.com/MOTHblank/pokeidle-upstream) `master`; and this repository's [Moth Watch](../addons/market-bot.user.js).  
 **Source authority:** wiki = stated live game rules; upstream mirror = inspected client/shared implementation; Moth Watch = existing behavior. Where a server-only calculation, message shape, live transaction sample, or buyer preference is missing, this document says so rather than guessing.
 
-## Premium Moth Watch v0.2.1: implemented valuation safeguards
+## Premium Moth Watch v0.3.0: explicit-price Pokémon purchasing
 
-**Released in the premium repository source; live-game market payloads remain unverified.** The main research below predates the migration. In v0.2.1:
+This section supersedes **only the old no-auto-buy claims below**, not the historical valuation research. The purchase engine adds **opt-in** `pokemonBuyRules` with categories `any`, `shiny`, and `p5`; a rule declares `currency`, positive integer `buyMax`, and an individual `buyEnabled` switch. The master `fixedRulesEnabled` remains off for new profiles, and each new rule requires an explicit UI action. The same engine adds `anyItemRules` for item-wide price ceilings. Every mode uses reserves and per-order caps.
+
+Pokémon buying is authorized **by explicit maximum listing price**, not a completed-sale median or species-based estimate. Consequently, it can act even when `ficha.nota`, quality, IVs, or sufficient historical comparable sales are absent. It does not claim that those purchases are undervalued. A Shiny requires Gems; P5 is detected via the listing's potency; a general rule can match both ordinary and special Pokémon where their currency is permitted.
+
+**Execution safeguards:** the rule engine checks fresh listing data, exact currency and observed unit price, single-specimen quantity, own listings, retention timestamps, recent attempts, current balance, reserve, and per-purchase cap. It sends one `market.comprar` with the observed listing ID and price, waits for the existing authoritative server acknowledgement, and temporarily avoids unconfirmed retries. Manual and automated orders share the same pending-order gate. Automated selling remains absent.
+
+**Coverage and rate limits:** with Pokémon purchase rules enabled, the scanner requests up to three cheapest-price pages for Coins and Gems; responses can be incomplete or arrive out of order and server-side pagination/filter semantics remain unverified. The ordinary monitoring scanner keeps a single recent-listings page. Bounded, sequential background requests and backoff remain in place. There is no guarantee that all Pokémon listings are checked, that a retention lottery is won, or that a price ceiling provides a favorable deal.
+
+## Historical v0.2.1: implemented valuation safeguards
+
+**Historical v0.2.1 behavior; the later v0.3.0 engine above adds separately authorized auto-buying.** Live-game market payloads remain unverified. In v0.2.1:
 
 - Completed sale references are rebuilt in a **v2 local cache**, kept separate for currency, species/form ID, shiny state and potency. The legacy v1 cache is not treated as graded comparables; the historical scan must be refreshed before Pokémon opportunities appear.
 - History snapshots preserve non-identifying information only: gross completed-sale price, broad level band, game-provided numeric N (if present), quality (if present), individual IVs (only when an unambiguous keyed six-stat vector is present), and refinement (only when keyed values are available). No seller, owner or personal Pokémon IDs are stored in the reference.
 - A six-tier comparison attempts exact grade/level/quality/IV/refinement first, then relaxes dimensions with visible confidence labels. Even a broadened grade match **never crosses half-point grade boundaries**, particularly the N=3.5 and N=4.0 boundary.
 - The discovery panel shows the completed-sale median, an empirical interquartile price range, sample size, comparison dimensions, and grade/quality availability. Price-ratio opportunities are permitted only for a minimum-sample **grade-matched** tier, never ungraded or species-only history. A 'low confidence' label still requires independent judgment.
-- There is **no automatic Pokémon buying**, inferred combat role, arbitrary potency-to-price multiplier, or fabricated N or IV distribution. Fixed item purchase rules keep their previous defaults and safeguards.
-- Sources do not yet establish reliable timestamps, TM/move metadata, or precise live listing and history schemas. Missing attributes are not imputed, and no claim is made that a median is an ideal listing price. The first page of the market is still the only scanned listing page per currency; the historical refresh keeps the existing bounded request cadence.
+- At **v0.2.1**, no Pokémon auto-buying existed; it was introduced separately in v0.3.0. There is still no inferred combat role, arbitrary potency-to-price multiplier, or fabricated N or IV distribution.
+- Sources do not yet establish reliable timestamps, TM/move metadata, or precise live listing and history schemas. Missing attributes are not imputed, and no claim is made that a median is an ideal listing price. At v0.2.1, only the first recent-listings page was checked. V0.3.0 uses a bounded three-page scan when Pokémon purchase rules are active; the historical refresh retains its request cadence.
 
 **Implementation notice:** when historical sales supply no \`ficha.nota\` or the listing lacks it, only a broad contextual reference can be produced, and no Pokémon opportunity is flagged. Likewise, full IV comparison is impossible if the payload has only IV totals or an array without a verified stat order. This deliberately favors false negatives over false bargains. Review redacted real market payloads before supporting more field aliases or improving role evaluation.
 
@@ -136,7 +146,7 @@ Source: [`addons/market-bot.user.js`](../addons/market-bot.user.js).
 3. Each reference uses the **median** of matching sales, not the mean. `handlePokemonListings()` compares candidate asking price to that median via `ratio = price / reference`, and reports it if below the configured discovery threshold.
 4. The scanned Pokémon listings currently come from the first `market.listar` page for each currency. **Not all current listings necessarily appear in this scan**. Listings missing a completed-sale comparator are skipped.
 5. No part of this Pokémon bucket/ratio calculation reads **N, per-stat IVs, total IV, quality, refinement, TMs or combat role**. Accordingly, a “discount” can be a false bargain if its matched sales had better IVs/grade; or miss a genuinely excellent Pokémon.
-6. **Automatic purchase rules** are currently **fixed item rules**, off by default (`fixedRulesEnabled: false`); the script has a manual Pokémon purchase path. This research should **not** be read as authorization to add auto-buying for Pokémon.
+6. **At v0.1.51 (historical), automatic purchase rules** were limited to fixed items and off by default. In v0.3.0, explicit user-configured item-wide and Pokémon price-ceiling rules are supported, under the same default-off master switch.
 
 `ficha` is passed through from game messages and might contain useful fields (e.g., `nota`, `ivs`, `quality`, `refino`), but **the exact fields present in both listing and completed-sale payloads have not been established from the available shared/client upstream mirror**. Verify an actual authorized, redacted response before designing a required field or storing real user IDs.
 
