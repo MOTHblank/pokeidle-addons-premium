@@ -3105,18 +3105,21 @@
             chance24h:farmingChanceAtLeastOne(p,24*killsH),
             assumption:'independent-stationary-rolls-unboosted'};
     }
-    function rareMarketEvidence(item,sale) {
-        // Only age/samples/currency-verifiable COMPLETED trades may supply
-        // an OPTIONAL reference. Ordinary asking prices are not proceeds.
-        if(!item || !sale || sale.source!=='completed-sale' ||
+    function rareMarketEvidence(item,sale,now=Date.now()) {
+        // Only verified, sufficiently sampled recent COMPLETED trades may
+        // supply a speculative reference. Listings are not proceeds.
+        const age=now-Number(sale?.sampledAt);
+        if(!item || !Number.isFinite(item.unitsH) ||
+            !sale || sale.source!=='completed-sale' ||
             !['gold','orb'].includes(sale.currency) ||
             !(Number.isFinite(sale.price)&&sale.price>0) ||
             !(Number.isInteger(sale.samples)&&sale.samples>=3) ||
-            !(Number.isFinite(sale.sampledAt)&&sale.sampledAt>0))
+            !Number.isFinite(age)||age<0||age>30*86400000)
             return null;
         return {units:item.unitsH,currency:sale.currency,
             expectedMarketValueH:item.unitsH*sale.price,
             referenceSamples:sale.samples,sampledAt:sale.sampledAt,
+            ageDays:age/86400000,
             source:'historical-completed-sale-not-realized'};
     }
     // HA MILESTONE D PURE END.
