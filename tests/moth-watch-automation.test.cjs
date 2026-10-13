@@ -7,6 +7,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const script = fs.readFileSync(path.join(__dirname, '..', 'addons', 'market-bot.user.js'), 'utf8');
+const protocolFixtures = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'moth-watch-market-protocol.json'), 'utf8'));
+
 
 function section(start, end) {
     const a = script.indexOf(start), b = script.indexOf(end, a + start.length);
@@ -599,4 +601,29 @@ test('Milestone A: per-rule spend and quantity limits are independent of global 
     assert.equal(api.remainingBudget('gold','fixed-1').spend,10);
     assert.equal(api.remainingBudget('gold','fixed-1').quantity,1);
     assert.equal(api.remainingBudget('gold').spend,220);
+});
+
+
+test('Milestone A: fixture families cover positive, empty, missing and conflicting packets', () => {
+    const fixtures = protocolFixtures;
+    assert.equal(fixtures.provenance.kind, 'synthetic-only');
+    assert.equal(fixtures.item.positive.linhas[0].preco, 90);
+    assert.equal(fixtures.item.empty.linhas.length, 0);
+    assert.equal(fixtures.item.missingItemId.itemId, undefined);
+    assert.equal(fixtures.pokemonHistory.empty.linhas.length, 0);
+    assert.equal(fixtures.pokemonHistory.ambiguousEmpty.moeda, undefined);
+    assert.equal(fixtures.acknowledgement.missingListingId.ev[0].listingId, undefined);
+    const state = {marketReply:{kind:'pokemon',currency:'gold',page:0,sentAt:Date.now()}};
+    const api = new Function('state','communityMarketIsOpen',
+        section('    function marketReplyAvailable(', '    function handleDiamondListings(') +
+        '\nreturn {marketReplyMatches};')(state,()=>false);
+    assert.equal(api.marketReplyMatches(fixtures.pokemonVitrine.positive,'pokemon'),true);
+    assert.equal(api.marketReplyMatches(fixtures.pokemonVitrine.empty,'pokemon'),true);
+    assert.equal(api.marketReplyMatches(fixtures.pokemonVitrine.ambiguousEmpty,'pokemon'),false);
+    assert.equal(api.marketReplyMatches(fixtures.pokemonVitrine.wrongPage,'pokemon'),false);
+    assert.equal(api.marketReplyMatches(fixtures.diamondVitrine.empty,'pokemon'),false);
+    state.marketReply={kind:'diamante',currency:'orb',page:0,sentAt:Date.now()};
+    assert.equal(api.marketReplyMatches(fixtures.diamondVitrine.positive,'diamante'),true);
+    assert.equal(api.marketReplyMatches(fixtures.diamondVitrine.empty,'diamante'),true);
+    assert.equal(api.marketReplyMatches(fixtures.diamondVitrine.wrongCurrency,'diamante'),false);
 });
