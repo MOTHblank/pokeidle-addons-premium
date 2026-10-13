@@ -1239,7 +1239,7 @@
             next.captureBall=['ultra','beast'].includes(next.captureBall)
                 ?next.captureBall:'ultra';
             next.shinyLurePreview=next.shinyLurePreview===true;
-            next.rareSortItem=HA_RARE_SORT_IDS.includes(
+            next.rareSortItem=[70000,70011,70012,70013,70017].includes(
                 Number(next.rareSortItem))?Number(next.rareSortItem):70000;
             next.detailOpen=next.detailOpen===true;
 
