@@ -5,6 +5,7 @@
     const SNATCH_ACTIVE_MS = 30 * 60000;
     const SNATCH_RETRY_MS = 400;
     const SNATCH_MAX_QUOTE_AGE_MS = 3 * 60000;
+    const SNATCH_PREPARE_MS = 45000;
     // Retry only after explicit server refusal; avoid a fixed 120-attempt cutoff.
     function snatchRetryDelay(attempts) {
         return attempts < 30 ? SNATCH_RETRY_MS : attempts < 90 ? 1500 : 5000;
@@ -246,7 +247,7 @@
             if (manual && (c.price > manual.maxPrice || c.itemId !== manual.itemId && c.kind==='item')) {
                 snatchStop(key,'quote changed'); continue;
             }
-            if (entry.releaseAt > server + 18000) continue;
+            if (entry.releaseAt > server + SNATCH_PREPARE_MS) continue;
             if (entry.releaseAt > server) {
                 // Do not fill the wire with scans immediately before unlock.
                 if (entry.releaseAt - server > 5000 &&
@@ -296,7 +297,7 @@
             if ((state.snatchManual.has(snatchKey(entry.candidate.kind,
                     entry.candidate.currency,entry.candidate.listingId)) ||
                 activeRuleById(entry.ruleId)) &&
-                entry.releaseAt > 0 && entry.releaseAt-now < 3200 &&
+                entry.releaseAt > 0 && entry.releaseAt-now < 5500 &&
                 entry.releaseAt-now > -10000 &&
                 (!state.pendingBuy || state.pendingBuy.listingId === entry.candidate.listingId)) return true;
         }
@@ -312,7 +313,8 @@
         if (!override) {
             for (const entry of state.snatchObserved.values()) {
                 const until = entry.releaseAt || 0;
-                if (until > server + 18000) wait = Math.min(wait,Math.max(50,until-server-18000));
+                if (until > server + SNATCH_PREPARE_MS)
+                    wait = Math.min(wait,Math.max(50,until-server-SNATCH_PREPARE_MS));
                 else if (until > server) wait = Math.min(wait,until-server);
                 else wait = Math.min(wait,Math.max(35,entry.retryAt-Date.now()));
             }
