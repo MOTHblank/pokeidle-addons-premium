@@ -3763,6 +3763,73 @@
         </section>`;
     }
 
+
+    function categoryRuleStatus(rule, type) {
+        if (!rule.buyEnabled || !(rule.buyMax > 0)) return tr('Rule paused');
+        if (!config.enabled) return tr('Moth Watch disabled');
+        if (!config.fixedRulesEnabled) return tr('Enable rule-based buying above');
+        if (!state.socket || state.socket.readyState !== 1 || gameIsLoading()) return tr('Waiting for game connection');
+        if (balanceFor(rule.currency) - reserveFor(rule.currency) < 1) return tr('Insufficient spendable balance');
+        if (type === 'any') {
+            const candidate = anyItemRuleCandidate(rule, anyItemRuleTargets([rule]));
+            return tr(candidate && purchaseQuantity(candidate) > 0 ? 'Eligible listing available' : 'Checking listings…');
+        }
+        const candidate = pokemonRuleCandidate(rule);
+        return tr(candidate && purchaseQuantity(candidate) > 0 ? 'Eligible listing available' : 'Monitoring · no eligible listing');
+    }
+
+    function categoryRulesHtml(type) {
+        const pokemon = type === 'pokemon';
+        const rules = pokemon
+            ? sanitizePokemonBuyRules(config.pokemonBuyRules)
+            : sanitizeAnyItemRules(config.anyItemRules);
+        const names = {any: 'Any Pokémon', shiny: 'Shiny Pokémon', p5: 'P5 Pokémon'};
+        const cards = rules.map(rule => {
+            const id = escapeHtml(rule.id);
+            const title = pokemon ? names[rule.kind] : 'Any item';
+            return '<article class="moth-mw-rule-card fixed"><div class="moth-mw-rule-card-head">' +
+                '<div class="moth-mw-rule-title"><b>' + escapeHtml(tr(title)) + '</b>' +
+                '<small data-moth-rule-status data-rule-type="' + type + '" data-rule-id="' + id + '">' +
+                escapeHtml(categoryRuleStatus(rule, type)) + '</small></div></div>' +
+                '<div class="moth-mw-rule-compose"><section class="moth-mw-rule-side buy">' +
+                ruleSwitch('Buy', 'data-moth-' + type + '-field="buyEnabled" data-rule-id="' + id + '"', rule.buyEnabled) +
+                ruleNumber('Buy at or below', 'data-moth-' + type + '-field="buyMax" data-rule-id="' + id + '"', rule.buyMax) +
+                ruleCurrency('data-moth-' + type + '-field="currency" data-rule-id="' + id + '"', rule.currency) +
+                '</section></div><div class="moth-mw-rule-card-foot"><span>' +
+                escapeHtml(tr(pokemon ? 'Price per Pokémon' : 'Price per unit')) +
+                '</span><button type="button" class="moth-mw-btn danger" data-moth-remove-' + type + '="' + id + '">' +
+                escapeHtml(tr('Remove')) + '</button></div></article>';
+        }).join('');
+        const label = pokemon ? 'Pokémon purchase rules' : 'Any item rules';
+        const help = pokemon
+            ? 'These rules scan the first market page per currency. Shiny requires Gems.'
+            : 'Any-item rules inspect current offers selectively; large catalogs can take time.';
+        const controls = pokemon ? '<label class="moth-mw-rule-field"><span>' +
+            escapeHtml(tr('Pokémon category')) + '</span><select id="moth-pokemon-kind">' +
+            '<option value="any">' + escapeHtml(tr('Any Pokémon')) + '</option>' +
+            '<option value="shiny">' + escapeHtml(tr('Shiny Pokémon')) + '</option>' +
+            '<option value="p5">' + escapeHtml(tr('P5 Pokémon')) + '</option></select></label>' : '';
+        return '<section class="moth-mw-automation-block"><div class="moth-mw-block-heading"><h4>' +
+            escapeHtml(tr(label)) + '</h4><p>' + escapeHtml(tr(help)) +
+            '</p></div><div class="moth-mw-rule-add-card"><h5>' +
+            escapeHtml(tr(pokemon ? 'Add Pokémon rule' : 'Add any-item rule')) +
+            '</h5><div class="moth-mw-rule-add-search">' + controls +
+            ruleCurrency('id="moth-' + type + '-currency"', 'gold') +
+            ruleNumber('Buy at or below', 'id="moth-' + type + '-buy"', 0) +
+            '</div><p class="moth-mw-rule-hint">' +
+            escapeHtml(tr(pokemon
+                ? 'Buy matching Pokémon at or below the listed price; no valuation reference required.'
+                : 'Buy any item at or below this price per unit.')) +
+            '</p><button type="button" class="moth-mw-btn primary" id="moth-add-' + type + '-rule">' +
+            escapeHtml(tr(pokemon ? 'Add Pokémon rule' : 'Add any-item rule')) +
+            '</button></div><h5 class="moth-mw-rule-list-title">' +
+            escapeHtml(tr('Configured rules')) + ' (' + rules.length + ')</h5>' +
+            '<div class="moth-mw-rule-list">' +
+            (cards || '<div class="moth-mw-empty">' +
+                escapeHtml(tr(pokemon ? 'No Pokémon rules configured.' : 'No any-item rules configured.')) +
+                '</div>') + '</div></section>';
+    }
+
     function renderWatch(forceViewBuild = false) {
         const panel = q('#moth-market-watch-panel');
         if (!panel || !state.watchOpen) return;
@@ -3864,7 +3931,7 @@
                     configField('Keep Gems in reserve', 'gemReserve', 'number', '') +
                     configField('Maximum Coins per purchase', 'maxCoinsPerBuy', 'number', '0 = no extra cap') +
                     configField('Maximum Gems per purchase', 'maxGemsPerBuy', 'number', '0 = no extra cap') + '</div></section>' +
-                    fixedRulesHtml() +
+                    fixedRulesHtml() + categoryRulesHtml('any') + categoryRulesHtml('pokemon') +
                     '<details class="moth-mw-advanced"><summary>' + escapeHtml(tr('Advanced monitoring & references')) +
                     '</summary><div class="moth-mw-advanced-body"><p class="moth-mw-advanced-note">' +
                     escapeHtml(tr('Scanning and reference-quality controls. These do not authorize orders by themselves.')) +
