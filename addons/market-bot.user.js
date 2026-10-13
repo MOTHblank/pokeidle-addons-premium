@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.3.1
+// @version      0.4.0
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -15,7 +15,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.3.1');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.4.0');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -33,7 +33,9 @@
     const MAX_CANDIDATES = 600;
     const MAX_FIRST_SEEN = 1800;
     const BASELINE_KEY = 'moth-pokeidle-market-item-baseline-v1';
-    const POKEMON_REFERENCE_KEY = 'moth-pokeidle-market-pokemon-reference-v2';
+    const POKEMON_REFERENCE_KEY = 'moth-pokeidle-market-pokemon-reference-v3';
+    const POKEMON_SALE_WINDOW_MS = 90 * 86400000;
+    const POKEMON_HISTORY_FRESH_MS = 30 * 86400000;
     const BACKGROUND_MIN_GAP_MS = 3000;
     const BACKGROUND_SCAN_WITH_RULES_MS = 30000;
     const RULE_DETAIL_REFRESH_MS = 30000;
@@ -884,10 +886,10 @@
     function loadPokemonReference() {
         try {
             const raw = JSON.parse(localStorage.getItem(POKEMON_REFERENCE_KEY) || 'null');
-            if (raw && raw.version === 2 && raw.values && typeof raw.values === 'object') return raw;
+            if (raw && raw.version === 3 && raw.values && typeof raw.values === 'object') return raw;
         } catch {}
-        // v1 pooled grades and IV distributions. Never reuse it for actionable valuations.
-        return { version: 2, capturedAt: 0, values: {} };
+        // v1/v2 caches lacked sale-date provenance and form separation; never reuse them as current prices.
+        return { version: 3, capturedAt: 0, values: {} };
     }
 
     function savePokemonReference() {
@@ -1841,16 +1843,24 @@
         return currency === 'orb' || !ficha?.shiny;
     }
 
-    // Valuation v2: preserve only non-identifying traits of completed sales.
-    // The authoritative N comes from ficha.nota; do not approximate N from IV totals.
+    // Non-identifying valuation facts. Missing metadata stays unknown.
+    // Explicit forms are separate; absent form information is not assumed base.
+    function pokemonForm(ficha) {
+        const raw = ficha?.formId ?? ficha?.formaId;
+        return (typeof raw === 'string' || Number.isSafeInteger(raw)) &&
+            /^[a-z0-9_-]{1,36}$/i.test(String(raw)) ? String(raw) : null;
+    }
+
     function pokemonIdentityKey(ficha, currency) {
-        if (!pokemonCurrencyAllowed(ficha, currency)) return null;
+        if (!['gold', 'orb'].includes(currency) || !pokemonCurrencyAllowed(ficha, currency)) return null;
         const speciesId = speciesIdOf(ficha);
-        if (!speciesId) return null;
         const potency = Number(ficha?.potencia);
-        // Missing P-tier must never silently join P1 sales.
-        if (!Number.isInteger(potency) || potency < 1 || potency > 5) return null;
-        return currency + '|s:' + speciesId + '|sh:' + (ficha?.shiny ? 1 : 0) + '|p:' + potency;
+        // Missing shiny is *not* non-Shiny. Require explicit server facts.
+        if (!speciesId || typeof ficha?.shiny !== 'boolean' ||
+            !Number.isSafeInteger(potency) || potency < 1 || potency > 5) return null;
+        const form = pokemonForm(ficha);
+        return currency + '|s:' + speciesId + '|f:' + (form == null ? '?' : form) +
+            '|sh:' + (ficha.shiny ? 1 : 0) + '|p:' + potency;
     }
 
     function pokemonScore(ficha) {
@@ -1871,7 +1881,6 @@
 
     function pokemonIVs(ficha) {
         const raw = ficha?.ivs ?? ficha?.IVs;
-        // An array without a documented ordering is NOT a six-stat IV vector.
         if (!raw || Array.isArray(raw) || typeof raw !== 'object') return null;
         const aliases = [
             ['hp', 'HP'], ['atk', 'attack', 'ataque'], ['def', 'defense', 'defesa'],
@@ -1889,21 +1898,76 @@
     function pokemonRefinement(ficha) {
         const raw = ficha?.refino;
         if (!raw || Array.isArray(raw) || typeof raw !== 'object') return null;
-        const keys = ['hp', 'atk', 'def', 'spAtk', 'spDef'];
-        if (!keys.every(key => Number.isFinite(Number(raw[key])) && Number(raw[key]) >= 0)) return null;
+        const keys = ['hp', 'atk', 'def', 'spAtk', 'spDef', 'speed'];
+        if (!keys.every(key => Number.isSafeInteger(Number(raw[key])) && Number(raw[key]) >= 0)) return null;
         return keys.map(key => Number(raw[key]));
     }
 
     function pokemonFacts(ficha) {
         const level = Number(ficha?.level);
+        const ivs = pokemonIVs(ficha);
+        const missing = [];
+        if (!speciesIdOf(ficha)) missing.push('species');
+        if (pokemonForm(ficha) == null) missing.push('form');
+        if (typeof ficha?.shiny !== 'boolean') missing.push('shiny');
+        if (!Number.isInteger(Number(ficha?.potencia)) || Number(ficha?.potencia) < 1 ||
+            Number(ficha?.potencia) > 5) missing.push('potency');
+        if (pokemonScore(ficha) == null) missing.push('N');
+        if (pokemonQuality(ficha) == null) missing.push('Q');
+        if (!ivs) missing.push('six named IVs');
+        if (!pokemonRefinement(ficha)) missing.push('refinement');
+        if (!(ficha?.level != null && Number.isFinite(level) && level > 0)) missing.push('level');
         return {
+            speciesId: speciesIdOf(ficha), form: pokemonForm(ficha),
+            shiny: typeof ficha?.shiny === 'boolean' ? ficha.shiny : null,
+            potency: Number.isSafeInteger(Number(ficha?.potencia)) &&
+                Number(ficha?.potencia) >= 1 && Number(ficha?.potencia) <= 5
+                ? Number(ficha.potencia) : null,
+            level: ficha?.level != null && Number.isFinite(level) && level > 0 ? level : null,
             levelBand: ficha?.level != null && Number.isFinite(level) && level > 0
                 ? levelBand(level) : null,
-            score: pokemonScore(ficha),
-            quality: pokemonQuality(ficha),
-            ivs: pokemonIVs(ficha),
-            refinement: pokemonRefinement(ficha)
+            score: pokemonScore(ficha), quality: pokemonQuality(ficha), ivs,
+            refinement: pokemonRefinement(ficha), missing
         };
+    }
+
+    // Role is an annotation only: actual equipped move categories if provided,
+    // otherwise explicitly supplied base attacking stats. Never infer from a name
+    // or use this to set an absolute buy ceiling.
+    function pokemonCombatRole(ficha) {
+        const rows = Array.isArray(ficha?.movimentos) ? ficha.movimentos :
+            Array.isArray(ficha?.moves) ? ficha.moves : null;
+        const categories = rows?.map(move =>
+            String(move?.categoria ?? move?.category ?? '').toUpperCase());
+        if (categories?.length && categories.every(c => c === 'PHYSICAL' || c === 'SPECIAL')) {
+            const physical = categories.filter(c => c === 'PHYSICAL').length;
+            const special = categories.length - physical;
+            const role = physical && special ? 'mixed' : physical ? 'physical' : 'special';
+            return { role, source: 'equipped move categories', confidence: 'observed',
+                focus: role === 'mixed' ? ['atk', 'spAtk', 'speed'] :
+                    role === 'physical' ? ['atk', 'speed'] : ['spAtk', 'speed'] };
+        }
+        const atk = Number(ficha?.baseAtk), special = Number(ficha?.baseSpAtk);
+        if (Number.isFinite(atk) && atk > 0 && Number.isFinite(special) && special > 0) {
+            const ratio = atk / special;
+            const role = ratio >= 1.4 ? 'physical' : ratio <= 1 / 1.4 ? 'special' : 'mixed';
+            return { role, source: 'provided base stats; moves unverified',
+                confidence: 'indicative', focus: role === 'mixed' ? ['atk', 'spAtk', 'speed'] :
+                    role === 'physical' ? ['atk', 'speed'] : ['spAtk', 'speed'] };
+        }
+        return { role: 'unknown', source: 'no verified equipped moves or bases',
+            confidence: 'unknown', focus: [] };
+    }
+
+    // Date aliases are hypotheses until verified against deployed packets.
+    // Do not substitute listing creation time or the time we fetched history.
+    function pokemonSaleTime(line) {
+        const raw = line?.vendidoEm ?? line?.soldAt;
+        const value = typeof raw === 'string' && !/^\d+$/.test(raw)
+            ? Date.parse(raw) : Number(raw);
+        const millis = value > 1e9 && value < 1e11 ? value * 1000 : value;
+        return Number.isFinite(millis) && millis > 1451606400000 &&
+            millis <= Date.now() + 300000 ? millis : null;
     }
 
     function median(values) {
