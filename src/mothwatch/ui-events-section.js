@@ -137,9 +137,8 @@
                 }
                 const rule = {id: newAutomationRuleId(type), currency, buyMax, buyEnabled: true};
                 if (pokemon) rule.kind = kind;
-                if (config.fixedRulesEnabled && !confirmUnboundedRule(rule)) {
-                    setAutomationNotice(tr('Activation cancelled; no settings changed.'), 'warn'); return;
-                }
+                // Price and currency are explicit here; creation must not be
+                // discarded by the cumulative-limit confirmation.
                 rules.push(rule);
                 config[key] = rules; saveConfig();
                 setAutomationNotice(tr(config.fixedRulesEnabled ? 'Rule added: {name}.' :
