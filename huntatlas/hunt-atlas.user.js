@@ -3013,6 +3013,22 @@
         Number.isFinite(Number(value)) && Number(value) >= 0)
             ? Number(value) : null;
 
+    // Some builds may provide an explicit event receipt ID. Never use a slot,
+    // item ID or wall-clock timestamp as an invented event identity.
+    function farmingReceiptIdentity(event) {
+        if (!event || typeof event !== 'object') return null;
+        for (const key of ['eventId', 'eventoId', 'receiptId', 'reciboId']) {
+            if (!Object.hasOwn(event, key)) continue;
+            const value = event[key];
+            if (typeof value === 'number' && Number.isSafeInteger(value) &&
+                value > 0) return key + ':' + value;
+            if (typeof value === 'string' && value.length > 0 &&
+                value.length <= 64 && /^[a-zA-Z0-9_-]+$/.test(value))
+                return key + ':' + value;
+        }
+        return null;
+    }
+
     function normalizeFarmingEvent(event) {
         if (!event || typeof event !== 'object' || Array.isArray(event) ||
             typeof event.k !== 'string') return null;
@@ -3043,7 +3059,7 @@
             }
         }
         return {
-            kind, slot,
+            kind, slot, eventId: farmingReceiptIdentity(event),
             itemId: itemId === null ? null : Math.trunc(itemId),
             trainerXp: kind === 'morte' ? trainerXp : null,
             pokemonXp: kind === 'morte' ? pokemonXp : null,
@@ -3099,7 +3115,8 @@
         const kind = typeof event?.k === 'string' ? event.k : 'invalid';
         const fields = ['slot', 's', 'quem', 'xpTreinador', 'xpPokemon',
             'ouro', 'ouroVendaAuto', 'drops', 'ballId', 'chance',
-            'sucesso', 'shiny', 'pokemon', 'itemId'].filter(key =>
+            'sucesso', 'shiny', 'pokemon', 'itemId',
+            'eventId', 'eventoId', 'receiptId', 'reciboId'].filter(key =>
             Object.prototype.hasOwnProperty.call(event || {}, key));
         return {kind, fields, recognized: Boolean(normalized),
             missingSlot: Boolean(normalized && !normalized.slot),
@@ -3124,7 +3141,7 @@
     }
 
     function makeFarmingLedger() {
-        return {schema: 1, slots: new Map(), totals: {
+        return {schema: 2, slots: new Map(), receipts: new Map(), totals: {
             kills: 0, trainerXp: 0, pokemonXp: 0,
             killCoins: 0, autoSaleCoins: 0, acceptedThrows: 0,
             captures: 0, shinySeen: 0, shinyCaught: 0,
@@ -3150,6 +3167,14 @@
             return false;
         }
         const kind = receipt.kind;
+        // Unique receipt evidence is optional; absent IDs keep the existing
+        // event-specific guards. Bound stored IDs for uninterrupted sessions.
+        const key = receipt.eventId === null || receipt.eventId === undefined
+            ? null : kind + ':' + receipt.eventId;
+        if (key && ledger.receipts.has(key)) {
+            ledger.diagnostics.duplicates++;
+            return false;
+        }
         const slot = receipt.slot;
         let corpse = slot !== null ? ledger.slots.get(slot) : null;
         if (['morte', 'bola', 'capturado'].includes(kind) && !slot) {
@@ -3202,8 +3227,14 @@
         } else if (kind === 'bossMorto') {
             ledger.totals.bossDeaths++;
         } else if (kind === 'compra') {
-            return true; // Purchases are NOT the cost of a consumed item twice.
+            // Purchases are not a second consumable expense, but their receipt
+            // ID can still be tracked for duplicate diagnostics.
         } else return false;
+        if (key) {
+            ledger.receipts.set(key, true);
+            if (ledger.receipts.size > 256)
+                ledger.receipts.delete(ledger.receipts.keys().next().value);
+        }
         for (const {itemId, quantity} of receipt.drops) {
             if (!ledger.items.has(itemId) && ledger.items.size >= 64) continue;
             ledger.items.set(itemId, (ledger.items.get(itemId) || 0) + quantity);
