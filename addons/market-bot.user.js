@@ -30,6 +30,8 @@
     const QUOTE_MAX_AGE_MS = 30000;
     const MAX_DETAIL_QUEUE = 24;
     const MAX_DETAIL_CACHE = 96;
+    const MAX_CANDIDATES = 600;
+    const MAX_FIRST_SEEN = 1800;
     const BASELINE_KEY = 'moth-pokeidle-market-item-baseline-v1';
     const POKEMON_REFERENCE_KEY = 'moth-pokeidle-market-pokemon-reference-v2';
     const BACKGROUND_MIN_GAP_MS = 3000;
@@ -105,6 +107,7 @@
         loadedItemKeys: new Set(),
         ruleItemKeys: new Set(),
         anyItemScanCursor: 0,
+        anyItemTargetsCache: null,
         pokemonAutoOffers: new Map(),
         liveDiamondAverages: null,
         diamondStatus: 'waiting',
@@ -1633,6 +1636,19 @@
         candidate.firstSeenAt = Number(candidate.firstSeenAt) > 0 ? Number(candidate.firstSeenAt) : now;
         state.firstSeenCache.set(candidate.key, { firstSeenAt: candidate.firstSeenAt, lastSeenAt: now });
         state.candidates.set(candidate.key, candidate);
+        while (state.candidates.size > MAX_CANDIDATES) {
+            const oldest = state.candidates.keys().next().value;
+            const evicted = state.candidates.get(oldest);
+            state.candidates.delete(oldest);
+            if (evicted) {
+                const release = state.releaseTimers.get(evicted.listingId);
+                if (release) clearTimeout(release.timer);
+                state.releaseTimers.delete(evicted.listingId);
+            }
+        }
+        while (state.firstSeenCache.size > MAX_FIRST_SEEN) {
+            state.firstSeenCache.delete(state.firstSeenCache.keys().next().value);
+        }
         scheduleCandidateRelease(candidate);
         queueRender();
     }
@@ -2832,6 +2848,10 @@
     // Summary minima only nominate item types; only fresh offer details
     // authorize an actual order.
     function anyItemRuleTargets(rules) {
+        const signature = JSON.stringify(rules.map(r => [r.currency, r.buyMax]));
+        const cached = state.anyItemTargetsCache;
+        if (cached && cached.summaryAt === state.itemSummaryAt &&
+            cached.signature === signature && Date.now() - cached.at < 30000) return cached.targets;
         const targets = [];
         for (const [key, row] of Object.entries(state.itemSummary || {})) {
             const itemId = Number(key);
@@ -2844,7 +2864,9 @@
                 }
             }
         }
-        return targets.sort((a, b) => a.minimum - b.minimum || a.itemId - b.itemId);
+        targets.sort((a, b) => a.minimum - b.minimum || a.itemId - b.itemId);
+        state.anyItemTargetsCache = { targets, signature, summaryAt: state.itemSummaryAt, at: Date.now() };
+        return targets;
     }
 
     function anyItemRuleCandidate(rule, targets) {
