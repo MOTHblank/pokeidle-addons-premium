@@ -4513,7 +4513,7 @@
          * In the delta protocol, a missing key means "unchanged" while an
          * explicit null means "clear it".
          */
-        farmUpdateInventory(gameState);
+        farmUpdateInventory(gameState,fullSnapshot);
         const beforeFarmingScope = farmingSnapshotScope();
         const farmSnapshot = normalizeFarmingSnapshot(gameState);
         if (farmSnapshot) Object.assign(state.farmingSnapshot, farmSnapshot);
