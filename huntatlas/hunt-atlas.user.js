@@ -3966,6 +3966,104 @@
         'eventXp', 'xpEvent', 'catchupBoost', 'catchupTarget',
         'xpTreinadorBoost', 'xpPokemonBoost'
     ]);
+    // The native game-state keys used by Controller Bridge and Moth Controller.
+    // Keep only aggregate bonus evidence, never channel names or account data.
+    // Partial estado packets replace only supplied top-level fields.
+    function nativeXpBonusDelta(previous, delta, full=false) {
+        const next=full ? {} : {...(previous||{})};
+        if (!delta || typeof delta!=='object') return next;
+        const pct=value=>typeof value==='number'&&Number.isFinite(value)&&
+            value>=0&&value<=1000?value:null;
+        if (Object.hasOwn(delta,'twitch')) {
+            const t=delta.twitch;
+            next.twitch=t&&typeof t==='object'?{
+                pct:pct(t.pctAtual??t.pct),
+                watching:Array.isArray(t.assistindoEm)
+                    ?Math.min(100,t.assistindoEm.filter(Boolean).length):null
+            }:null;
+        }
+        if (Object.hasOwn(delta,'evento')) {
+            const e=delta.evento;
+            next.evento=e&&typeof e==='object'?{
+                trainer:pct(e.xpTreinadorPct),
+                pokemon:pct(e.xpPokemonPct)
+            }:null;
+        }
+        if (Object.hasOwn(delta,'guildBonusPct'))
+            next.guildBonusPct=pct(delta.guildBonusPct);
+        if (Object.hasOwn(delta,'loja')) {
+            const shop=delta.loja;
+            const boosts=shop?.boosts;
+            const catchup=shop?.atrasados;
+            next.loja=shop&&typeof shop==='object'?{
+                boostKeys:boosts&&typeof boosts==='object'&&!Array.isArray(boosts)
+                    ?Math.min(50,Object.keys(boosts).length):0,
+                catchup:catchup&&typeof catchup==='object'?{
+                    target:Number.isSafeInteger(Number(catchup.alvo))&&
+                        Number(catchup.alvo)>0?Number(catchup.alvo):null,
+                    multiplier:typeof catchup.mult==='number'&&
+                        Number.isFinite(catchup.mult)&&catchup.mult>=1&&
+                        catchup.mult<=10?catchup.mult:null
+                }:null
+            }:null;
+        }
+        return next;
+    }
+
+    function nativeXpBonusReading(state,level) {
+        const values=state||{};
+        let trainer=1,pokemon=1;
+        const sources=[],unknown=[];
+        const pct=(v)=>typeof v==='number'&&Number.isFinite(v)&&v>0&&v<=1000?v:0;
+        if(pct(values.twitch?.pct)) {
+            if(values.twitch.watching>0) {
+                const p=values.twitch.pct;
+                trainer*=1+p/100;pokemon*=1+p/100;
+                sources.push({kind:'twitch',pct:p});
+            } else if(values.twitch.watching===null) {
+                unknown.push('twitch');
+            }
+        }
+        if(pct(values.evento?.trainer)||pct(values.evento?.pokemon)) {
+            const t=pct(values.evento?.trainer),p=pct(values.evento?.pokemon);
+            trainer*=1+t/100;pokemon*=1+p/100;
+            sources.push({kind:'event',trainer:t,pokemon:p});
+        }
+        if(pct(values.guildBonusPct)) {
+            const p=values.guildBonusPct;
+            trainer*=1+p/100;pokemon*=1+p/100;
+            sources.push({kind:'guild',pct:p});
+        }
+        if(values.loja?.boostKeys>0) unknown.push('shop');
+        const catchup=values.loja?.catchup;
+        if(catchup) {
+            // The upstream x10 catch-up ends at a trainer-XP threshold and
+            // splits the crossing reward. Presence alone cannot model it.
+            const target=catchup.target;
+            if(target!==null&&Number.isFinite(Number(level))&&level<target)
+                unknown.push('catchup');
+            else if(target===null) unknown.push('catchup');
+        }
+        const reported=['twitch','evento','guildBonusPct','loja']
+            .some(key=>Object.hasOwn(values,key));
+        return {trainer, pokemon,sources,unknown,
+            reported,knownFactors:sources.length>0,
+            complete:reported&&unknown.length===0 &&
+                ['twitch','evento','guildBonusPct','loja']
+                    .every(key=>Object.hasOwn(values,key))};
+    }
+
+    function nativeXpBonusScope(values) {
+        // Stable, small signature; no usernames and no per-frame timestamps.
+        return JSON.stringify([
+            values?.twitch?.pct??null,values?.twitch?.watching??null,
+            values?.evento?.trainer??null,values?.evento?.pokemon??null,
+            values?.guildBonusPct??null,values?.loja?.boostKeys??null,
+            values?.loja?.catchup?.target??null,
+            values?.loja?.catchup?.multiplier??null
+        ]);
+    }
+
     function xpBonusSnapshot(delta) {
         if (!delta || typeof delta !== 'object') return null;
         const result = {};
