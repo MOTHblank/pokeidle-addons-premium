@@ -3,11 +3,11 @@
 > **Implementation reference for Hunt Atlas, Moth Watch and Auto Catch+.** Describes how to derive reward rates without confusing guaranteed Coins, NPC-resellable loot, community-market valuables, and captured Pokémon. **No addon behavior is changed by this document.**
 
 **Reviewed:** 2026-10-12.  
-**Primary sources:** the supplied PokéIdle wiki (*Níveis e XP; Bônus de live; Combate; Mapa e Hunt Analyser; A Sessão; Shiny; Casa e XP Share; Bicicletas; Ovo Shiny; Bosses; Market; Mercado da Comunidade; Loja de Diamantes*); `MOTHblank/pokeidle-upstream` shared/client code at review time; [Hunt Atlas](../addons/hunt-atlas.user.js), [Moth Watch](../addons/market-bot.user.js), and [Auto Catch+](../addons/autocatch.user.js).  
+**Primary sources:** the supplied PokéIdle wiki (*Níveis e XP; Bônus de live; Combate; Mapa e Hunt Analyser; A Sessão; Shiny; Casa e XP Share; Bicicletas; Ovo Shiny; Bosses; Market; Mercado da Comunidade; Loja de Diamantes*); `MOTHblank/pokeidle-upstream` shared/client code at review time; [Hunt Atlas](../../addons/hunt-atlas/hunt-atlas.user.js), [Moth Watch](../../addons/moth-watch/moth-watch.user.js), and Auto Catch+.  
 **Upstream availability:** the checked repository mirrors client/shared source, **not the full deployed game server**. Server-only roll semantics, dynamic boosts, per-session data and transactions must be marked **wiki-reported**, **source-implemented**, or **live-verified** as appropriate. Never assume static catalog files alone establish a live player's rewards.
 
 Companion references:
-- [Pokémon valuation and grade](./POKEMON_VALUATION_REFERENCE.md) — individual Pokémon quality, IVs, P tier, score and resale.
+- [Pokémon valuation and grade](../market/POKEMON_VALUATION_REFERENCE.md) — individual Pokémon quality, IVs, P tier, score and resale.
 - [Wiki ↔ upstream mechanics map](./POKEIDLE_WIKI_UPSTREAM_MECHANICS_MAP.md) — other correlated systems.
 
 ## Contents
@@ -341,13 +341,13 @@ When kills/hour changes with hunt, **do not compare only per-kill probabilities*
 
 **Wiki:** *Market → Venda*, *Mercado da Comunidade*, *Todas as taxas*.  
 **Upstream:** [`shared/venda-npc-item.mjs`](https://github.com/MOTHblank/pokeidle-upstream/blob/master/shared/venda-npc-item.mjs), [`shared/sell-value.mjs`](https://github.com/MOTHblank/pokeidle-upstream/blob/master/shared/sell-value.mjs), [`shared/taxa-mercado.mjs`](https://github.com/MOTHblank/pokeidle-upstream/blob/master/shared/taxa-mercado.mjs).  
-**Addon:** [Moth Watch](../addons/market-bot.user.js) already maintains completed-sale/asking-price references for marketable items.
+**Addon:** [Moth Watch](../../addons/moth-watch/moth-watch.user.js) already maintains completed-sale/asking-price references for marketable items.
 
 ### Three price bases
 
 1. **NPC item resale:** only for NPC-eligible catalog loot; wiki says NPC pays **100% of its catalog purchase value**, without a market commission. Player-bought potions/balls/revives are not NPC-resellable.
 2. **Community Market realized sale:** for allowed items such as Bronze Boss Tokens, Shiny Stone/Key/Bicycle/Shiny Egg fragments, stones, TMs, etc. (follow the actual whitelist; use exact item IDs). Marketable item sale in Coins incurs **15% seller fee**, as does an item sale in Gems; the upstream shared fee function handles the integer rounding. Asking price is **not** realized revenue, and listing status does not ensure execution/liquidity.
-3. **Individual captured Pokémon:** separate NPC resale from specimen-specific RMT value. The upstream NPC formula is `floor(sellValueBaseDe(species) * (1 + level/50) * quality * (shiny ? 10 : 1))`. **IV and potency do not influence that NPC formula**. A market Pokémon needs an evidence-based comparable-sale reference, as documented in [Pokémon valuation](./POKEMON_VALUATION_REFERENCE.md).
+3. **Individual captured Pokémon:** separate NPC resale from specimen-specific RMT value. The upstream NPC formula is `floor(sellValueBaseDe(species) * (1 + level/50) * quality * (shiny ? 10 : 1))`. **IV and potency do not influence that NPC formula**. A market Pokémon needs an evidence-based comparable-sale reference, as documented in [Pokémon valuation](../market/POKEMON_VALUATION_REFERENCE.md).
 
 The game distinguishes **Coins**, **Gems** (RMT currency) and **Diamonds** (shop currency). No formula allows multiplying an observed Gem price by an invented Coin rate. Coins-per-hour and Gems-asset-equivalent-per-hour should remain separate unless an explicitly labelled conversion is observed and dated.
 

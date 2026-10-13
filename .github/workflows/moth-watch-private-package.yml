@@ -16,13 +16,13 @@ jobs:
           node-version: '22'
       - name: Validate standalone userscript
         run: |
-          node tools/build-mothwatch.cjs --check
-          node --check addons/market-bot.user.js
-          node --test tests/moth-watch-automation.test.cjs
+          node addons/moth-watch/build.cjs --check
+          node --check addons/moth-watch/moth-watch.user.js
+          node --test addons/moth-watch/tests/automation.test.cjs
       - name: Package single-file Violentmonkey installation
         run: |
           mkdir -p dist
-          cp addons/market-bot.user.js dist/moth-watch.user.js
+          cp addons/moth-watch/moth-watch.user.js dist/moth-watch.user.js
       - uses: actions/upload-artifact@v4
         with:
           name: moth-watch-private-${{ github.run_number }}

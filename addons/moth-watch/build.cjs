@@ -1,9 +1,9 @@
 'use strict';
 // Assemble independently reviewed source sections into one Violentmonkey userscript.
-// Usage: node tools/build-mothwatch.cjs [--check] (no bundler, runtime imports, or network).
+// Usage: node addons/moth-watch/build.cjs [--check] (no bundler, runtime imports, or network).
 const fs=require('node:fs'),path=require('node:path');
-const root=path.resolve(__dirname,'..');
-const file=path.join(root,'addons','market-bot.user.js');
+const root=__dirname;
+const file=path.join(root,'moth-watch.user.js');
 const parts=[
   ['RULES','rules-section.js'],
   ['ORDERS','orders-section.js'],
@@ -25,7 +25,7 @@ const parts=[
 ];
 let output=fs.readFileSync(file,'utf8');
 for(const [id,name] of parts) {
-  const source=fs.readFileSync(path.join(root,'src','mothwatch',name),'utf8').trimEnd();
+  const source=fs.readFileSync(path.join(root,'src',name),'utf8').trimEnd();
   const begin='    // BEGIN MOTHWATCH '+id+' GENERATED';
   const end='    // END MOTHWATCH '+id+' GENERATED';
   const i=output.indexOf(begin),j=output.indexOf(end,i+begin.length);
@@ -36,7 +36,7 @@ for(const [id,name] of parts) {
 }
 if(process.argv.includes('--check')) {
   if(output!==fs.readFileSync(file,'utf8')) {
-    process.stderr.write('Generated MothWatch userscript is out of sync. Run node tools/build-mothwatch.cjs\n');
+    process.stderr.write('Generated MothWatch userscript is out of sync. Run node addons/moth-watch/build.cjs\n');
     process.exitCode=1;
   } else process.stdout.write('All '+parts.length+' userscript modules are in sync.\n');
 } else {

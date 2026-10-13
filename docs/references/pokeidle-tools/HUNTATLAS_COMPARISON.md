@@ -1,6 +1,6 @@
 # PokeIdle Tools vs Hunt Atlas — actual feature comparison
 
-Reviewed 2026-10-13. Sources: [extracted deployed-site behavior](README.md), [site constants](calculator-data.json), current premium `huntatlas/hunt-atlas.user.js` v1.9.9–1.9.10, and HuntAtlas Milestones A–F. **The third-party site is reference evidence, not an authoritative description of the deployed server.**
+Reviewed 2026-10-13. Sources: [extracted deployed-site behavior](README.md), [site constants](calculator-data.json), current premium `addons/hunt-atlas/hunt-atlas.user.js` v1.9.9–1.9.10, and the documented Hunt Atlas mechanics. **The third-party site is reference evidence, not an authoritative description of the deployed server.**
 
 ## What the reference site really implements
 
@@ -44,4 +44,4 @@ The advertised farm XP/money, IV and DPS tools have no implemented calculators i
 
 The *deployed server* must establish whether the shiny ×1.5, catch ×1.5 and Kick ×1.15 modifiers are still enabled, their activation signals, target stage and composition order. It must also establish whether loot/guild/event boosts stack by multiplication after Outland tier. The current browser-session telemetry cannot certify them. A manually selected scenario remains hypothetical even if it numerically matches an active buff.
 
-Pure regression coverage: `huntatlas/tests/pokeidle-tools-reference.test.cjs` (standalone Node fixtures; game runtime verification owner-led).
+Live-game verification of this third-party comparison remains owner-led.

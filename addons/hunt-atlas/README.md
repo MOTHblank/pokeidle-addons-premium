@@ -2,7 +2,7 @@
 
 This is the **premium experiment**, separate from the Hunt Atlas shipped through `pokeidle-addons`. Changes are not synchronized automatically. It replaces PokéIdle's **Map** view with a searchable hunt/Pokémon list—not a graphical map.
 
-![Hunt Atlas preview](docs/map-preview.png)
+![Hunt Atlas preview](assets/map-preview.png)
 
 ## Português (Brasil)
 
@@ -34,7 +34,7 @@ Para examinar um resumo local dos eventos de farming, execute no console:
 window.__mothHuntAtlasExperimentV1.snapshot()
 ```
 
-Não há envio automático desse resumo. Funcionamento visual, precisão em jogo e consumo de CPU/RAM exigem observação em uma sessão real. Veja os [documentos técnicos](../docs/README.md).
+Não há envio automático desse resumo. Funcionamento visual, precisão em jogo e consumo de CPU/RAM exigem observação em uma sessão real. Veja os [documentos técnicos](../../docs/README.md).
 
 ## English
 
@@ -53,4 +53,4 @@ Hunt Atlas provides Pokémon/hunt/region search; filters for level, availability
 
 Its detail panels distinguish **measured** from **modeled** trainer XP/hour, farming income and costs, Outland rare-drop estimates, Ultra/Beast catch and shiny projections, and detected XP bonuses versus hypothetical bonus simulations. Missing evidence remains unknown rather than being presented as a certain rate. The addon does not purchase supplies or change Auto Catch+.
 
-For local diagnostics, run `window.__mothHuntAtlasExperimentV1.snapshot()` in the browser console. Live-game/Firefox validation is needed for performance and model accuracy. See the [technical references](../docs/README.md).
+For local diagnostics, run `window.__mothHuntAtlasExperimentV1.snapshot()` in the browser console. Live-game/Firefox validation is needed for performance and model accuracy. See the [technical references](../../docs/README.md).
