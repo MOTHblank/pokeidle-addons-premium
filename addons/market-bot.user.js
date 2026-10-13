@@ -380,7 +380,7 @@
         "No Pokémon rules configured.": "Nenhuma regra de Pokémon cadastrada.",
         "Buy any item at or below this price per unit.": "Comprar qualquer item por este preço máximo por unidade.",
         "Buy matching Pokémon at or below the listed price; no valuation reference required.": "Comprar Pokémon da categoria pelo preço máximo do anúncio, sem exigir avaliação histórica.",
-        "These rules scan the first market page per currency. Shiny requires Gems.": "Estas regras consultam a primeira página do mercado por moeda. Shiny exige Gemas.",
+        "These rules scan up to three market pages per currency. Shiny requires Gems.": "Estas regras consultam até três páginas do mercado por moeda. Shiny exige Gemas.",
         "Any-item rules inspect current offers selectively; large catalogs can take time.": "Regras gerais de itens consultam anúncios seletivamente; catálogos grandes podem demorar.",
         "Rule configured — buying remains off until master switch is enabled.": "Regra cadastrada — a compra fica desligada até ativar a chave geral.",
         "An equivalent rule already exists for this currency.": "Já existe uma regra equivalente nesta moeda.",
@@ -1837,7 +1837,7 @@
         return true;
     }
 
-    function recentPokemonRequest(currency) {
+    function recentPokemonRequest(currency, page = 0) {
         return {
             t: 'market.listar',
             tipo: 'pokemon',
@@ -1862,7 +1862,7 @@
             qualidadeMax: '',
             notaMin: '',
             notaMax: '',
-            pagina: 0,
+            pagina: page,
             especieId: 0
         };
     }
@@ -1886,9 +1886,12 @@
             return;
         }
         state.pokemonScan = {
-            queue: ['gold', 'orb'],
+            queue: [{currency: 'gold', page: 0}, {currency: 'orb', page: 0}],
             waiting: null,
-            sentAt: 0
+            sentAt: 0,
+            // A bounded page window avoids scanning hundreds of listings
+            // and disturbing the game's own market interaction.
+            maxPages: activePokemonRules().length ? 3 : 1
         };
         pumpPokemonScan();
     }
@@ -1896,8 +1899,8 @@
     function pumpPokemonScan() {
         const scan = state.pokemonScan;
         if (!scan || scan.waiting) return;
-        const currency = scan.queue[0];
-        if (!currency) {
+        const job = scan.queue[0];
+        if (!job) {
             state.pokemonScan = null;
             state.pokemonStatus = 'watching';
             queueRender();
@@ -1910,17 +1913,17 @@
             return;
         }
 
-        if (!sendBackground(recentPokemonRequest(currency))) {
+        if (!sendBackground(recentPokemonRequest(job.currency, job.page))) {
             setTimeout(pumpPokemonScan, BACKGROUND_MIN_GAP_MS);
             return;
         }
 
         scan.queue.shift();
-        scan.waiting = currency;
+        scan.waiting = job;
         scan.sentAt = Date.now();
-        state.pokemonStatus = 'scanning ' + (currency === 'orb' ? 'gems' : 'coins');
+        state.pokemonStatus = 'scanning ' + (job.currency === 'orb' ? 'gems' : 'coins');
         setTimeout(() => {
-            if (state.pokemonScan === scan && scan.waiting === currency && Date.now() - scan.sentAt >= 2500) {
+            if (state.pokemonScan === scan && scan.waiting === job && Date.now() - scan.sentAt >= 2500) {
                 scan.waiting = null;
                 pumpPokemonScan();
             }
@@ -2000,9 +2003,10 @@
     function handlePokemonListings(message) {
         const scan = state.pokemonScan;
         if (!scan || !scan.waiting || message.aba !== 'vitrine') return false;
-        if (Number(message.pagina || 0) !== 0) return false;
-
-        const currency = scan.waiting;
+        const {currency, page} = scan.waiting;
+        if (Number(message.pagina || 0) !== page ||
+            (message.moeda && message.moeda !== currency) ||
+            (message.tipo && message.tipo !== 'pokemon')) return false;
         const lines = Array.isArray(message.linhas) ? message.linhas : [];
         const looksLikeOurResponse = !lines.length || lines.every(a =>
             (!a.tipo || a.tipo === 'pokemon') &&
@@ -2010,9 +2014,17 @@
         );
         if (!looksLikeOurResponse) return false;
 
-        state.pokemonAutoOffers.set(currency, { offers: lines.slice(), updatedAt: Date.now() });
+        const older = page > 0 ? state.pokemonAutoOffers.get(currency)?.offers || [] : [];
+        const uniqueOffers = new Map();
+        for (const offer of [...older, ...lines]) {
+            if (Number.isSafeInteger(Number(offer?.id))) uniqueOffers.set(Number(offer.id), offer);
+        }
+        state.pokemonAutoOffers.set(currency, {
+            offers: Array.from(uniqueOffers.values()).slice(0, 300),
+            updatedAt: Date.now()
+        });
         const group = 'pokemon:' + currency + ':';
-        removeCandidateGroup(group);
+        if (page === 0) removeCandidateGroup(group);
         const scanRatio = discoveryRatio();
 
         for (const listing of lines) {
@@ -2051,6 +2063,9 @@
             });
         }
 
+        if (message.temMais === true && page + 1 < scan.maxPages) {
+            scan.queue.push({currency, page: page + 1});
+        }
         scan.waiting = null;
         setTimeout(pumpPokemonScan, 100);
         queueRender();
