@@ -849,6 +849,8 @@
         farmingSessionToken: Math.random().toString(36).slice(2),
         farmingLedger: makeFarmingLedger(),
         farmingSnapshot: {},
+        xpBonusState: {},
+        calibrationEvidence: new Map(),
         hunts: [],
         playerLevel: 0,
         currentHuntSlug: null,
@@ -1471,15 +1473,26 @@
             return null;
         }
 
+        const stats = pokemon.stats || {};
+        const iv = pokemon.ivs || pokemon.iv || {};
+        // Include battle-relevant values, NOT volatile current HP/XP or
+        // cooldown timers. A refreshed same-ID Pokémon can change combat stats.
+        const battleStats = ['atk', 'def', 'spAtk', 'spDef', 'speed']
+            .map(key => stats[key] ?? '?');
+        const speedIv = pokemon.speedIV ?? pokemon.speedIv ??
+            iv.speed ?? iv.spd ?? '?';
+        const moves = Array.isArray(pokemon.attacks)
+            ? pokemon.attacks.slice(0, 20).map(move => [
+                move?.name, move?.type, move?.category, move?.power
+            ].join(':')).sort().join(',') : '';
         return [
             pokemon.id,
             pokemon.speciesId,
             pokemon.tmElemental,
             pokemon.tmAoe,
             pokemon.heldItemId,
-            pokemon.megaId ||
-                pokemon.mega ||
-                ''
+            pokemon.megaId || pokemon.mega || '',
+            speedIv, ...battleStats, moves
         ]
             .map(
                 value =>
@@ -1556,7 +1569,8 @@
     function farmingSnapshotScope() {
         return [state.farmingSnapshot.outlandTier ?? '?',
             state.farmingSnapshot.catalogRevision ?? '?',
-            state.farmingSnapshot.boostSignature ?? '?'].join('|');
+            state.farmingSnapshot.boostSignature ?? '?',
+            xpBonusScope(state.xpBonusState)].join('|');
     }
 
     function performanceKey(
@@ -1581,7 +1595,8 @@
             state.farmingSessionToken + ':' + state.rateGeneration +
             '|tier:' + (state.farmingSnapshot.outlandTier ?? '?') +
             '|catalog:' + (state.farmingSnapshot.catalogRevision ?? '?') +
-            '|boost:' + (state.farmingSnapshot.boostSignature ?? '?')
+            '|boost:' + (state.farmingSnapshot.boostSignature ?? '?') +
+            '|xpBonus:' + xpBonusScope(state.xpBonusState)
         );
     }
 
@@ -1640,6 +1655,10 @@
             hpSamples: [],
             trainerXpMultSamples: [],
             pokemonXpMultSamples: [],
+            xpBonusTransitions: [],
+            lastTrainerBonusRatio: null,
+            lastPokemonBonusRatio: null,
+            predictedBeforeMeasurement: null,
 
             firstEventAt: 0,
             lastEventAt: 0,
@@ -2915,6 +2934,27 @@
             .map(key => [key, snapshot[key]]));
     }
 
+    function observeXpTransition(record, channel, xp, base, at) {
+        if (!record || !(base > 0) || !(xp >= 0) || !Number.isFinite(xp))
+            return;
+        const ratio = xp / base;
+        const key = channel === 'trainer' ? 'lastTrainerBonusRatio'
+            : 'lastPokemonBonusRatio';
+        const previous = record[key];
+        if (previous !== null && Number.isFinite(previous) &&
+            Math.abs(ratio - previous) > Math.max(.1, previous * .12)) {
+            record.xpBonusTransitions ||= [];
+            record.xpBonusTransitions.push({
+                channel, at, previous: Math.round(previous * 100) / 100,
+                next: Math.round(ratio * 100) / 100,
+                reason: 'bonus-or-catchup-transition-unverified'
+            });
+            if (record.xpBonusTransitions.length > 12)
+                record.xpBonusTransitions.shift();
+        }
+        record[key] = ratio;
+    }
+
     function xpRewardReceipt(receipt) {
         return {
             trainerXp: Number.isFinite(receipt?.trainerXp)
@@ -3082,11 +3122,13 @@
 
         const baseXp =
             xpDoNivel(
-                hunt?.nivel ||
                 event?.level ||
+                hunt?.nivel ||
                 1
             );
 
+        observeXpTransition(record, 'trainer', trainerXp, baseXp, now);
+        observeXpTransition(record, 'pokemon', pokemonXp, baseXp, now);
         if (
             trainerXp !== null && trainerXp > 0 &&
             baseXp > 0
@@ -3449,6 +3491,8 @@
         const beforeFarmingScope = farmingSnapshotScope();
         const farmSnapshot = normalizeFarmingSnapshot(gameState);
         if (farmSnapshot) Object.assign(state.farmingSnapshot, farmSnapshot);
+        const incomingXpBonuses = xpBonusSnapshot(gameState);
+        if (incomingXpBonuses) Object.assign(state.xpBonusState, incomingXpBonuses);
         if (beforeFarmingScope !== farmingSnapshotScope()) {
             state.farmingLedger = makeFarmingLedger();
             state.combatRevision++;
@@ -3853,6 +3897,8 @@
             state.rateGeneration++;
             state.farmingLedger = makeFarmingLedger();
             state.farmingSnapshot = {};
+            state.xpBonusState = {};
+            state.calibrationEvidence.clear();
             state.combatTargets.clear();
             state.lastLeadPokemon = null;
             state.activePokemonId = null;
@@ -4488,6 +4534,8 @@
                     state.rateGeneration++;
                     state.farmingLedger = makeFarmingLedger();
                     state.farmingSnapshot = {};
+                    state.xpBonusState = {};
+                    state.calibrationEvidence.clear();
                     state.combatTargets.clear();
                     state.lastLeadPokemon = null;
 
@@ -11996,6 +12044,14 @@
                         ? 'unknown' : 'observed-client',
                     catalogRevision: state.farmingSnapshot.catalogRevision ?? null,
                     bonusSemantics: 'unverified'
+                },
+                xpEvidence: {
+                    source: 'observed-server/event',
+                    activeBonusFields: Object.keys(state.xpBonusState).sort(),
+                    bonusScopeKnown: Object.keys(state.xpBonusState).length > 0,
+                    serverStackingVerified: false,
+                    transitions: performanceRecord(here?.slug, false)
+                        ?.xpBonusTransitions?.slice(-6) || []
                 },
                 prediction: {
                     hunt: here?.slug || null,
