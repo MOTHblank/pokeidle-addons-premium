@@ -273,37 +273,40 @@ test('Rule lookup gets a chance to send before general background requests', () 
 
 
 function createPokemonValuationHarness() {
-    const state = { pokemonReference: { version: 2, capturedAt: 0, values: {} } };
+    const state = { pokemonReference: { version: 3, capturedAt: 0, values: {} } };
     const config = { minPokemonSamples: 3 };
     const src = section('    function pokemonIdentityKey(', '    function requestHistoryPage()');
     const api = new Function('state', 'config', 'speciesIdOf', 'levelBand',
         'pokemonCurrencyAllowed', 'savePokemonReference', 'addLog', 'queueRender',
+        'POKEMON_SALE_WINDOW_MS', 'POKEMON_HISTORY_FRESH_MS',
         src + '\nreturn { pokemonIVs, pokemonFacts, pokemonIdentityKey, pokemonComparableSales, ' +
-        'addPokemonHistorySample, finalizePokemonHistory, pokemonReferenceFor };')(
+        'addPokemonHistorySample, finalizePokemonHistory, pokemonReferenceFor, pokemonCombatRole };')(
         state, config, ficha => ficha?.speciesId || null,
         level => level < 100 ? 'lt100' : level < 500 ? '100-499' : '500+',
         (ficha, currency) => currency === 'orb' || !ficha?.shiny,
-        () => {}, () => {}, () => {});
+        () => {}, () => {}, () => {}, 90 * 86400000, 30 * 86400000);
     return { state, config, ...api };
 }
 
 function samplePokemon(overrides = {}) {
     return {
-        speciesId: 25, level: 100, nota: 3.55, qualidade: 1.25, potencia: 4,
-        shiny: false,
+        speciesId: 25, formId: 'base', level: 100, nota: 3.55, qualidade: 1.25, potencia: 4,
+        shiny: false, legendary:false, mythical:false, mega:false,
+        tmElemental:false, tmAoe:false, heldItem:false,
         ivs: { hp: 20, atk: 32, def: 20, spAtk: 5, spDef: 20, speed: 29 },
         ...overrides
     };
 }
 
-test('V2 Pokémon references use comparable graded sales, never pool N=3.5 with N=4.0', () => {
+test('V3 Pokémon references use dated graded sales, never pool N=3.5 with N=4.0', () => {
     const h = createPokemonValuationHarness(), sales = new Map();
     [100, 120, 140].forEach(price => h.addPokemonHistorySample({
-        tipo: 'pokemon', moeda: 'gold', bruto: price, ficha: samplePokemon()
+        tipo: 'pokemon', moeda: 'gold', vendidoEm: Date.now()-86400000,
+        bruto: price, ficha: samplePokemon()
     }, sales));
     h.finalizePokemonHistory(sales);
     const ref = h.pokemonReferenceFor(samplePokemon(), 'gold');
-    assert.equal(h.state.pokemonReference.version, 2);
+    assert.equal(h.state.pokemonReference.version, 3);
     assert.equal(ref.value, 120);
     assert.equal(ref.samples, 3);
     assert.equal(ref.confidence, 'high');
@@ -321,10 +324,11 @@ test('V2 Pokémon references use comparable graded sales, never pool N=3.5 with 
     assert.equal(h.pokemonReferenceFor(samplePokemon(), 'orb'), null);
 });
 
-test('V2 downgrades confidence for different IV builds and missing game score', () => {
+test('V3 downgrades confidence for different IV builds and missing game score', () => {
     const h = createPokemonValuationHarness(), sales = new Map();
     [100, 110, 120].forEach(price => h.addPokemonHistorySample({
-        tipo: 'pokemon', moeda: 'gold', preco: price, ficha: samplePokemon()
+        tipo: 'pokemon', moeda: 'gold', vendidoEm: Date.now()-86400000,
+        preco: price, ficha: samplePokemon()
     }, sales));
     h.finalizePokemonHistory(sales);
     const oppositeBuild = samplePokemon({
@@ -340,10 +344,10 @@ test('V2 downgrades confidence for different IV builds and missing game score', 
         'Never reuse ungraded v1 buckets');
 });
 
-test('V2 stores only non-identifying Pokémon sale traits and never creates an auto-buy rule', () => {
+test('V3 stores only non-identifying Pokémon sale traits and never creates an auto-buy rule', () => {
     const h = createPokemonValuationHarness(), sales = new Map();
     h.addPokemonHistorySample({
-        tipo: 'pokemon', moeda: 'gold', bruto: 900,
+        tipo: 'pokemon', moeda: 'gold', vendidoEm: Date.now()-86400000, bruto: 900,
         vendedor: 'secret-user', ficha: samplePokemon({id: 123456, nickname: 'secret'})
     }, sales);
     h.finalizePokemonHistory(sales);
