@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/huntatlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.13
+// @version      1.9.14
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.13');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.14');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -407,8 +407,6 @@
             'xp.sectionTitle': 'XP/hour recommendations',
             'xp.sectionSubtitle': 'Best hunt for {lead} within the current filters.',
             'xp.best': 'Best: {hunt}',
-            'xp.showTopFive': 'Show top 5',
-            'xp.hideTopFive': 'Hide top 5',
             'xp.topFiveTitle': 'Top 5 hunts by trainer XP/hour',
             'xp.measuredTrainer': 'measured {value} trainer XP/h',
             'xp.modeledTrainer': 'modeled {value} trainer XP/h',
@@ -453,10 +451,7 @@
             'catch.shinyMean': 'Mean wait for shiny caught: {hours} · ≈{throws} accepted attempts/shiny caught',
             'sort.npcLoot': 'NPC loot EV/hour (not cash)',
             'sort.rare': 'Selected rare item rate',
-            'sort.ballEfficiency': 'Fewest Coins/capture (Ultra)',
-            'rank.heading': 'Hunt recommendations by {metric}',
             'rank.topFive': 'Top 5 by {metric}',
-            'rank.best': 'Best for {metric}: {hunt}',
             'rank.noEvidence': 'No comparable estimate for this metric under the current filters.',
             'rank.rareLabel': 'Rare item for comparison',
             'rank.value': '{value} · {source}',
@@ -728,8 +723,6 @@
             'xp.sectionTitle': 'Recomendações de XP/hora',
             'xp.sectionSubtitle': 'Melhor hunt para {lead} dentro dos filtros atuais.',
             'xp.best': 'Melhor: {hunt}',
-            'xp.showTopFive': 'Ver top 5',
-            'xp.hideTopFive': 'Ocultar top 5',
             'xp.topFiveTitle': 'Top 5 hunts por XP de treinador/hora',
             'xp.measuredTrainer': 'medido {value} XP de treinador/h',
             'xp.modeledTrainer': 'modelado {value} XP de treinador/h',
@@ -774,10 +767,7 @@
             'catch.shinyMean': 'Espera média por shiny capturado: {hours} · ≈{throws} bolas aceitas/shiny capturado',
             'sort.npcLoot': 'EV de loot NPC/h (não é dinheiro recebido)',
             'sort.rare': 'Frequência do item raro escolhido',
-            'sort.ballEfficiency': 'Menor custo Moedas/captura (Ultra)',
-            'rank.heading': 'Melhores hunts por {metric}',
             'rank.topFive': 'Top 5 por {metric}',
-            'rank.best': 'Melhor para {metric}: {hunt}',
             'rank.noEvidence': 'Nenhuma previsão comparável nesta métrica com os filtros atuais.',
             'rank.rareLabel': 'Item raro para comparar',
             'rank.value': '{value} · {source}',
@@ -1179,7 +1169,6 @@
         resultLimit: 120,
         filtersExpanded: null,
         searchRenderTimer: null,
-        xpDetailsOpen: false,
         diagnosticsEnabled: false,
         openHuntDetails:new Set(),
         lastDrawerRenderAt: 0,
@@ -1387,6 +1376,12 @@
                         : 'desc';
             }
 
+            // Preserve a meaningful selection after removing this sorting
+            // objective, without resetting the user's unrelated preferences.
+            if(next.sort==='ballEfficiency'){
+                next.sort='capture';
+                next.sortDirection='desc';
+            }
             if (
                 next.sort ===
                     'spawn'
@@ -1402,7 +1397,6 @@
                 'coins',
                 'npcLoot',
                 'rare',
-                'ballEfficiency',
                 'capture',
                 'shinyCatch',
                 'name',
@@ -1745,12 +1739,10 @@
             .replace(/\.$/,'')+'%';
         return percent.toExponential(2)+'%';
     }
-    function formatObjectiveValue(value,objective,portuguese=false) {
+    function formatObjectiveValue(value,objective) {
         if(typeof value!=='number'||!Number.isFinite(value))return '—';
         if(['rare','shinyCatch','capture'].includes(objective))
             return formatEventRate(value);
-        if(objective==='ballEfficiency')
-            return formatRate(value)+' '+(portuguese?'Moedas/captura':'Coins/capture');
         return formatRate(value)+'/h';
     }
     // HA RARE RATE UI PURE END.
@@ -3303,7 +3295,7 @@
     // never XP as a fallback for missing Coins, rare or capture evidence.
     const HA_RANK_METRICS=Object.freeze([
         'xp','coins','npcLoot','rare',
-        'capture','shinyCatch','ballEfficiency'
+        'capture','shinyCatch'
     ]);
     const HA_RARE_SORT_IDS=Object.freeze([70000,70011,70012,70013,70017]);
     function haMetricNumber(value) {
@@ -3319,14 +3311,11 @@
             case 'rare': return haMetricNumber(rare?.unitsH);
             case 'capture': return haMetricNumber(capture?.catchesH);
             case 'shinyCatch': return haMetricNumber(capture?.shinyCaughtH);
-            case 'ballEfficiency': return haMetricNumber(
-                capture?.coinsPerCapture);
             default:return null;
         }
     }
     function haRankMetricRows(rows,direction='desc',metric='xp') {
         const asc=direction==='asc';
-        const lowerBetter=metric==='ballEfficiency';
         return [...rows].sort((a,b)=>{
             const av=haMetricNumber(a?.score),bv=haMetricNumber(b?.score);
             if(av===null||bv===null) {
@@ -3335,8 +3324,7 @@
                 return av===null?1:-1;
             }
             if(av!==bv) {
-                const factor=(asc?-1:1)*(lowerBetter?-1:1);
-                return (bv-av)*factor;
+                return (bv-av)*(asc?-1:1);
             }
             const lv=Number(b?.hunt?.nivel||0)-Number(a?.hunt?.nivel||0);
             return lv||String(a?.hunt?.slug||'').localeCompare(
@@ -8440,7 +8428,7 @@
         const hunts=speciesResults?
             [...grouped.values()].map(species=>species[0].hunt):state.hunts;
         const ballId=state.filters.captureBall==='beast'?5:4;
-        const isCapture=['capture','shinyCatch','ballEfficiency'].includes(metric);
+        const isCapture=metric==='capture'||metric==='shinyCatch';
         const objectiveSource='wiki-conditional';
         const rows=hunts.filter(isUnlocked).map(hunt=>{
             const xp=huntXpEstimate(hunt);
@@ -8457,27 +8445,14 @@
                 // For search/type/caught filters, rank each eligible hunt by
                 // its best *matching* species. Do not recommend a Pokémon
                 // filtered out of the species results.
-                let best=null,lowest=null;
+                let best=null;
+                const key=metric==='capture'?'catchesH':'shinyCaughtH';
                 for(const species of relevant){
-                    const model=capturePlanForSpecies(species,
-                        metric==='ballEfficiency'?4:ballId,xp);
-                    if(!model)continue;
-                    const price=captureInfoForBall(4)?.coins;
-                    const value=metric==='capture'?model.catchesH:
-                        metric==='shinyCatch'?model.shinyCaughtH:
-                        Number.isFinite(price)&&model.chance>0?
-                            price/model.chance:null;
+                    const model=capturePlanForSpecies(species,ballId,xp);
+                    const value=model?.[key];
                     if(!Number.isFinite(value))continue;
-                    const pick={...model,coinsPerCapture:
-                        Number.isFinite(price)&&model.chance>0?
-                            price/model.chance:null};
-                    if(metric==='ballEfficiency') {
-                        if(lowest===null||value<lowest){
-                            lowest=value;best=pick;target=species.name;
-                        }
-                    }else if(!best||value>best[metric==='capture'?
-                        'catchesH':'shinyCaughtH']) {
-                        best=pick;target=species.name;
+                    if(!best||value>best[key]){
+                        best=model;target=species.name;
                     }
                 }
                 capture=best;
@@ -9164,12 +9139,6 @@
                     xp?.killsH??null,state.filters.rareSortItem);
                 value=rare?.unitsH??null;
             }
-            if(metric==='ballEfficiency'){
-                const chance=capturePlanForSpecies(species,4,xp)?.chance;
-                const price=captureInfoForBall(4)?.coins;
-                if(chance>0&&typeof price==='number'&&Number.isFinite(price))
-                    value=price/chance;
-            }
             const result=haMetricNumber(value);
             objectiveSortCache.set(key,result);
             return result;
@@ -9287,11 +9256,10 @@
                             value(b),
                             true
                         );
-                } else if (['npcLoot','rare','ballEfficiency'].includes(sort)) {
+                } else if (['npcLoot','rare'].includes(sort)) {
                     const av=objectiveFor(a),bv=objectiveFor(b);
                     const ak=av!==null,bk=bv!==null;
-                    comparison=ak&&bk?(av-bv)*direction*
-                        (sort==='ballEfficiency'?-1:1):
+                    comparison=ak&&bk?(av-bv)*direction:
                         ak?-1:bk?1:0;
                 } else if (sort === 'coins') {
                     // Null means unsupported, NOT free or equal to zero.
@@ -9893,49 +9861,15 @@
                 white-space: nowrap;
             }
 
-            .mha-xp-primary {
-                display: grid;
-                grid-template-columns: minmax(0,1fr) auto auto;
-                gap: 6px;
-                align-items: center;
-            }
-
-            .mha-xp-primary-main {
-                min-width: 0;
-            }
-
-            .mha-xp-primary-main strong {
-                display: block;
-                overflow: hidden;
-                color: #e8e1e4;
-                font-size: 10px;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-            }
-
-            .mha-xp-primary-main span,
             .mha-xp-note {
                 color: #9e9398;
                 font-size: 8px;
-            }
-
-            .mha-xp-toggle {
-                border: 0;
-                background: transparent;
-                color: #a9d2ff;
-                cursor: pointer;
-                font: inherit;
-                font-size: 9px;
             }
 
             .mha-xp-details {
                 margin-top: 6px;
                 padding-top: 6px;
                 border-top: 1px solid rgba(255,255,255,.07);
-            }
-
-            .mha-xp-details[hidden] {
-                display: none;
             }
 
             .mha-xp-list-title {
@@ -10332,11 +10266,7 @@
                 overflow-x: hidden;
                 scrollbar-gutter: stable;
             }
-            .mha-xp-primary-main strong {
-                font-size: 11px;
-            }
-            .mha-xp-primary-main span, .mha-best-name,
-            .mha-xp-value { font-size: 10px; }
+            .mha-best-name, .mha-xp-value { font-size: 10px; }
             /* Keep the Top 5 action visible even with long source strings. */
             .mha-best-row { min-width: 0; }
             .mha-best-row .mha-xp-value {
@@ -10347,11 +10277,6 @@
             }
             .mha-best-row .mha-best-name {
                 min-width: 0;
-                overflow-wrap: anywhere;
-            }
-            .mha-xp-primary-main span {
-                display: block;
-                white-space: normal;
                 overflow-wrap: anywhere;
             }
             .mha-xp-summary [data-mha-more] .mha-xp-note {
@@ -10390,7 +10315,7 @@
                 overflow-y: auto;
                 overflow-x: hidden;
             }
-            .mha-xp-toggle, .mha-xp-summary button,
+            .mha-xp-summary button,
             .mha-xp-summary select { min-height: 30px; }
             .mha-outland-quick {
                 display: flex;
@@ -10489,16 +10414,6 @@
 
                 .mha-body {
                     padding: 7px;
-                }
-
-                .mha-xp-primary {
-                    grid-template-columns: minmax(0,1fr) auto;
-                }
-
-                .mha-xp-toggle {
-                    grid-column: 1 / -1;
-                    justify-self: start;
-                    padding: 0;
                 }
 
                 #mha-native-credit {
@@ -11057,7 +10972,6 @@
                             <option value="coins">${tr('sort.coins')}</option>
                             <option value="npcLoot">${tr('sort.npcLoot')}</option>
                             <option value="rare">${tr('sort.rare')}</option>
-                            <option value="ballEfficiency">${tr('sort.ballEfficiency')}</option>
                             <option value="capture">${tr('sort.capture')}</option>
                             <option value="shinyCatch">${tr('sort.shinyCatch')}</option>
                             <option value="name">${tr('sort.name')}</option>
@@ -12198,7 +12112,7 @@
                             );
 
                         return `
-                            <div class="mha-best-row">
+                            <div class="mha-best-row" role="listitem">
                                 <span class="mha-best-rank">${index + 1}</span>
                                 <span class="mha-best-name">${escapeHtml(row.hunt.nome || row.hunt.slug)} · ${escapeHtml(
                                     tr(
@@ -12238,7 +12152,7 @@
                                 ].filter(Boolean).join(' · '))}">${escapeHtml(
                                     tr(
                                         'rank.value',{
-                                            value:formatObjectiveValue(row.score,objective,currentLocale()==='pt-BR'),
+                                            value:formatObjectiveValue(row.score,objective),
                                             source:row.source||tr('rank.unknown')
                                         }
                                     )
@@ -12258,13 +12172,6 @@
                     }
                 )
                 .join('');
-
-        const bestHere =
-            best?.hunt?.slug
-                ? isHuntHere(
-                    best.hunt.slug
-                )
-                : false;
 
         const economicHunt = current || best?.hunt || null;
         const economic = economicHunt ? huntEconomyEstimate(economicHunt,
@@ -12634,7 +12541,7 @@
             <div class="mha-xp-heading">
                 <strong>${escapeHtml(
                     tr(
-                        'rank.heading',{metric:objectiveLabel}
+                        'rank.topFive',{metric:objectiveLabel}
                     )
                 )}</strong>
                 <span>${escapeHtml(
@@ -12647,89 +12554,19 @@
             ${rareChoiceHtml}
             ${quickOutlandHtml}
             ${ballSortHtml}
-            <div class="mha-xp-primary">
-                <div class="mha-xp-primary-main">
-                    <strong>${best
-                        ? escapeHtml(
-                            tr(
-                                'rank.best',
-                                {
-                                    hunt:best.hunt.nome||best.hunt.slug,
-                                    metric:objectiveLabel
-                                }
-                            )
-                        ) +
-                          ' · ' +
-                          escapeHtml(
-                              tr(
-                                  'hunt.level',
-                                  {
-                                      level:
-                                          Number(
-                                              best.hunt.nivel ||
-                                              0
-                                          )
-                                  }
-                              )
-                          )
-                        : escapeHtml(
-                            tr(
-                                'rank.noEvidence'
-                            )
-                        )}</strong>
-                    <span>${best
-                        ? escapeHtml(
-                            tr(
-                                'rank.value',{
-                                    value:formatObjectiveValue(best.score,objective,currentLocale()==='pt-BR'),
-                                    source:best.source||tr('rank.unknown')
-                                }
-                            )
-                        ) + (best.target ? ' · '+escapeHtml(best.target):'')+
-                            (objective==='xp'&&best.xp.incomplete?
-                                ' · '+escapeHtml(tr('xp.incompleteShort',{
-                                    percentage:best.xp.coverage})): '')
-                        : ''}</span>
-                </div>
+            <section class="mha-xp-details" id="mha-best-results"
+                aria-label="${escapeHtml(tr('rank.topFive',{metric:objectiveLabel}))}">
 
-                ${best ? `
-                    <button
-                        type="button"
-                        class="mha-go ${bestHere ? 'current' : ''}"
-                        data-mha-best-go="${escapeHtml(best.hunt.slug)}"
-                        ${bestHere ? 'disabled' : ''}
-                    >${tr(
-                        bestHere
-                            ? 'hunt.here'
-                            : 'hunt.go'
-                    )}</button>
-                ` : ''}
-
-                <button type="button" class="mha-xp-toggle"
-                    data-mha-xp-toggle aria-controls="mha-best-results"
-                    aria-expanded="${state.xpDetailsOpen?'true':'false'}">
-                    ${tr(
-                        state.xpDetailsOpen
-                            ? 'xp.hideTopFive'
-                            : 'xp.showTopFive'
-                    )}
-                </button>
-            </div>
-
-            <div class="mha-xp-details" id="mha-best-results"
-                ${state.xpDetailsOpen ? '' : 'hidden'}>
-                <div class="mha-xp-list-title">
-                    ${escapeHtml(
-                        tr(
-                            'rank.topFive',{metric:objectiveLabel}
-                        )
-                    )}
-                </div>
-
-                <div class="mha-best-list">
+                <div class="mha-best-list" role="list">
                     ${bestRows}
                 </div>
+                ${bestRows ? '' :
+                    '<div class="mha-xp-note" role="status">'+
+                    escapeHtml(tr('rank.noEvidence'))+'</div>'}
 
+            </section>
+            <details data-mha-more ${state.filters.detailOpen?'open':''}>
+                <summary>${escapeHtml(tr('rank.details'))}</summary>
                 <div class="mha-xp-note">
                     ${escapeHtml(leadText)}
                     · ${escapeHtml(calibrationText)}
@@ -12769,9 +12606,6 @@
                         )
                     )}
                 </div>
-            </div>
-            <details data-mha-more ${state.filters.detailOpen?'open':''}>
-                <summary>${escapeHtml(tr('rank.details'))}</summary>
                 ${captureHtml}
                 ${economyHtml}
                 ${rareHtml}
@@ -12896,25 +12730,6 @@
             requestOutlandTier(state.filters.outlandPreviewTier);
             renderXpSummary(drawer,results);
         });
-
-        const detailsToggle =
-            q(
-                '[data-mha-xp-toggle]',
-                host
-            );
-
-        detailsToggle?.addEventListener(
-            'click',
-            () => {
-                state.xpDetailsOpen =
-                    !state.xpDetailsOpen;
-
-                renderXpSummary(
-                    drawer,
-                    results
-                );
-            }
-        );
 
         for (
             const button of
@@ -13610,7 +13425,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.13 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.14 experimental loaded'
         );
     }
 

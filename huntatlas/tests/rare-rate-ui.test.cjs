@@ -55,15 +55,15 @@ test('ranking units match selected objective, not a universal /h',()=>{
     assert.equal(h.formatObjectiveValue(.01,'rare'),'~1 / 4.17 d');
     assert.equal(h.formatObjectiveValue(.05,'shinyCatch'),'1.2/d');
     assert.equal(h.formatObjectiveValue(.05,'capture'),'1.2/d');
-    assert.equal(h.formatObjectiveValue(2,'ballEfficiency',true),'2 Moedas/captura');
-    assert.equal(h.formatObjectiveValue(2,'ballEfficiency',false),'2 Coins/capture');
+    assert.equal(h.formatObjectiveValue(2,'capture'),'2/h');
+    assert.equal(h.formatObjectiveValue(0,'capture'),'0/h');
     assert.equal(h.formatObjectiveValue(-3,'netCoins'),'-3/h');
     assert.equal(h.formatObjectiveValue(null,'xp'),'—');
 });
 
 test('user-facing templates do not double-append /h or percent markers',()=>{
-    assert.match(src,/value:formatObjectiveValue\(row.score,objective,/);
-    assert.match(src,/value:formatObjectiveValue\(best.score,objective,/);
+    assert.match(src,/value:formatObjectiveValue\(row.score,objective\)/);
+    assert.doesNotMatch(src,/value:formatObjectiveValue\(best.score,objective/);
     assert.match(src,/formatEventRate\(selectedRare\?\.unitsH\)/);
     assert.match(src,/formatEventRate\(chosen\.shinyCaughtH\)/);
     assert.match(src,/formatDurationHours\(1\/chosen\.shinyCaughtH/);
