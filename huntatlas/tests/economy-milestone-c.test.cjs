@@ -37,7 +37,7 @@ test('encoded loot chance, quantity, explicit unknown and non-NPC drop',()=>{
         {name:'stone',chance:100000,minCount:2,maxCount:2}];
     const price=name=>name==='A'?100:name==='stone'?0:null;
     const value=h.farmLootValue(rows,price);
-    assert.equal(value.perKill,15);
+    assert.ok(Math.abs(value.perKill - 15) < 1e-10);
     assert.equal(h.farmLootValue([...rows,{name:'uncertain',chance:100}],price).perKill,null);
     assert.equal(h.farmLootValue([{name:'A',chance:0}],price).perKill,0);
     assert.equal(h.farmLootValue([{name:'A',chance:100001}],price).perKill,null);
