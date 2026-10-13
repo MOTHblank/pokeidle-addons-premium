@@ -3,7 +3,7 @@
         if (!config.enabled) return tr('Moth Watch disabled');
         if (!config.fixedRulesEnabled) return tr('Enable rule-based buying above');
         if (config.purchasesPaused) return tr('Purchases paused');
-        if (unverifiedOrdersExist()) return tr('Unknown purchase outcome');
+        // Unknown orders quarantine the affected listing only.
         if (state.pendingBuy) return tr('Waiting for acknowledgement');
         if (remainingBudget(rule.currency, rule.id).spend < 1) return tr('Budget blocked');
         if (!state.socket || state.socket.readyState !== 1 || gameIsLoading()) return tr('Waiting for game connection');
@@ -108,7 +108,7 @@
         if (!config.enabled) return tr('Moth Watch disabled');
         if (!config.fixedRulesEnabled) return tr('Enable rule-based buying above');
         if (config.purchasesPaused) return tr('Purchases paused');
-        if (unverifiedOrdersExist()) return tr('Unknown purchase outcome');
+        // Unknown orders quarantine the affected listing only.
         if (state.pendingBuy) return tr('Waiting for acknowledgement');
         if (remainingBudget(rule.currency, rule.id).spend < 1) return tr('Budget blocked');
         if (!state.socket || state.socket.readyState !== 1 || gameIsLoading()) return tr('Waiting for game connection');
