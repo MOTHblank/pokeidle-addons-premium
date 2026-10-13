@@ -2737,8 +2737,8 @@
             pokemonXp: kind === 'morte' ? pokemonXp : null,
             killCoins: kind === 'morte' ? killCoins : null,
             autoSaleCoins: kind === 'morte' ? autoSaleCoins : null,
-            speciesId: kind === 'morte' ? farmNum(event.speciesId ?? event.pokeId) : null,
-            mobLevel: kind === 'morte' ? farmNum(event.level) : null,
+            speciesId: kind === 'morte' ? farmingFinite(event.speciesId ?? event.pokeId) : null,
+            mobLevel: kind === 'morte' ? farmingFinite(event.level) : null,
             drops: kind === 'morte' || kind === 'bossMorto' ? drops : [],
             shinySeen: kind === 'bola' ? event.shiny === true : null,
             shinyCaught: kind === 'capturado'
