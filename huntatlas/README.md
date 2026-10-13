@@ -1,6 +1,6 @@
 # PokéIdle Hunt Atlas
 
-> **Versão experimental 1.9.11.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
+> **Versão experimental 1.9.12.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
 >
 > Não há mapa visual novo. O Atlas continua sendo uma lista pesquisável; o índice `map-markers.json` só adiciona contexto textual de localização para hunts com slug correspondente. O índice `moves-index.json` oferece golpes possíveis por espécie/nível, não uma lista de golpes equipados. Agora o Atlas compara os golpes dos índices com o catálogo mais recente de Pokémon e mostra divergências. Quando o jogo fornece nomes de golpes, o modelo usa **amostras por execução**, sem contar várias vítimas de um ataque em área como vários golpes. Quando o nome não chega, mantém o modelo por tipo. XP/h **medido** continua acima de qualquer projeção. Os índices são opcionais e podem estar desatualizados.
 >
@@ -48,6 +48,14 @@ No painel **Planejador de capturas e shinies**, a escolha Ultra/Beast e a simula
 **Dados medidos** vêm de `morte`, `bola` e `capturado` correlacionados: ao menos seis abates e 60 segundos, com denominador de tempo corrido, separando tentativas aceitas, capturas confirmadas e shiny visto/capturado. Para outras hunts, as projeções indicam claramente um **teto condicional se uma bola for aceita por corpo**, não que o Auto Catch alcance esse ritmo. Quando um Pokémon não fornece raridade econômica confiável, a chance fica indisponível; não usamos preço de venda MKT/RMT. A chance é o **modelo da wiki, ainda não confirmado com a fórmula do servidor**. Na Outland, a elegibilidade para shiny continua não verificada, portanto não é inventada. Arena Mística usa tabela própria e ticket por tentativa.
 
 Veja [contrato técnico, cenários de teste e limitações](../docs/HUNTATLAS_MILESTONE_E.md). O addon não compra bolas automaticamente nem altera o Auto Catch+.
+
+### Taxas de raros/shinies legíveis (v1.9.12)
+
+**Uma frequência positiva pequena não deve aparecer como 0/h.** A lista, o Top 5, as estimativas individuais de captura/shiny, as taxas de fragmentos da Outland/Ovo Shiny e as simulações opcionais agora alternam entre **eventos por hora, por dia ou tempo médio para um evento** (dias/anos) de acordo com a grandeza. Exemplo: `0,05 evento/h` aparece como `1,2/d`; `0,0001 evento/h` como **~1 por 1,14 ano** (tempo médio, não garantia). Números exatos de zero permanecem distintos de taxas desconhecidas. Probabilidades extremamente baixas ganham casas decimais ou notação científica quando necessário.
+
+Os **tempos médios de espera e fabricação** também usam dias/anos quando ficariam enormes em horas. O ranking agora indica corretamente **Moedas/captura** na métrica de eficiência, não um falso valor `/h`, e mantém taxas ordenadas com precisão completa, sem alterar o modelo. Moedas líquidas negativas são apresentadas com sinal, não como dados ausentes.
+
+Na revisão visual, os cartões do Top 5 e os campos numéricos dos cenários ganharam limites de largura, quebra de texto e organização responsiva para que descrições longas não escondam os botões **Ir**. Todas as mudanças são de interface: nenhuma nova consulta periódica, WebSocket, compra automática ou alteração dos odds do jogo. Veja [auditoria de taxas e UI](../docs/HUNTATLAS_RATE_UI_AUDIT.md) e `tests/rare-rate-ui.test.cjs`.
 
 ### Revisão de UI/UX (v1.9.11)
 
