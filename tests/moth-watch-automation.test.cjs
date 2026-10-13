@@ -929,7 +929,7 @@ function milestoneDSafetyHarness(overrides={}) {
     const fn=new Function('config','window','sanitizeAnyItemRules',
         'sanitizePokemonBuyRules','tr','num',
         src+'\nreturn {broadRuleUnbounded,enabledUnboundedBroadRules,confirmUnboundedRule,'+
-        'confirmUnboundedMaster,ruleRiskSummary};')(
+        'confirmUnboundedMaster,confirmRemovingLastBroadCap,ruleRiskSummary};')(
         config,browser,value=>value,value=>value,(key,params={})=>
             key.replace(/\{(\w+)\}/g,(_,name)=>String(params[name]??'')),String);
     return {config,confirmations,...fn};
@@ -1051,4 +1051,34 @@ test('Milestone D: redacted replay keeps currency and empty-page distinction', (
     assert.equal(JSON.stringify(report).includes('limited-secret'),false);
     assert.equal(JSON.stringify(report).includes('333'),false);
     assert.equal(report.recentShapes[0].empty,true);
+});
+
+
+test('Milestone D: removing the final broad-rule cap is explicitly protected', () => {
+    const capped=milestoneDSafetyHarness({
+        maxCoinsPerSession:3000,
+        anyItemRules:[{currency:'gold',buyMax:500,buyEnabled:true}]
+    });
+    assert.equal(capped.enabledUnboundedBroadRules().length,0);
+    capped.config.maxCoinsPerSession=0;
+    assert.equal(capped.enabledUnboundedBroadRules().length,1);
+    assert.equal(capped.confirmRemovingLastBroadCap(),false);
+    assert.match(capped.confirmations[0],/last cumulative protection/);
+    assert.match(script,/!previouslyUnbounded\s*&&\s*broadRuleUnbounded\(rule\)/);
+    assert.match(script,/oldUnboundedCount\s*=\s*enabledUnboundedBroadRules\(\)\.length/);
+    assert.match(script,/config\[key\]\s*=\s*oldValue/);
+});
+
+test('Milestone D: disabled rule statuses take precedence over exhausted budget', () => {
+    const cfg={enabled:true,fixedRulesEnabled:true,purchasesPaused:false};
+    const shared=['config','unverifiedOrdersExist','remainingBudget','state','gameIsLoading',
+        'balanceFor','reserveFor','fixedRuleCandidate','purchaseQuantity','tr'];
+    const source=section('    function fixedRuleStatus(', '    function ruleNumber(');
+    const fn=new Function(...shared,source+'\nreturn fixedRuleStatus;')(
+        cfg,()=>{throw Error('should not inspect journal for inactive rule')},
+        ()=>{throw Error('should not inspect budget for inactive rule')},
+        {},()=>false,()=>0,()=>0,()=>null,()=>0,x=>x);
+    assert.equal(fn({currency:'gold',buyMax:10,buyEnabled:false}),'Rule paused');
+    cfg.fixedRulesEnabled=false;
+    assert.equal(fn({currency:'gold',buyMax:10,buyEnabled:true}),'Enable rule-based buying above');
 });
