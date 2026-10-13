@@ -6441,13 +6441,16 @@
         }
     }
 
-    function farmUpdateInventory(snapshot) {
+    function farmUpdateInventory(snapshot,full=false) {
         if (!snapshot || typeof snapshot !== 'object') return;
         for (const [name,kind] of [['balls','ball'],['items','item']]) {
             if (!Object.hasOwn(snapshot,name)) continue;
-            for (const key of [...state.inventoryForCosts.keys()])
-                if (key.startsWith(kind+':')) state.inventoryForCosts.delete(key);
             const source = snapshot[name];
+            // State deltas update only the listed items. Erase other entries
+            // only for explicitly complete or cleared inventory snapshots.
+            if (full || source === null)
+                for (const key of [...state.inventoryForCosts.keys()])
+                    if (key.startsWith(kind+':')) state.inventoryForCosts.delete(key);
             const entries = Array.isArray(source) ? source.map(x=>
                 [x?.id??x?.itemId??x?.ballId, x?.qtd??x?.quantity??x?.count])
                 : source && typeof source === 'object' ?
