@@ -360,20 +360,35 @@
                 row.querySelector('button');
             if (!marker || !offer || !['item','pokemon'].includes(kind)) continue;
             const button=document.createElement('button');
-            button.type='button'; button.className='moth-mw-btn';
+            button.type='button';
             button.dataset.mothNativeSnatch=key;
             button.dataset.mothSnatchItem=String(Number(offer.itemId)||0);
-            button.textContent=tr(state.snatchManual.has(key)?'Cancel snatch':'Snatch');
+            const syncButton=()=>{
+                const active=state.snatchManual.has(key);
+                button.className='moth-mw-btn moth-mw-snatch-button'+(active?' is-armed':'');
+                button.textContent=tr(active?'Cancel snatch':'Snatch');
+                button.setAttribute('aria-pressed',active?'true':'false');
+                const hint=tr(active
+                    ? 'Cancel the armed purchase for listing #{id}'
+                    : 'Arm an automatic purchase for listing #{id} at its displayed maximum price', {id});
+                button.setAttribute('aria-label',hint);
+                button.title=hint;
+            };
             button.style.marginInlineStart='0.4rem';
             button.addEventListener('click',event=>{
                 event.preventDefault(); event.stopPropagation();
+                const wasArmed=state.snatchManual.has(key);
                 const accepted=snatchMark(kind,currency,id,Number(offer.itemId)||0);
                 if (accepted) {
-                    button.textContent=tr(state.snatchManual.has(key)?'Cancel snatch':'Snatch');
-                    button.setAttribute('aria-pressed',state.snatchManual.has(key)?'true':'false');
-                } else addLog('Snatch not armed · load the listing again');
+                    state.snatchNotice=tr(wasArmed?'Snatch cancelled for listing #{id}.':
+                        'Snatch armed for listing #{id}.', {id});
+                    syncButton();
+                } else {
+                    state.snatchNotice=tr('Could not arm this target; load a current listing first.');
+                    addLog('Snatch not armed · load the listing again');
+                }
             });
-            button.setAttribute('aria-pressed',state.snatchManual.has(key)?'true':'false');
+            syncButton();
             marker.insertAdjacentElement('afterend',button);
         }
     }
