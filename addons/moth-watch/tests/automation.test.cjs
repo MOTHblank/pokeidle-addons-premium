@@ -944,7 +944,7 @@ test('Milestone C: optional session telemetry avoids duplicate NPC sales', () =>
 test('Milestone C: independent economy UI cannot start selling automation', () => {
     assert.match(script,/data-moth-view="economy"/);
     assert.match(script,/Read-only fees, market eligibility, and recorded purchase exposure/);
-    assert.match(script,/@version\s+0\.6\.9/);
+    assert.match(script,/@version\s+0\.6\.10/);
     assert.doesNotMatch(script,/market\.criar|autoSellRules|sendItemSale/);
 });
 
@@ -1024,7 +1024,7 @@ test('Milestone D: diagnostics source is synchronized with standalone userscript
     assert.equal(embedded,source,'module must exactly match generated userscript section');
     const tool=fs.readFileSync(path.join(__dirname,'..','build.cjs'),'utf8');
     assert.match(tool,/--check/);
-    assert.match(script,/@version\s+0\.6\.9/);
+    assert.match(script,/@version\s+0\.6\.10/);
     assert.doesNotMatch(script,/^\s*\/\/\s*@(?:downloadURL|updateURL)/m,
         'private repo must not advertise inaccessible raw auto-update endpoints');
 });
@@ -1155,7 +1155,7 @@ test('MothWatch v0.6.1: source sections match the single distributable userscrip
         const moduleSource = fs.readFileSync(path.join(__dirname, '..', 'src', name), 'utf8').trimEnd();
         assert.equal(script.slice(a + begin.length, b), moduleSource, 'generated parity: ' + id);
     }
-    assert.match(script, /@version\s+0\.6\.9/);
+    assert.match(script, /@version\s+0\.6\.10/);
     assert.doesNotMatch(script, /\bimport\s*\(|\brequire\s*\(/,
         'one Violentmonkey userscript must not require runtime module loading');
 });
@@ -1643,4 +1643,73 @@ test('Snatch: multiple pending orders respect bounded same-listing burst', () =>
         'a different eligible listing may buy while Snatch requests are outstanding');
     assert.equal(sent.length,4);
     assert.equal(state.pendingBuys.get(790).length,1);
+});
+
+
+test('Snatch purchase bursts do not starve background item-rule scans', () => {
+    const src=section('    function backgroundDelayMs(', '    // END MOTHWATCH TRANSPORT GENERATED');
+    let now=Date.now(), critical=false;
+    const packets=[], observations=[];
+    const DateClock=class extends Date { static now(){return now;} };
+    const state={
+        lastBotSendAt:0,lastBackgroundSendAt:0,rateLimitedUntil:0,
+        gameSocket:{readyState:1,send:packet=>packets.push(JSON.parse(packet))}
+    };
+    const api=new Function('state','Date','BACKGROUND_MIN_GAP_MS',
+        'snatchCriticalWindow','diagnosticOutbound','normalize',
+        'RATE_LIMIT_BACKOFF_MS','addLog','diagnosticOutcome','queueRender',
+        src+'\nreturn {send,sendBackground,backgroundDelayMs,enterRateLimitBackoff};')(
+        state,DateClock,2000,()=>critical,x=>observations.push(x),
+        String,15000,()=>{},()=>{},()=>{});
+    // Simulate continuous competitive Snatch attempts every 400ms.
+    for(let i=0;i<20;i++){
+        now+=400;
+        assert.equal(api.send({t:'market.comprar',id:789,qtd:1,preco:90,moeda:'gold'}),true);
+    }
+    assert.equal(api.backgroundDelayMs(),0,
+        'purchase traffic must never reset the rule-detail refresh gap');
+    assert.equal(api.sendBackground({t:'market.item',itemId:106,moeda:'gold'}),true,
+        'normal automation must fetch item offers during an active Snatch burst');
+    assert.equal(state.lastBackgroundSendAt,now);
+    assert.equal(api.sendBackground({t:'market.itens'}),false,
+        'background requests retain independent pacing');
+    for(let i=0;i<5;i++) {
+        now+=400;
+        api.send({t:'market.comprar',id:789,qtd:1,preco:90,moeda:'gold'});
+    }
+    assert.equal(api.backgroundDelayMs(),0,
+        'even further Snatch retries cannot postpone the next market refresh');
+    assert.equal(api.sendBackground({t:'market.itens'}),true);
+    assert.deepEqual(packets.filter(p=>p.t==='market.item').map(p=>p.itemId),[106]);
+    assert.equal(observations.length,2,
+        'each background request is still attributed to diagnostics');
+    critical=true;now+=2500;
+    assert.equal(api.sendBackground({t:'market.item',itemId:107,moeda:'gold'}),false,
+        'protect the moment of a future held-listing unlock');
+    critical=false;
+    api.enterRateLimitBackoff();
+    assert.equal(api.sendBackground({t:'market.item',itemId:107,moeda:'gold'}),false,
+        'explicit server rate limits still delay traffic');
+    now+=15000;
+    assert.equal(api.sendBackground({t:'market.item',itemId:107,moeda:'gold'}),true);
+});
+
+test('Snatch timer respects blocked-listing deadlines rather than busy-spinning', () => {
+    const src=section('    function snatchSchedule(', '    function snatchOutcome(');
+    let now=Date.now(),server=now,timers=[];
+    const DateClock=class extends Date { static now(){return now;} };
+    const state={snatchWake:null,snatchManual:new Map(),snatchObserved:new Map(),
+        attemptedListings:new Map(),rateLimitedUntil:0};
+    const candidate={listingId:789};
+    state.snatchObserved.set('item:gold:789',{candidate,releaseAt:now-1000,retryAt:0});
+    state.attemptedListings.set(789,now+400);
+    const schedule=new Function('state','Date','setTimeout','clearTimeout',
+        'serverNow','SNATCH_PREPARE_MS','snatchTick',src+'\nreturn snatchSchedule;')(
+        state,DateClock,(fn,ms)=>{timers.push(ms);return {fn,ms};},
+        ()=>{},()=>server,45000,()=>{});
+    schedule();
+    assert.equal(timers.at(-1),400,'wake when the listing can actually retry');
+    now+=400;server+=400;
+    schedule();
+    assert.equal(timers.at(-1),35,'the eligible listing can now be retried promptly');
 });

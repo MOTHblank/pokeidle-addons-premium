@@ -316,7 +316,13 @@
                 if (until > server + SNATCH_PREPARE_MS)
                     wait = Math.min(wait,Math.max(50,until-server-SNATCH_PREPARE_MS));
                 else if (until > server) wait = Math.min(wait,until-server);
-                else wait = Math.min(wait,Math.max(35,entry.retryAt-Date.now()));
+                else {
+                    // Match the timer to the actual listing cooldown instead
+                    // of waking every 35 ms for a temporarily blocked offer.
+                    const attempted = Number(state.attemptedListings.get(entry.candidate.listingId) || 0);
+                    wait = Math.min(wait, Math.max(35,
+                        Math.max(entry.retryAt || 0, attempted) - Date.now()));
+                }
             }
         }
         // A single timer for all snatches. No permanently fast interval.
