@@ -451,6 +451,30 @@
             'catch.targetObserved': 'observed throw coverage',
             'catch.targetCeiling': 'upper bound if all bodies targeted',
             'catch.shinyMean': 'Mean wait for shiny caught: {hours}h · ≈{throws} accepted attempts/shiny caught',
+            'sort.pokemonXp': 'Pokémon XP/hour',
+            'sort.npcLoot': 'NPC loot EV/hour (not cash)',
+            'sort.rare': 'Selected rare items/hour',
+            'sort.ballEfficiency': 'Fewest Coins/capture (Ultra)',
+            'rank.heading': 'Hunt recommendations by {metric}',
+            'rank.topFive': 'Top 5 by {metric}',
+            'rank.best': 'Best for {metric}: {hunt}',
+            'rank.noEvidence': 'No comparable estimate for this metric under the current filters.',
+            'rank.rareLabel': 'Rare item for comparison',
+            'rank.value': '{value}/h · {source}',
+            'rank.efficiency': '{value} Coins/expected capture · wiki-conditional',
+            'rank.rarePreview': 'Outland tier {tier} preview, not the active tier',
+            'rank.invalid': 'Unavailable — insufficient model evidence or not eligible',
+            'rank.unboosted': 'Unboosted / not validated against active server buffs',
+            'rank.details': 'Hunt details (tap to expand)',
+            'rank.keyInfo': 'Rates are conditional, and the best hunt depends on the selected metric.',
+            'rank.unknown': 'No data',
+            'rank.learning': 'Learning',
+            'rank.unverified': 'Unverified',
+            'diag.toggle': 'Local estimate diagnostics (off by default)',
+            'diag.title': 'Redacted evidence · local only',
+            'diag.source': 'source: {source} · sample window: {window} · model coverage: {coverage}%',
+            'diag.noWindow': 'no measured window',
+            'diag.caveat': 'No raw messages, token, name or account ID is exported or uploaded.',
             'sort.coins': 'Kill Coins/hour',
             'sort.netCoins': 'Net Coins/hour (measured)',
             'econ.title': 'Farming economy · {hunt}',
@@ -737,6 +761,30 @@
             'catch.targetObserved': 'cobertura medida de arremessos',
             'catch.targetCeiling': 'teto se todos os corpos receberem bola',
             'catch.shinyMean': 'Espera média por shiny capturado: {hours}h · ≈{throws} bolas aceitas/shiny capturado',
+            'sort.pokemonXp': 'XP do Pokémon/hora',
+            'sort.npcLoot': 'EV de loot NPC/h (não é dinheiro recebido)',
+            'sort.rare': 'Itens raros selecionados/h',
+            'sort.ballEfficiency': 'Menor custo Moedas/captura (Ultra)',
+            'rank.heading': 'Melhores hunts por {metric}',
+            'rank.topFive': 'Top 5 por {metric}',
+            'rank.best': 'Melhor para {metric}: {hunt}',
+            'rank.noEvidence': 'Nenhuma previsão comparável nesta métrica com os filtros atuais.',
+            'rank.rareLabel': 'Item raro para comparar',
+            'rank.value': '{value}/h · {source}',
+            'rank.efficiency': '{value} Moedas/captura esperada · condicional da wiki',
+            'rank.rarePreview': 'Prévia Outland {tier}, não o tier ativo',
+            'rank.invalid': 'Indisponível — dados insuficientes ou não elegível',
+            'rank.unboosted': 'Sem bônus / não validado com bônus ativos do servidor',
+            'rank.details': 'Detalhes da hunt (clique para abrir)',
+            'rank.keyInfo': 'As taxas são condicionais; a melhor hunt depende da métrica escolhida.',
+            'rank.unknown': 'Sem dados',
+            'rank.learning': 'Aprendendo',
+            'rank.unverified': 'Não verificado',
+            'diag.toggle': 'Diagnóstico local da estimativa (desligado por padrão)',
+            'diag.title': 'Evidências resumidas · somente local',
+            'diag.source': 'origem: {source} · janela de amostras: {window} · cobertura do modelo: {coverage}%',
+            'diag.noWindow': 'sem janela medida',
+            'diag.caveat': 'Nenhuma mensagem bruta, token, nome ou ID de conta é exportado ou enviado.',
             'sort.coins': 'Moedas/h por abate',
             'sort.netCoins': 'Moedas líquidas/h (medido)',
             'econ.title': 'Economia da hunt · {hunt}',
@@ -1107,6 +1155,10 @@
         lastLocale: null,
         resultLimit: 120,
         xpDetailsOpen: true,
+        diagnosticsEnabled: false,
+        lastDrawerRenderAt: 0,
+        drawerRenderTimer: null,
+        renderStats: {attempts:0,skipped:0},
         mapObserver: null,
         mapSyncQueued: false,
         keyboardBound: false,
@@ -1159,6 +1211,8 @@
             outlandPreviewTier: 1,
             captureBall: 'ultra',
             shinyLurePreview: false,
+            rareSortItem: 70000,
+            detailOpen: false,
             sortDirection: 'desc'
         };
     }
@@ -1185,6 +1239,9 @@
             next.captureBall=['ultra','beast'].includes(next.captureBall)
                 ?next.captureBall:'ultra';
             next.shinyLurePreview=next.shinyLurePreview===true;
+            next.rareSortItem=HA_RARE_SORT_IDS.includes(
+                Number(next.rareSortItem))?Number(next.rareSortItem):70000;
+            next.detailOpen=next.detailOpen===true;
 
             if (typeof next.weakness === 'string') {
                 next.weakness =
@@ -1289,8 +1346,12 @@
 
             const validSorts = [
                 'xp',
+                'pokemonXp',
                 'coins',
+                'npcLoot',
                 'netCoins',
+                'rare',
+                'ballEfficiency',
                 'capture',
                 'shinyCatch',
                 'name',
@@ -3124,6 +3185,60 @@
 
 
 
+
+
+    // HA MILESTONE F PURE BEGIN. Ranking requires the requested metric,
+    // never XP as a fallback for missing Coins, rare or capture evidence.
+    const HA_RANK_METRICS=Object.freeze([
+        'xp','pokemonXp','coins','npcLoot','netCoins','rare',
+        'capture','shinyCatch','ballEfficiency'
+    ]);
+    const HA_RARE_SORT_IDS=Object.freeze([70000,70011,70012,70013,70017]);
+    function haMetricNumber(value) {
+        return typeof value==='number'&&Number.isFinite(value)?value:null;
+    }
+    function haMetricValue(metric,data) {
+        const xp=data?.xp,coins=data?.economy,rare=data?.rare,
+            capture=data?.capture;
+        switch(metric){
+            case 'xp': return haMetricNumber(xp?.value);
+            case 'pokemonXp': return haMetricNumber(xp?.pokemonValue);
+            case 'coins': return haMetricNumber(coins?.killCoinsH);
+            case 'npcLoot': return haMetricNumber(coins?.npcLootEvH);
+            case 'netCoins': return haMetricNumber(coins?.netH);
+            case 'rare': return haMetricNumber(rare?.unitsH);
+            case 'capture': return haMetricNumber(capture?.catchesH);
+            case 'shinyCatch': return haMetricNumber(capture?.shinyCaughtH);
+            case 'ballEfficiency': return haMetricNumber(
+                capture?.coinsPerCapture);
+            default:return null;
+        }
+    }
+    function haRankMetricRows(rows,direction='desc',metric='xp') {
+        const asc=direction==='asc';
+        const lowerBetter=metric==='ballEfficiency';
+        return [...rows].sort((a,b)=>{
+            const av=haMetricNumber(a?.score),bv=haMetricNumber(b?.score);
+            if(av===null||bv===null) {
+                if(av===null&&bv===null)return String(a?.hunt?.slug||'')
+                    .localeCompare(String(b?.hunt?.slug||''));
+                return av===null?1:-1;
+            }
+            if(av!==bv) {
+                const factor=(asc?-1:1)*(lowerBetter?-1:1);
+                return (bv-av)*factor;
+            }
+            const lv=Number(b?.hunt?.nivel||0)-Number(a?.hunt?.nivel||0);
+            return lv||String(a?.hunt?.slug||'').localeCompare(
+                String(b?.hunt?.slug||''));
+        });
+    }
+    function haMetricRare(hunt,tier,level,killsH,itemId) {
+        const drops=rareForHunt(hunt,tier,level,killsH);
+        if(drops.reason)return null;
+        return drops.drops.find(row=>row.id===itemId)??null;
+    }
+    // HA MILESTONE F PURE END.
 
     // HA MILESTONE E PURE BEGIN — wiki-conditional, not deployed server parity.
     const CAPTURE_BALLS=Object.freeze([
@@ -11214,8 +11329,12 @@
                     <div class="mha-sort-control">
                         <select data-mha-filter="sort">
                             <option value="xp">${tr('sort.xp')}</option>
+                            <option value="pokemonXp">${tr('sort.pokemonXp')}</option>
                             <option value="coins">${tr('sort.coins')}</option>
                             <option value="netCoins">${tr('sort.netCoins')}</option>
+                            <option value="npcLoot">${tr('sort.npcLoot')}</option>
+                            <option value="rare">${tr('sort.rare')}</option>
+                            <option value="ballEfficiency">${tr('sort.ballEfficiency')}</option>
                             <option value="capture">${tr('sort.capture')}</option>
                             <option value="shinyCatch">${tr('sort.shinyCatch')}</option>
                             <option value="name">${tr('sort.name')}</option>
