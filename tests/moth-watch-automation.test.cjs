@@ -273,37 +273,40 @@ test('Rule lookup gets a chance to send before general background requests', () 
 
 
 function createPokemonValuationHarness() {
-    const state = { pokemonReference: { version: 2, capturedAt: 0, values: {} } };
+    const state = { pokemonReference: { version: 3, capturedAt: 0, values: {} } };
     const config = { minPokemonSamples: 3 };
-    const src = section('    function pokemonIdentityKey(', '    function requestHistoryPage()');
+    const src = section('    function pokemonForm(', '    function requestHistoryPage()');
     const api = new Function('state', 'config', 'speciesIdOf', 'levelBand',
         'pokemonCurrencyAllowed', 'savePokemonReference', 'addLog', 'queueRender',
+        'POKEMON_SALE_WINDOW_MS', 'POKEMON_HISTORY_FRESH_MS',
         src + '\nreturn { pokemonIVs, pokemonFacts, pokemonIdentityKey, pokemonComparableSales, ' +
-        'addPokemonHistorySample, finalizePokemonHistory, pokemonReferenceFor };')(
+        'addPokemonHistorySample, finalizePokemonHistory, pokemonReferenceFor, pokemonCombatRole };')(
         state, config, ficha => ficha?.speciesId || null,
         level => level < 100 ? 'lt100' : level < 500 ? '100-499' : '500+',
         (ficha, currency) => currency === 'orb' || !ficha?.shiny,
-        () => {}, () => {}, () => {});
+        () => {}, () => {}, () => {}, 90 * 86400000, 30 * 86400000);
     return { state, config, ...api };
 }
 
 function samplePokemon(overrides = {}) {
     return {
-        speciesId: 25, level: 100, nota: 3.55, qualidade: 1.25, potencia: 4,
-        shiny: false,
+        speciesId: 25, formId: 'base', level: 100, nota: 3.55, qualidade: 1.25, potencia: 4,
+        shiny: false, legendary:false, mythical:false, mega:false,
+        tmElemental:false, tmAoe:false, heldItem:false,
         ivs: { hp: 20, atk: 32, def: 20, spAtk: 5, spDef: 20, speed: 29 },
         ...overrides
     };
 }
 
-test('V2 Pokémon references use comparable graded sales, never pool N=3.5 with N=4.0', () => {
+test('V3 Pokémon references use dated graded sales, never pool N=3.5 with N=4.0', () => {
     const h = createPokemonValuationHarness(), sales = new Map();
     [100, 120, 140].forEach(price => h.addPokemonHistorySample({
-        tipo: 'pokemon', moeda: 'gold', bruto: price, ficha: samplePokemon()
+        tipo: 'pokemon', moeda: 'gold', vendidoEm: Date.now()-86400000,
+        bruto: price, ficha: samplePokemon()
     }, sales));
     h.finalizePokemonHistory(sales);
     const ref = h.pokemonReferenceFor(samplePokemon(), 'gold');
-    assert.equal(h.state.pokemonReference.version, 2);
+    assert.equal(h.state.pokemonReference.version, 3);
     assert.equal(ref.value, 120);
     assert.equal(ref.samples, 3);
     assert.equal(ref.confidence, 'high');
@@ -321,10 +324,11 @@ test('V2 Pokémon references use comparable graded sales, never pool N=3.5 with 
     assert.equal(h.pokemonReferenceFor(samplePokemon(), 'orb'), null);
 });
 
-test('V2 downgrades confidence for different IV builds and missing game score', () => {
+test('V3 downgrades confidence for different IV builds and missing game score', () => {
     const h = createPokemonValuationHarness(), sales = new Map();
     [100, 110, 120].forEach(price => h.addPokemonHistorySample({
-        tipo: 'pokemon', moeda: 'gold', preco: price, ficha: samplePokemon()
+        tipo: 'pokemon', moeda: 'gold', vendidoEm: Date.now()-86400000,
+        preco: price, ficha: samplePokemon()
     }, sales));
     h.finalizePokemonHistory(sales);
     const oppositeBuild = samplePokemon({
@@ -340,10 +344,10 @@ test('V2 downgrades confidence for different IV builds and missing game score', 
         'Never reuse ungraded v1 buckets');
 });
 
-test('V2 stores only non-identifying Pokémon sale traits and never creates an auto-buy rule', () => {
+test('V3 stores only non-identifying Pokémon sale traits and never creates an auto-buy rule', () => {
     const h = createPokemonValuationHarness(), sales = new Map();
     h.addPokemonHistorySample({
-        tipo: 'pokemon', moeda: 'gold', bruto: 900,
+        tipo: 'pokemon', moeda: 'gold', vendidoEm: Date.now()-86400000, bruto: 900,
         vendedor: 'secret-user', ficha: samplePokemon({id: 123456, nickname: 'secret'})
     }, sales);
     h.finalizePokemonHistory(sales);
@@ -641,4 +645,141 @@ test('Milestone A: orders remain blocked after uncertain outcome even across lis
     assert.match(body, /unverifiedOrdersExist\(\)/);
     const runner = section('    function runMarketAutomation(', '    function runScan(force)');
     assert.match(runner, /unverifiedOrdersExist\(\)/);
+});
+
+
+test('Milestone B: Pokémon identity requires observed species, form separation, shiny and P', () => {
+    const h = createPokemonValuationHarness();
+    assert.equal(h.pokemonIdentityKey(samplePokemon({shiny:undefined}), 'gold'), null);
+    assert.equal(h.pokemonIdentityKey(samplePokemon({potencia:undefined}), 'gold'), null);
+    assert.equal(h.pokemonIdentityKey(samplePokemon({potencia:5}), 'gold')
+        .includes('|p:5'),true);
+    assert.notEqual(h.pokemonIdentityKey(samplePokemon({formId:'mega'}),'gold'),
+        h.pokemonIdentityKey(samplePokemon({formId:'base'}),'gold'));
+    assert.notEqual(h.pokemonIdentityKey(samplePokemon({formId:undefined}),'gold'),
+        h.pokemonIdentityKey(samplePokemon({formId:'base'}),'gold'));
+    assert.notEqual(h.pokemonIdentityKey(samplePokemon(),'orb'),
+        h.pokemonIdentityKey(samplePokemon(),'gold'));
+    assert.equal(h.pokemonIdentityKey(samplePokemon({shiny:true}),'gold'),null);
+    assert.equal(h.pokemonFacts(samplePokemon({nota:undefined})).score,null);
+    assert.equal(h.pokemonFacts(samplePokemon({ivs:[20,20,20,20,20,20]})).ivs,null);
+    assert.ok(h.pokemonFacts(samplePokemon({potencia:undefined})).missing.includes('potency'));
+});
+
+test('Milestone B: undated or old sales cannot be sold as recent bargains', () => {
+    const h=createPokemonValuationHarness();
+    const undated=new Map();
+    [100,120,140].forEach(bruto=>h.addPokemonHistorySample({
+        tipo:'pokemon',moeda:'gold',bruto,ficha:samplePokemon()
+    },undated));
+    h.finalizePokemonHistory(undated);
+    const ref=h.pokemonReferenceFor(samplePokemon(),'gold');
+    assert.equal(ref.value,120);
+    assert.equal(ref.confidence,'low');
+    assert.equal(ref.actionable,false);
+    assert.equal(ref.ageDays,null);
+    assert.equal(ref.dateCoverage,0);
+    assert.ok(ref.limitations.includes('sale dates missing or stale'));
+
+    const expired=new Map();
+    h.addPokemonHistorySample({tipo:'pokemon',moeda:'gold',bruto:100,
+        vendidoEm:Date.now()-95*86400000,ficha:samplePokemon()},expired);
+    assert.equal(expired.size,0,'explicitly old sale omitted from current window');
+
+    const recent=new Map();
+    [100,120,140].forEach(bruto=>h.addPokemonHistorySample({tipo:'pokemon',
+        moeda:'gold',bruto,vendidoEm:Date.now()-86400000,
+        ficha:samplePokemon()},recent));
+    h.finalizePokemonHistory(recent);
+    assert.equal(h.pokemonReferenceFor(samplePokemon(),'gold').confidence,'high');
+    assert.equal(h.pokemonReferenceFor(samplePokemon(),'gold').actionable,true);
+});
+
+test('Milestone B: broad comps, missing extras and dispersion downgrade confidence', () => {
+    const h=createPokemonValuationHarness(), sales=new Map();
+    [100,120,10000].forEach(bruto=>h.addPokemonHistorySample({
+        tipo:'pokemon',moeda:'gold',bruto,vendidoEm:Date.now()-86400000,
+        ficha:samplePokemon()
+    },sales));
+    h.finalizePokemonHistory(sales);
+    const ref=h.pokemonReferenceFor(samplePokemon(),'gold');
+    assert.equal(ref.actionable,false);
+    assert.ok(ref.p90 > ref.p10);
+    assert.ok(ref.dispersion > 1.75);
+    assert.equal(ref.attemptedStages[0].matches,0,'no imputed refinement vector');
+    assert.ok(ref.samples >= 3);
+    assert.equal(h.pokemonReferenceFor(samplePokemon({nota:4.05}),'gold').actionable,false);
+    assert.equal(h.pokemonReferenceFor(samplePokemon({legendary:undefined}),'gold').actionable,false);
+    assert.equal(h.pokemonReferenceFor(samplePokemon({formId:undefined}),'gold'),null);
+    assert.equal(h.pokemonReferenceFor(samplePokemon({potencia:5}),'gold'),null);
+});
+
+test('Milestone B: combat annotations require equipped moves or observed bases', () => {
+    const h=createPokemonValuationHarness();
+    const physical=h.pokemonCombatRole({equippedMoves:[
+        {categoria:'PHYSICAL'},{categoria:'PHYSICAL'}]});
+    assert.equal(physical.role,'physical');
+    assert.equal(physical.confidence,'observed');
+    assert.deepEqual(physical.focus,['atk','speed']);
+    const mixed=h.pokemonCombatRole({movimentosEquipados:[
+        {categoria:'PHYSICAL'},{categoria:'SPECIAL'}]});
+    assert.equal(mixed.role,'mixed');
+    const unverified=h.pokemonCombatRole({moves:[{name:'Thunder'}]});
+    assert.equal(unverified.role,'unknown');
+    const inferred=h.pokemonCombatRole({baseAtk:100,baseSpAtk:55});
+    assert.equal(inferred.role,'physical');
+    assert.equal(inferred.confidence,'indicative');
+    assert.equal(h.pokemonCombatRole({equippedMoves:[{name:'move only'}]}).role,'unknown');
+});
+
+test('Milestone B: price inspection is read-only and cannot authorize market orders', () => {
+    const inspect=section('    function pokemonRulePreview(', '    function renderCandidate(');
+    assert.doesNotMatch(inspect,/market\.comprar|send\(|tryBuy\(|saveConfig\(/);
+    assert.match(inspect,/Insufficient comparable sales/);
+    assert.match(inspect,/No matching configured Pokémon rule/);
+    assert.match(script,/No purchase authorization/);
+    assert.match(script,/data-moth-view="pricing"/);
+    const state={orderJournal:{},pendingBuy:null};
+    const config={enabled:true,fixedRulesEnabled:true,purchasesPaused:false,pokemonBuyRules:[
+        {id:'a',kind:'p5',buyMax:100,currency:'gold',buyEnabled:true},
+        {id:'b',kind:'p5',buyMax:200,currency:'gold',buyEnabled:true}
+    ]};
+    const src=section('    function pokemonRulePreview(', '    function pokemonEvidenceCard(');
+    const preview=new Function('state','config','sanitizePokemonBuyRules','pokemonRuleMatches',
+        'isOwnListing','retentionUntil','serverNow','unverifiedOrdersExist',
+        'remainingBudget','balanceFor','reserveFor',
+        src+'\nreturn pokemonRulePreview;')(
+        state,config,items=>items,
+        (rule,ficha,currency)=>rule.kind==='p5'&&ficha?.potencia===5&&rule.currency===currency,
+        ()=>false,()=>0,Date.now,()=>false,()=>({spend:1000}),()=>1000,()=>0
+    );
+    const listing={id:55,preco:150,qtd:1,ficha:{potencia:5,shiny:false}};
+    assert.deepEqual(preview(listing,'gold').map(r=>r.status),
+        ['Above price ceiling','Matches absolute-price rule']);
+    config.fixedRulesEnabled=false;
+    assert.ok(preview(listing,'gold').every(r=>r.status==='Rule paused'));
+    assert.equal(config.pokemonBuyRules[0].buyEnabled,true,
+        'inspection must not mutate authorization');
+});
+
+
+test('Milestone B: relevant IV and combat role matches are explanatory only', () => {
+    const h=createPokemonValuationHarness(), work=new Map();
+    const physical=samplePokemon({equippedMoves:[{categoria:'PHYSICAL'}]});
+    [200,220,240].forEach(bruto=>h.addPokemonHistorySample({
+        tipo:'pokemon',moeda:'gold',bruto,vendidoEm:Date.now()-86400000,
+        ficha:physical
+    },work));
+    h.finalizePokemonHistory(work);
+    const ref=h.pokemonReferenceFor(physical,'gold');
+    assert.equal(ref.roleComparison.role,'physical');
+    assert.equal(ref.roleComparison.observedRoleSales,3);
+    assert.equal(ref.roleComparison.relevantIvGap,0);
+    assert.equal(ref.value,220);
+    const opposite=samplePokemon({equippedMoves:[{categoria:'SPECIAL'}]});
+    const context=h.pokemonReferenceFor(opposite,'gold');
+    assert.equal(context.roleComparison.observedRoleSales,0);
+    assert.equal(context.roleComparison.relevantIvGap,null);
+    assert.equal(context.value,220,'role annotation never adjusts sale price');
+    assert.match(script,/Role-comparable sales/);
 });

@@ -1,10 +1,10 @@
 # PokéIdle Addons Premium
 
-Moth Watch **v0.3.1** lives in this repository. The standard `pokeidle-addons` controller does not install or update it automatically.
+Moth Watch **v0.4.0** lives in this repository. The standard `pokeidle-addons` controller does not install or update it automatically.
 
 ## Development roadmap
 
-See [**Moth Watch roadmap**](docs/MOTHWATCH_ROADMAP.md) for the prioritized, 20-task implementation queue: purchase safety and protocol validation first, Pokémon pricing second, economy analysis third, and UI/distribution improvements throughout. The roadmap explicitly separates implemented v0.3.0 behavior from proposed work and unverified live-server assumptions.
+See [**Moth Watch roadmap**](docs/MOTHWATCH_ROADMAP.md) for the prioritized, 20-task implementation queue: purchase safety and protocol validation first, Pokémon pricing second, economy analysis third, and UI/distribution improvements throughout. The roadmap explicitly separates implemented v0.4.0 behavior from proposed work and unverified live-server assumptions.
 
 ## Moth Watch installation
 
@@ -30,7 +30,9 @@ The broad-item scanner uses the market's item summary to shortlist relevant item
 
 ## Pokémon valuation
 
-See [Pokémon valuation reference](docs/POKEMON_VALUATION_REFERENCE.md) for documented game rules and uncertainties. The pricing scanner uses completed sales, separate currencies, species/form, shiny and potency, and narrower comparisons for score/quality/IVs when the game supplies them. A coarse comparator is not an independently validated fair price. No fixed rarity-to-price multiplier is assumed.
+**v0.4.0:** Open **Moth Watch → Pokémon price evidence** to inspect the existing scanner's bounded Pokémon sample without buying. Cards show observed N/P/Q, named IVs, nullable collectible flags, cautiously inferred physical/special/mixed role, comparable completed-sale count, empirical median, P25–P75 and P10–P90 intervals, sale-date evidence, missing-field warnings, and a **read-only** preview of explicitly configured buying rules.
+
+See [Pokémon valuation reference](docs/POKEMON_VALUATION_REFERENCE.md) and [Milestone B evidence contract](docs/MOTHWATCH_MILESTONE_B_EVIDENCE.md) for source provenance and the remaining unverified live-game fields. Valuation uses an independent version 3 cache; older v1/v2 pricing snapshots do not silently carry over. **Unknown sale dates, unverified form/collectible data or outdated samples cannot become high-confidence bargain alerts.** Some rare listings legitimately show **insufficient comparable sales**. A price range is historical context, **not a guaranteed fair price, buying permission or auto-purchase trigger**. The script does not convert Coins/Gems or assign rarity-to-price multipliers. Combat role annotations do not change prices.
 
 Read [Milestone A protocol fixtures and verification status](docs/MOTHWATCH_MILESTONE_A_PROTOCOL_FIXTURES.md) for field-presence requirements, synthetic positive/empty/mismatched examples and what still needs authorized live-server verification. The journal uses quoted **maximum exposure**, not invented actual execution price/quantity or a presumed refund. Orders and server-side inventory/balance reconciliation have **not** been certified in live play.
 

@@ -1,11 +1,19 @@
 # PokéIdle Pokémon grading, combat value, and Moth Watch pricing
 
-**Status:** upstream research, premium Moth Watch v0.3.0 pricing and rule-engine reference  
-**Reviewed:** 2026-10-12  
+**Status:** upstream research, premium Moth Watch v0.4.0 valuation and rule-engine reference  
+**Reviewed:** 2026-10-13  
 **Sources:** the complete PokéIdle wiki supplied by the project owner (especially *Stats, Qualidade e IV*, *Nota, Poder e Calculadora*, *Potência*, *Shiny*, *Combate*, *Evolução*, *Mercado da Comunidade*, and *Todas as taxas*); [pokeidle-upstream](https://github.com/MOTHblank/pokeidle-upstream) `master`; and this repository's [Moth Watch](../addons/market-bot.user.js).  
 **Source authority:** wiki = stated live game rules; upstream mirror = inspected client/shared implementation; Moth Watch = existing behavior. Where a server-only calculation, message shape, live transaction sample, or buyer preference is missing, this document says so rather than guessing.
 
-## Premium Moth Watch v0.3.0: explicit-price Pokémon purchasing
+## Premium Moth Watch v0.4.0: empirical evidence, not an automatic buy signal
+
+Moth Watch now maintains an **independent v3 completed-sale cache**, partitioned by currency, species/form identity, explicit Shiny status and P-tier. A missing Shiny, P, form, N, Q, refinement or named six-stat IV value stays unknown; no cached v1/v2 record is upgraded using invented fields. Sample provenance distinguishes packet observation from an actual sold-at timestamp, and excludes explicitly old sales (90-day window).
+
+The read-only **Pokémon price evidence** tab displays sampled listings, matching stage and counts, median, P25–P75/P10–P90 empirical sale ranges, age, dispersion, combat role annotation and a preview of user-owned absolute-price rules. Reference confidence is downgraded for unknown/old sale timestamps, missing collectible/form metadata, broad matching or wide price dispersion. The view **never authorizes** an order; buying remains governed solely by explicit maximum prices, fresh quotes and the separate purchase safeguards.
+
+**Unverified:** deployed `vendidoEm`/`soldAt` date aliases, `formId`/`formaId`, accessory/rarity flags, equipped-move arrays, explicit transfers and exact settlement shape. These field candidates must be checked against authorized redacted packets. See [Milestone B source/field contract](./MOTHWATCH_MILESTONE_B_EVIDENCE.md). Full combat-dependent pricing is intentionally **not** implemented; approximate role hints never add a price multiplier.
+
+## Historical source: Premium Moth Watch v0.3.0: explicit-price Pokémon purchasing
 
 This section supersedes **only the old no-auto-buy claims below**, not the historical valuation research. The purchase engine adds **opt-in** `pokemonBuyRules` with categories `any`, `shiny`, and `p5`; a rule declares `currency`, positive integer `buyMax`, and an individual `buyEnabled` switch. The master `fixedRulesEnabled` remains off for new profiles, and each new rule requires an explicit UI action. The same engine adds `anyItemRules` for item-wide price ceilings. Every mode uses reserves and per-order caps.
 
