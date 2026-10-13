@@ -87,7 +87,12 @@ test('compact/mobile filter panel is reversible and labelled for accessibility',
     assert.match(source,/data-mha-filter-toggle/);
     assert.match(source,/aria-controls="mha-filter-grid"/);
     assert.match(source,/aria-expanded=/);
-    assert.match(source,/aria-controls="mha-best-results"/);
+    assert.match(source,/<section class="mha-xp-details" id="mha-best-results"/);
+    assert.match(source,/\$\{bestRows\}/);
+    assert.doesNotMatch(source,/data-mha-xp-toggle/);
+    assert.doesNotMatch(source,/xpDetailsOpen/);
+    assert.match(source,/<div class="mha-best-row" role="listitem">/);
+    assert.match(source,/\$\{bestRows \? '' :/);
     assert.match(source,/document.activeElement\?\.isContentEditable/);
     assert.match(source,/\.mha-filters\[hidden\] \{ display: none !important; \}/);
     assert.match(source,/grid\.hidden=!state\.filtersExpanded/);
