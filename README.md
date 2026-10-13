@@ -1,89 +1,45 @@
 # PokéIdle Addons Premium
 
-Moth Watch **v0.6.1** lives in this repository. The standard `pokeidle-addons` controller does not install or update it automatically.
+Private repository for premium and experimental [PokéIdle](https://pokeidle.io/app) userscripts. These scripts are **not installed or updated** by the public [pokeidle-addons](https://github.com/MOTHblank/pokeidle-addons) controller.
 
-## Upstream scraper & exporter
+## Scripts
 
-The [PokéIdle Upstream Scraper & Exporter](addons/scraper-exporter.user.js) (**v1.2.0**) is maintained here. Install it manually in Violentmonkey while signed into PokéIdle; it captures publicly served client assets and lets you export an archive with a manifest. It is not installed or updated automatically by the standard controller. The script limits total downloaded data, reports unresolved dynamic paths, and supports cancellation.
+| Script | Purpose |
+| --- | --- |
+| [Moth Watch](addons/market-bot.user.js) | Community Market browser, rule-based item/Pokémon buying, Snatch queue, purchase activity and read-only pricing/economy context. |
+| [Hunt Atlas experiment](huntatlas/) | Alternative hunt finder with measured and modeled XP, resource and rare-drop comparisons, and capture planning. Independent of the public Hunt Atlas installation. |
+| [Upstream Scraper & Exporter](addons/scraper-exporter.user.js) | Manually export publicly served game client assets and a manifest, with download limits and cancellation. |
 
-## Development roadmap
+## Manual installation and updates
 
-See [**Moth Watch roadmap**](docs/MOTHWATCH_ROADMAP.md) for the prioritized, 20-task implementation queue: purchase safety and protocol validation first, Pokémon pricing second, economy analysis third, and UI/distribution improvements throughout. The roadmap explicitly separates implemented v0.6.1 behavior from proposed work and unverified live-server assumptions.
+1. Install a userscript manager such as [Violentmonkey](https://addons.mozilla.org/firefox/addon/violentmonkey/).
+2. While signed into GitHub with access to this **private** repository, open the script from the table above.
+3. Copy the source into a new userscript (or replace an existing copy) in the manager and save it.
+4. Disable any duplicate installation of the same addon, then reload PokéIdle.
 
-## Moth Watch installation
+**Updates are manual.** Private GitHub raw URLs do not provide a reliable unauthenticated userscript update feed. Moth Watch deliberately has no `@updateURL` or `@downloadURL`. An authorized maintainer can also run **Actions → Private MothWatch userscript package** and install the resulting artifact manually.
 
-Install [Violentmonkey](https://addons.mozilla.org/firefox/addon/violentmonkey/) in the desired Firefox profile. While signed in with access to this **private** repository, open [Moth Watch source](addons/market-bot.user.js), copy the script into Violentmonkey, and save. Do not keep an old Moth Watch copy enabled alongside it. The private userscript intentionally **does not** advertise `@updateURL` or `@downloadURL`: unauthenticated raw GitHub links cannot reliably update private scripts. Edit your existing Violentmonkey script manually, replacing its code with the new release. Authorized users may also run **Actions → Private MothWatch userscript package → Run workflow** and download its private artifact; that remains a manual upgrade, not an authenticated auto-updater. See [private installation and upgrade instructions](docs/MOTHWATCH_MILESTONE_D_RELEASE.md).
+## Moth Watch
 
-The script preserves its existing local settings keys. **Automated buying stays disabled for new profiles**. Each purchase rule can be individually toggled, but no rule will place an order until the master **Enable rule-based buying** switch is turned on.
+Open **Moth Watch → Automation** to configure buying rules:
 
-## Rule-based purchases (introduced in v0.3.1, hardened in v0.6.0)
+- **Fixed item:** selected item, currency and maximum unit price.
+- **Any item:** currency and maximum unit price for any matching item.
+- **Pokémon:** any, Shiny or P5 Pokémon, with currency and maximum listing price per Pokémon.
 
-Three groups are available in **Moth Watch → Automation**:
+Turn on **Enable rule-based buying** to let enabled rules place orders; buying is off by default for new profiles. Optional spend limits, reserves, purchase caps and **Pause all purchases** are available. A zero budget cap means *unlimited*, not “spend nothing”.
 
-1. **Fixed item**: choose a specific item, currency, and maximum **unit** price.
-2. **Any item**: choose Coins or Gems and the maximum **unit** price; for example, any item at or below **10,000 Coins per unit**.
-3. **Pokémon**: choose **Any Pokémon**, **Shiny Pokémon**, or **P5 Pokémon**, Coins/Gems (Shiny requires Gems), and the maximum **per-Pokémon** listing price. For example, any Pokémon at or below **1,000,000 Coins**, or any Shiny at or below **5 Gems**.
+Use the **Snatch queue** to mark held listings for purchase attempts when they unlock, or let buying rules target matching listings. Snatch can make repeated attempts while the listing remains available; only a server acknowledgement confirms a purchase. Normal available-listing purchases are not meant to wait for a Snatch release. Keep one actively buying Moth Watch tab per game account to avoid conflicting order state.
 
-All modes use the same reserves and per-purchase spending caps, plus optional **per-rule session/day spend and session purchase-count/quantity caps**, **account-wide session/day Coin/Gem ceilings**, global session purchase/quantity caps, and the **Pause all purchases** kill switch. **Zero means unlimited** for a cap, not zero permission. Existing rule authorization is unchanged. Day boundaries are UTC; the session persists through a page refresh in the same browser tab. Without a cumulative cap, an enabled category-wide rule may still exhaust available currency over multiple orders. Items are bought in available quantities bounded by affordability and all configured caps (a partial item lot may be purchased), while Pokémon are indivisible and bought one at a time. Only **one order can be pending** server confirmation. Every submitted order is journaled under a non-identifying account-specific key in the browser profile, with quoted upper-bound spend reserved. A new authenticated account loads its own journal; the raw player nickname is not stored in the key. Run only one active Moth Watch buying tab per game account: concurrent tabs lack server-backed idempotency and cross-tab transaction locks. A purchase without a matching authoritative acknowledgement becomes **unknown**, including across refresh/reconnect, and is never blindly retried for the same listing. Matching late acknowledgements/refusals can resolve it; balance changes and timeouts cannot.
+The **Activity & references**, **Pokémon price evidence**, and **Economy & holdings** views provide diagnostics and read-only context. Price comparisons are not an additional requirement for an explicitly authorized maximum-price buying rule. Moth Watch does **not** automate selling.
 
-**These are absolute-price rules, not value predictions.** A Pokémon can qualify even without reliable grade, IVs, or completed-sale history. No arbitrary reference discount is required; the user-configured price is the explicit authorization. The *sold item units* and *comparable Pokémon sales* controls under **Activity & references** affect only confidence in optional selling-price suggestions and read-only price comparisons/deal discovery; **neither blocks automatic purchases**. Moth Watch validates currencies and listing prices, skips your own ads and retained ads, and sends the listed unit price to the server. Server purchase acceptance remains authoritative.
+## Development
 
-The broad-item scanner uses the market's item summary to shortlist relevant item types, then verifies fresh individual offers at a bounded request cadence. Offers missing explicit quantity, seller, valid price or listing identity are not purchased; previously selected rules are rechecked at submission time. The Controller buy path cannot submit an unobserved, caller-supplied price as a verified quote. When Pokémon buying rules are active, it scans up to **three cheapest-price pages per currency**. It does not promise to inspect all listings or beat retention lotteries. Pokémon and Diamond listing scans are serialized; empty replies lacking the required kind/currency/page are discarded rather than guessed. Background acceptance pauses when the player browses the normal market. A request already sent before opening the native market can still be delivered to the game's own handler.
+Moth Watch is assembled into the standalone userscript from `src/mothwatch/`:
 
+```sh
+node tools/build-mothwatch.cjs
+node --test tests/moth-watch-automation.test.cjs
+```
 
-
-## Read-only economy context (v0.5.0)
-
-Open **Moth Watch → Economy & holdings** to inspect buyer-acknowledged purchase exposure, unverified-order reservations, game-catalog eligibility evidence, and the read-only seller-fee calculator. Manual inventory valuation and farming telemetry panels were removed. A market catalog label is **not** a promise that an item is eligible for player/NPC resale.
-
-The read-only calculator reproduces the shared marginal Pokémon Gem commission formula across **500 / 5,000 Gem thresholds**, flat 15% Gem fees for item/Diamond sales and a **Coin seller-net range**, because precise Coin rounding is not verified. A Pokémon's optional listing/holding cost is **100,000 Coins/day upfront** and shown separately from the seller's net in Gems/Coins. **No sale is created.**
-
-An optional versioned `MOTH_ECONOMY_TELEMETRY_V1` session snapshot can report observed hunt Coins, NPC auto-sales, item-replacement costs, rare drops and modeled rare-drop units/h **without another polling loop**; without such a producer the farm profit remains unknown. Its inclusion flag prevents counting NPC auto-sales twice. All expected drops remain modeled and separate from realized funds.
-
-See [Milestone C economy contract](docs/MOTHWATCH_MILESTONE_C_ECONOMY.md) for source requirements, formulas, privacy and remaining live-field limitations.
-
-## Operator safety, diagnostics and release process (v0.6.0–v0.6.1)
-
-**v0.6.1 maintenance:** Scanning, WebSocket handling, and UI rendering/event handling now live in additional source sections under `src/mothwatch/`, while the distributed Violentmonkey file remains standalone. The item-market inventory view caches markup until its catalog, summary, selected offer, or locale changes; other tabs avoid unrelated candidate sorting and price-reference formatting. No additional scanning interval, game request, or browser observer is introduced. See [Milestone D release guide](docs/MOTHWATCH_MILESTONE_D_RELEASE.md) for the testing boundary.
-
-Newly activating an **uncapped Any item / Any Pokémon / Shiny / P5** rule, or enabling the master switch for such configured rules, prompts for confirmation; declining does not change the existing settings. The automation tab explains per-unit versus per-Pokémon price caps, currency, scan coverage and cumulative spending limitations. Existing stored permissions remain unchanged on upgrade.
-
-In **Activity & references**, an explicit **Start diagnostics** toggle collects only a bounded, redacted sample of protocol field names, family/counts and timing in memory. Nothing is uploaded or stored as a raw market packet; use **Copy sanitized report** after reproducing an issue. The report is not an authoritative record of transaction settlement.
-
-The single distributable file is now compiled from testable source sections under `src/mothwatch/` with `node tools/build-mothwatch.cjs`; CI verifies module parity and syntax. The owner can run a manual private GitHub Actions package workflow to obtain the single script without public distribution.
-
-See [Milestone D operator/release guide](docs/MOTHWATCH_MILESTONE_D_RELEASE.md). Automated selling remains absent, and live-browser, private-update and 24-hour resource verification remain user-led.
-
-## Pokémon valuation
-
-**v0.4.0:** Open **Moth Watch → Pokémon price evidence** to inspect the existing scanner's bounded Pokémon sample without buying. Cards show observed N/P/Q, named IVs, nullable collectible flags, cautiously inferred physical/special/mixed role, comparable completed-sale count, empirical median, P25–P75 and P10–P90 intervals, sale-date evidence, missing-field warnings, and a **read-only** preview of explicitly configured buying rules.
-
-See [Pokémon valuation reference](docs/POKEMON_VALUATION_REFERENCE.md) and [Milestone B evidence contract](docs/MOTHWATCH_MILESTONE_B_EVIDENCE.md) for source provenance and the remaining unverified live-game fields. Valuation uses an independent version 3 cache; older v1/v2 pricing snapshots do not silently carry over. **Unknown sale dates, unverified form/collectible data or outdated samples cannot become high-confidence bargain alerts.** Some rare listings legitimately show **insufficient comparable sales**. A price range is historical context, **not a guaranteed fair price, buying permission or auto-purchase trigger**. The script does not convert Coins/Gems or assign rarity-to-price multipliers. Combat role annotations do not change prices.
-
-Read [Milestone A protocol fixtures and verification status](docs/MOTHWATCH_MILESTONE_A_PROTOCOL_FIXTURES.md) for field-presence requirements, synthetic positive/empty/mismatched examples and what still needs authorized live-server verification. The journal uses quoted **maximum exposure**, not invented actual execution price/quantity or a presumed refund. Orders and server-side inventory/balance reconciliation have **not** been certified in live play.
-
-Run the non-network tests with `node --test tests/moth-watch-automation.test.cjs`.
-
-> **Private repository:** Direct `raw.githubusercontent.com` links and automatic updates may not work from userscript managers without authentication. For a reliable manual installation, open the file in GitHub while signed in, copy its contents into Violentmonkey, and disable previous copies. GitHub visibility alone is not a premium distribution system.
-
-## Hunt Atlas experiment
-
-The independent Hunt Atlas experiment is maintained under [`huntatlas/`](huntatlas/) at version **1.9.13**. This copy stays separate from the regular Hunt Atlas installed by `pokeidle-addons` and does not automatically synchronize with it. Its preview image, combat and rare-rate regression tests remain.
-
-See the [**Hunt Atlas premium development roadmap**](docs/HUNTATLAS_ROADMAP.md) for the prioritized 27-task plan covering measured and modeled XP/h, net Coins/h, rare drops, eight Outland tiers, catch probabilities, ball costs, uncertainty and low-resource operation.
-
-See [experimental Hunt Atlas instructions](huntatlas/README.md). To run its tests from the repository root: `node --test huntatlas/tests/*.test.cjs`.
-
-## Technical reference documents
-
-Research formerly held in `pokeidle-addons/docs` has moved to [`docs/`](docs/):
-
-- [Auto Catch capture economics](docs/AUTOCATCH_CAPTURE_ECONOMICS.md)
-- [Combat, moves, cooldowns and type effectiveness](docs/COMBAT_MODEL_CONTRACT.md)
-- [Hunt rewards and rare loot](docs/HUNT_REWARDS_AND_RARE_LOOT.md)
-- [Community Market protocol, fees and transaction safeguards](docs/MARKET_PROTOCOL_REFERENCE.md)
-- [PokéIdle wiki/upstream mechanics map](docs/POKEIDLE_WIKI_UPSTREAM_MECHANICS_MAP.md)
-- [Pokémon valuation reference — current premium edition](docs/POKEMON_VALUATION_REFERENCE.md)
-- [Original public valuation reference — exact archived copy](docs/archive/POKEMON_VALUATION_REFERENCE_ORIGINAL.md)
-
-The `pokeidle-huntatlas` repository itself has **not** been deleted; its experimental contents are archived here so it can later be removed without losing files.
+See [Hunt Atlas instructions](huntatlas/README.md) for experiment-specific usage. Durable protocol, economics, combat and pricing references are indexed in [docs/](docs/README.md).

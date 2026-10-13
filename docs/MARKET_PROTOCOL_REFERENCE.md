@@ -2,7 +2,7 @@
 
 > **Implementation and maintenance reference for Moth Watch** (`addons/market-bot.user.js`), focused on *real Community Market* requests/responses, transaction safety and economic meaning. This is a **description of existing behavior and proposed validation**, **not a new API**, an invitation to bypass server restrictions, or an automatic trading strategy.
 >
-> **Reviewed:** 2026-10-13 · **Addon inspected:** premium **Moth Watch v0.3.1**. Live server packet shapes and settlement semantics are still **UNVERIFIED**; see [Milestone A synthetic fixtures](./MOTHWATCH_MILESTONE_A_PROTOCOL_FIXTURES.md). Historical v0.2.1 descriptions are explicitly labeled below.
+> **Reviewed:** 2026-10-13 · **Addon inspected:** premium **Moth Watch v0.3.1**. Live server packet shapes and settlement semantics are still **UNVERIFIED**. For synthetic protocol data and regression coverage, see the [market fixture](../tests/fixtures/moth-watch-market-protocol.json) and [automation tests](../tests/moth-watch-automation.test.cjs). Historical v0.2.1 descriptions are explicitly labeled below.
 
 ## Scope, trust model and linked sources
 
