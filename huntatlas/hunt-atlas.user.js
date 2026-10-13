@@ -11341,7 +11341,7 @@
                                                 )
                                         }
                                     )
-                                )}${row.xp.incomplete ? ' · ' + escapeHtml(tr('xp.incompleteShort', {percentage: row.xp.coverage})) : ''}</span>
+                                )}${row.xp.incomplete ? ' · ' + escapeHtml(tr('xp.incompleteShort', {percentage: row.xp.coverage})) : ''} · ${escapeHtml(rangeLabel(row.xp))}</span>
                                 <button
                                     type="button"
                                     class="mha-go ${here ? 'current' : ''}"
@@ -11477,6 +11477,8 @@
                         total: currentXp.totalPoints,
                         percentage: currentXp.coverage
                     })) : ''}
+                    ${best ? ' · ' + escapeHtml(displayEvidence(best.xp)) : ''}
+                    ${currentXp?.pokemonValue === null ? ' · ' + escapeHtml(tr('xp.unknownPokemon')) : ''}
                     ${currentXp?.warmingUp ? ' · ' + escapeHtml(tr('xp.warmingSession')) : ''}
                     ${currentXp?.observed ? ' · ' + escapeHtml(tr('xp.sessionEvidence', {
                         samples: currentXp.samples,
@@ -11497,6 +11499,8 @@
                             )
                         )
                         : ''}
+                    ${currentXp?.residualErrorPct !== null && currentXp?.residualErrorPct !== undefined ? ' · forecast error ' + escapeHtml(String(currentXp.residualErrorPct)) + '%' : ''}
+                    ${currentXp?.calibration?.hunts ? ' · ' + escapeHtml(tr('xp.calibration', {count: currentXp.calibration.hunts, error: currentXp.calibration.medianErrorPct})) : ''}
                     ${escapeHtml(
                         tr(
                             'xp.modelNote'
