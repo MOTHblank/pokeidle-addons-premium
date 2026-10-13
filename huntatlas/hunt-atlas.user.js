@@ -10473,9 +10473,65 @@
             .mha-xp-summary [data-mha-reference] label {
                 display: inline-flex;
                 align-items: center;
-                gap: 5px;
-                padding: 3px 4px;
+                gap: 6px;
+                padding: 4px;
                 flex-wrap: wrap;
+                min-width: 0;
+                font-size: 11px;
+            }
+            .mha-xp-summary [data-mha-reference] {
+                margin-top: 8px;
+                border-top: 1px solid rgba(255,255,255,.09);
+                padding-top: 7px;
+            }
+            .mha-xp-summary .mha-reference-enable {
+                font-weight: 600;
+                padding: 8px 4px;
+            }
+            .mha-reference-group {
+                margin: 8px 0;
+                padding: 9px;
+                border: 1px solid rgba(121,180,240,.17);
+                border-radius: 7px;
+            }
+            .mha-reference-group > strong {
+                display: block;
+                font-size: 11px;
+                color: #e4eeff;
+            }
+            .mha-reference-group .mha-xp-note {
+                margin: 4px 0 6px;
+            }
+            .mha-reference-controls {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px),1fr));
+                gap: 5px 9px;
+                margin: 6px 0;
+            }
+            .mha-reference-controls label {
+                justify-content: space-between;
+                border-radius: 5px;
+                background: rgba(255,255,255,.035);
+                overflow-wrap: anywhere;
+            }
+            .mha-reference-result {
+                margin-top: 8px;
+                padding-top: 7px;
+                border-top: 1px solid rgba(255,255,255,.07);
+                font-size: 10px;
+                line-height: 1.6;
+                overflow-wrap: anywhere;
+            }
+            .mha-reference-result strong {font-size: 11px;}
+            .mha-xp-summary [data-mha-reference-extra] {
+                margin: 8px 0;
+                padding: 7px;
+                border: 1px solid rgba(255,255,255,.09);
+                border-radius: 6px;
+            }
+            .mha-xp-summary [data-mha-reference-extra] > summary {
+                cursor: pointer;
+                font-size: 10px;
             }
             .mha-xp-summary [data-mha-reference] input[type="number"] {
                 width: 76px;
