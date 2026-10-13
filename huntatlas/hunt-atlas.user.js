@@ -2871,9 +2871,11 @@
             speciesId: kind === 'morte' ? farmingFinite(event.speciesId ?? event.pokeId) : null,
             mobLevel: kind === 'morte' ? farmingFinite(event.level) : null,
             drops: kind === 'morte' || kind === 'bossMorto' ? drops : [],
-            shinySeen: kind === 'bola' ? event.shiny === true : null,
-            shinyCaught: kind === 'capturado'
-                ? event.pokemon?.shiny === true : null,
+            shinySeen: kind === 'bola' && typeof event.shiny === 'boolean'
+                ? event.shiny : null,
+            shinyCaught: kind === 'capturado' &&
+                typeof event.pokemon?.shiny === 'boolean'
+                ? event.pokemon.shiny : null,
             chanceRaw: kind === 'bola' ? farmingFinite(event.chance) : null,
             successFlag: kind === 'bola' && typeof event.sucesso === 'boolean'
                 ? event.sucesso : null,
@@ -3180,13 +3182,15 @@
         let row=rows[rows.length-1];
         if(!row||row.bucket!==bucket){
             row={at,bucket,kills:0,throws:0,captures:0,shinySeen:0,
-                shinyCaught:0,byBall:{},bySpecies:{}};
+                shinyCaught:0,shinySeenKnown:0,shinyCaughtKnown:0,
+                byBall:{},bySpecies:{}};
             rows.push(row);
         }
         const kind=receipt.kind;
         if(kind==='morte')row.kills++;
         if(kind==='bola'){
             row.throws++;
+            if(receipt.shinySeen!==null)row.shinySeenKnown++;
             if(receipt.shinySeen===true)row.shinySeen++;
             const id=receipt.itemId;
             if(id!==null && Number.isInteger(id)&&id>=1&&id<=5)
@@ -3194,6 +3198,7 @@
         }
         if(kind==='capturado'){
             row.captures++;
+            if(receipt.shinyCaught!==null)row.shinyCaughtKnown++;
             if(receipt.shinyCaught===true)row.shinyCaught++;
         }
         const species=Number(speciesId);
@@ -3227,8 +3232,14 @@
         const kills=sum('kills'),throws=sum('throws'),hours=(now-start)/3600000;
         if(kills<6||hours<1/60)return null;
         return {kills,throws,captures:sum('captures'),
-            shinySeen:sum('shinySeen'),shinyCaught:sum('shinyCaught'),
+            shinySeen:sum('shinySeenKnown')===throws ?
+                sum('shinySeen'):null,
+            shinyCaught:sum('shinyCaughtKnown')===sum('captures') ?
+                sum('shinyCaught'):null,
+            shinySeenKnown:sum('shinySeenKnown'),
+            shinyCaughtKnown:sum('shinyCaughtKnown'),
             throwsH:throws/hours,capturesH:sum('captures')/hours,
+            windowMs:now-start,
             targetableFraction:throws/kills,
             byBall,bySpecies,source:'observed-server/accepted-correlated'};
     }
@@ -6199,9 +6210,11 @@
                 diamondPrice:ball.diamondPrice,
                 hypotheticalLure:state.filters.shinyLurePreview
             });
-        const observedThrowsH=observed?.throwsH??null;
-        const stockHours=observedThrowsH>0 && ball.stock!==null?
-            ball.stock/observedThrowsH:null;
+        const selectedBallUses=observed?.byBall?.[ball.id]??0;
+        const observedBallH=selectedBallUses>0&&observed?.windowMs>0
+            ?selectedBallUses*3600000/observed.windowMs:null;
+        const stockHours=observedBallH>0&&ball.stock!==null?
+            ball.stock/observedBallH:null;
         return {...predicted,ball,observed,
             stockHours,rateSource:xp?.observed?'observed-kills':
                 xp?.source??'unknown'};
@@ -12613,8 +12626,8 @@
                 captureLine(tr('catch.observed',{
                     throws:observedCapture.throws,
                     caught:observedCapture.captures,
-                    seen:observedCapture.shinySeen,
-                    shiny:observedCapture.shinyCaught,
+                    seen:observedCapture.shinySeen??'—',
+                    shiny:observedCapture.shinyCaught??'—',
                     fraction:(100*Math.min(1,
                         observedCapture.targetableFraction)).toFixed(1)
                 }),tr('econ.observed')):'',
