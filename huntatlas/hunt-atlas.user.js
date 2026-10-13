@@ -1755,7 +1755,9 @@
 
     // HA RARE RATE UI PURE BEGIN. Presentation only; preserve raw sorting and evidence.
     function formatRate(value) {
-        if(typeof value!=='number'||!Number.isFinite(value))return '—';
+        const n0=typeof value==='number'?value:value!==null&&value!==undefined&&value!==''?Number(value):NaN;
+        if(!Number.isFinite(n0))return '—';
+        value=n0;
         if(value===0)return '0';
         const sign=value<0?'-':'', n=Math.abs(value);
         if(n>=1e9)return sign+(n/1e9).toFixed(n>=1e10?0:1)+'b';
