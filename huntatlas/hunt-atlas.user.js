@@ -12262,8 +12262,7 @@
                 '<option value="'+(i+1)+'" '+
                 (state.filters.outlandPreviewTier===i+1?'selected':'')+
                 '>Outland '+(i+1)+' · Lv '+level+'</option>').join('')+
-            '</select></label> · '+escapeHtml(tr('rare.previewOnly'))+
-            '</div>':'';
+            '</select></label></div>':'';
         const ballSortHtml=['capture','shinyCatch'].includes(objective)?
             '<div class="mha-xp-note"><label>'+
             escapeHtml(tr('catch.ball'))+' <select data-mha-sort-capture-ball>'+
