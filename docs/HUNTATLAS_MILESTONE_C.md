@@ -36,7 +36,7 @@
 
 ### UI and tests
 
-The main Hunt Atlas filters now include **Coins/h from kills** and **net Coins/h (measured)** with normal ascending/descending sorting; missing values sort below known amounts. Hunt cards show the selected model/receipt basis. The farming panel shows all four income numbers and explicit source, cost, coverage, unknown-price, Diamond and stock caveats. The XP Top Five retains its own clear heading instead of silently becoming a Coins top five. PT-BR and English are supported.
+The main Hunt Atlas filters include **Coins/h from kills** for ascending/descending sorting; net Coins/h remains available as a separate, measured detail metric (its sort option was retired in v1.9.13). Missing ranking values sort below known amounts. Hunt cards show the selected model/receipt basis. The farming panel shows all four income numbers and explicit source, cost, coverage, unknown-price, Diamond and stock caveats. The XP Top Five retains its own clear heading instead of silently becoming a Coins top five. PT-BR and English are supported.
 
 Run `node --test huntatlas/tests/*.test.cjs` and `node --check huntatlas/hunt-atlas.user.js` in a repository checkout. `economy-milestone-c.test.cjs` tests 25,000-level gold cap, spawn-point weighting, 5%-encoded loot lines, NPC-ineligible items, nonmutation of raw loot, incomplete table coverage, partial price catalogs, no double counting and independent currencies.
 
