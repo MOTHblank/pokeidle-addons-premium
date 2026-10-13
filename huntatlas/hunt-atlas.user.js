@@ -11390,7 +11390,7 @@
                     <strong>${best
                         ? escapeHtml(
                             tr(
-                                'xp.best',
+                                best.xp.observed ? 'xp.best' : 'xp.uncertainLeader',
                                 {
                                     hunt:
                                         best.hunt.nome ||
