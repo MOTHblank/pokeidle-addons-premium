@@ -162,6 +162,7 @@
             state.attemptedListings.set(order.listingId, Number.MAX_SAFE_INTEGER);
             addLog('Purchase outcome unverified · listing #' + order.listingId);
         }
+        snatchOutcome(order.listingId,status);
         queueRender();
         return true;
     }
