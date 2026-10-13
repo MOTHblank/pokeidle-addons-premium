@@ -1,6 +1,6 @@
 # PokéIdle Hunt Atlas
 
-> **Versão experimental 1.9.5.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
+> **Versão experimental 1.9.6.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
 >
 > Não há mapa visual novo. O Atlas continua sendo uma lista pesquisável; o índice `map-markers.json` só adiciona contexto textual de localização para hunts com slug correspondente. O índice `moves-index.json` oferece golpes possíveis por espécie/nível, não uma lista de golpes equipados. Agora o Atlas compara os golpes dos índices com o catálogo mais recente de Pokémon e mostra divergências. Quando o jogo fornece nomes de golpes, o modelo usa **amostras por execução**, sem contar várias vítimas de um ataque em área como vários golpes. Quando o nome não chega, mantém o modelo por tipo. XP/h **medido** continua acima de qualquer projeção. Os índices são opcionais e podem estar desatualizados.
 >
@@ -21,6 +21,14 @@ O painel indica **aquecendo** enquanto o modelo ainda não reúne dados suficien
 - **Calibração contextual:** nível, identidade, atributos/IV de Speed, golpes declarados, TMs, Mega, região, boosts e catálogo são relevantes. O modelo pode comparar uma projeção feita *antes* de obter amostras suficientes com a taxa medida posteriormente na mesma hunt. Os erros ficam limitados à sessão, por até 90 minutos, sem histórico global de contas.
 - O Top 5 apresenta **candidato principal (incerto)** para projeções, fonte e **faixa heurística** (não é intervalo de confiança estatística). Projeções incertas quase empatadas não ultrapassam automaticamente resultados medidos.
 - As regras de Speed IV/cooldown têm testes matemáticos, mas o agendamento exato de ataques e o empilhamento de bônus ainda **não foram validados em jogo**. Detalhes: [Marco B](../docs/HUNTATLAS_MILESTONE_B.md).
+
+### Economia de farming (v1.9.6 · Marco C)
+
+O Atlas agora calcula **Moedas/h por abate** usando o nível da hunt e o teto real de 25.000; quando existe uma janela válida com recibos de morte do servidor, usa o valor medido. Há novos filtros de ordenação: **Moedas/h por abate** e **Moedas líquidas/h (medido)**.
+
+No painel de XP/h aparece também a **Economia da hunt**, com quatro números separados: Moedas/h pelos abates, **valor esperado** de loot ordinário vendável ao NPC, Moedas/h **já realizadas** (abates + venda automática confirmada) e **líquido após custo de reposição dos itens consumidos**. O EV dos drops não é somado à renda realizada; itens guardados ou anúncios no mercado não viram Moedas recebidas. Custos dependem dos preços apresentados pelo jogo; itens sem preço conhecido tornam o líquido **indisponível**, e Diamantes ficam em sua própria moeda. Com estoque conhecido há estimativa de duração.
+
+Os drops NPC são calculados de um catálogo reconstruído com regras compartilhadas upstream, **não** de uma leitura certificada dos drops finais do servidor; quando a cobertura é incompleta o valor fica **—**. O painel e os testes estão prontos, mas a validação no jogo ainda é necessária. Veja [o contrato de economia e os limites](../docs/HUNTATLAS_MILESTONE_C.md). Não foram adicionados pedidos periódicos à loja nem venda automática.
 
 ### 🎮 Correio Maluco — minigame experimental (1.9.3)
 
@@ -119,6 +127,14 @@ The UI shows a **warming up** label until enough sustained evidence exists. `win
 - **Context-specific calibration:** exact lead, level, stats/Speed IV, move information, TMs/Mega, hunt, bonuses and catalog revision matter. A forecast frozen *before* sustained measurements can later be evaluated against the observed result from that hunt. Error samples are session-local, bounded and expire after 90 minutes.
 - A model-only Top 5 leader is marked a **leading candidate (uncertain)**. Source, coverage and a **heuristic** range—not a statistical confidence interval—are displayed. Close uncertain estimates do not automatically outrank reliable measured ones.
 - Speed IV/cooldown formulas have deterministic fixtures, but live move scheduling and native XP bonuses are **not yet server-verified**. Read the [Milestone B technical notes](../docs/HUNTATLAS_MILESTONE_B.md).
+
+### Farming economy (v1.9.6 · Milestone C)
+
+Hunt Atlas now estimates **kill Coins/hour** with the proper level-25,000 cap and uses real wild-kill receipts whenever a representative current-session window exists. You can sort by **kill Coins/hour** or **net Coins/hour (measured)**, separately from the XP rank.
+
+The XP details include four distinct measures: kill Coins/h, ordinary NPC-resellable **loot expected value/h**, **realized** Coins/h (native kill receipts and one occurrence of auto NPC resale), and **net Coins/h** after replacement cost of actually consumed supplies. Unsold drops and potential listings are never counted as already realized Coins. Costs require explicit game catalog prices; unknown prices leave net unavailable, and Diamonds remain separate. When inventory quantity is known, the panel estimates remaining stock coverage.
+
+Ordinary loot is derived from a **reconstructed shared-upstream catalog**, not a server-certified final loot table. Incomplete NPC eligibility or price coverage yields **—**, not a made-up number. See the [economy contract and live-validation limits](../docs/HUNTATLAS_MILESTONE_C.md). No extra continuous shop polling or automatic selling was added.
 
 ### 🎮 Parcel Panic — experimental mini-game (1.9.3)
 

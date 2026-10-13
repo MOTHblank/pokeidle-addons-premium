@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/huntatlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.5
+// @version      1.9.6
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.5');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.6');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -420,6 +420,23 @@
             'xp.currentModeled': ' · current modeled {value} trainer XP/h',
             'xp.warmingSession': 'warming up: sustained observations still insufficient',
             'xp.sessionEvidence': '{samples} kills / {minutes} min, wall-clock',
+            'sort.coins': 'Kill Coins/hour',
+            'sort.netCoins': 'Net Coins/hour (measured)',
+            'econ.title': 'Farming economy · {hunt}',
+            'econ.kill': 'Kill Coins/h',
+            'econ.loot': 'NPC loot EV/h',
+            'econ.realized': 'Realized Coins/h',
+            'econ.net': 'Net Coins/h',
+            'econ.cost': 'Replacement cost of used items',
+            'econ.diamonds': 'Diamonds/h (separate)',
+            'econ.model': 'shared model (unboosted, catalog fallback level)',
+            'econ.observed': 'observed server receipts',
+            'econ.estimatedLoot': 'reconstructed static loot · {coverage}% coverage (not verified server drops)',
+            'econ.netCaveat': 'Net = realized hunt Coins minus replacement cost of consumed balls/potions/revives, not a wallet-balance change. Unsold loot and potential market sales are excluded.',
+            'econ.noPrice': 'Costs unavailable: missing official shop price for {count} uses',
+            'econ.unlinked': 'Net unavailable: {count} throw event(s) could not be reconciled to a unique corpse',
+            'econ.stock': 'Stock {count} · runway {hours}h at observed use rate',
+            'econ.unknown': '— (insufficient evidence)',
             'xp.sourceLabel': 'source: {source}',
             'xp.sourceMeasured': 'server kill rewards (observed)',
             'xp.sourceModel': 'personalized combat projection',
@@ -633,6 +650,23 @@
             'xp.currentModeled': ' · atual modelado {value} XP de treinador/h',
             'xp.warmingSession': 'aquecendo: ainda faltam medições sustentadas',
             'xp.sessionEvidence': '{samples} abates / {minutes} min, tempo corrido',
+            'sort.coins': 'Moedas/h por abate',
+            'sort.netCoins': 'Moedas líquidas/h (medido)',
+            'econ.title': 'Economia da hunt · {hunt}',
+            'econ.kill': 'Moedas/h dos abates',
+            'econ.loot': 'EV/h de loot vendável ao NPC',
+            'econ.realized': 'Moedas/h realizadas',
+            'econ.net': 'Moedas líquidas/h',
+            'econ.cost': 'Reposição dos itens consumidos',
+            'econ.diamonds': 'Diamantes/h (separado)',
+            'econ.model': 'modelo-base (sem bônus, nível da hunt)',
+            'econ.observed': 'recibos observados do servidor',
+            'econ.estimatedLoot': 'loot reconstruído do catálogo · cobertura {coverage}% (drops do servidor não verificados)',
+            'econ.netCaveat': 'Líquido = moedas realizadas na hunt menos custo de reposição de bolas/poções/revives usados, não variação do saldo. Loot guardado e vendas futuras não entram.',
+            'econ.noPrice': 'Custo indisponível: falta preço oficial de {count} usos',
+            'econ.unlinked': 'Líquido indisponível: {count} evento(s) de bola sem associação confiável a um corpo',
+            'econ.stock': 'Estoque {count} · duração {hours}h no ritmo observado',
+            'econ.unknown': '— (evidência insuficiente)',
             'xp.sourceLabel': 'fonte: {source}',
             'xp.sourceMeasured': 'recompensas do servidor (medidas)',
             'xp.sourceModel': 'projeção personalizada de combate',
@@ -872,6 +906,13 @@
         farmingLedger: makeFarmingLedger(),
         farmingSnapshot: {},
         xpBonusState: {},
+        itemCatalogStatus: 'idle',
+        itemsByName: new Map(),
+        itemsById: new Map(),
+        npcLootBySpecies: new Map(),
+        ballPrices: new Map(),
+        itemPrices: new Map(),
+        inventoryForCosts: new Map(),
         calibrationEvidence: new Map(),
         hunts: [],
         playerLevel: 0,
@@ -1120,6 +1161,8 @@
 
             const validSorts = [
                 'xp',
+                'coins',
+                'netCoins',
                 'name',
                 'pokedex',
                 'level',
@@ -1664,6 +1707,8 @@
             trainerXp: 0,
             pokemonXp: 0,
             gold: 0,
+            rateUseWindow: null,
+            speciesKills: {},
 
             killIntervals: [],
             sameTargetIntervals: [],
@@ -2694,6 +2739,8 @@
             pokemonXp: kind === 'morte' ? pokemonXp : null,
             killCoins: kind === 'morte' ? killCoins : null,
             autoSaleCoins: kind === 'morte' ? autoSaleCoins : null,
+            speciesId: kind === 'morte' ? farmingFinite(event.speciesId ?? event.pokeId) : null,
+            mobLevel: kind === 'morte' ? farmingFinite(event.level) : null,
             drops: kind === 'morte' || kind === 'bossMorto' ? drops : [],
             shinySeen: kind === 'bola' ? event.shiny === true : null,
             shinyCaught: kind === 'capturado'
@@ -2768,7 +2815,7 @@
             captures: 0, shinySeen: 0, shinyCaught: 0,
             potions: 0, revives: 0, bossDeaths: 0
         }, items: new Map(), diagnostics: {malformed: 0, duplicates: 0,
-            noSlot: 0, unlinked: 0}, fieldPresence: new Map()};
+            noSlot: 0, unlinked: 0, uncertainCosts: 0}, fieldPresence: new Map()};
     }
 
     function farmingSpawn(ledger, slot) {
@@ -2792,6 +2839,7 @@
         let corpse = slot !== null ? ledger.slots.get(slot) : null;
         if (['morte', 'bola', 'capturado'].includes(kind) && !slot) {
             ledger.diagnostics.noSlot++;
+            if (kind === 'bola') ledger.diagnostics.uncertainCosts++;
             return false; // Cannot safely deduplicate or correlate a body.
         }
         if (kind === 'morte') {
@@ -2811,6 +2859,7 @@
             ]) ledger.totals[name] += receipt[field] ?? 0;
         } else if (kind === 'bola') {
             if (!corpse?.dead || corpse.thrown) {
+                ledger.diagnostics.uncertainCosts++;
                 ledger.diagnostics.unlinked++;
                 return false;
             }
@@ -2859,7 +2908,9 @@
         if (!row || row.bucket !== bucket) {
             row = {bucket, at, kills: 0, productiveMs: 0,
                 trainerXp: 0, pokemonXp: 0, gold: 0,
-                trainerKnown: 0, pokemonKnown: 0};
+                trainerKnown: 0, pokemonKnown: 0,
+                killGold: 0, autoSale: 0, killGoldKnown: 0,
+                autoSaleKnown: 0};
             rows.push(row);
         }
         row.kills++;
@@ -2872,6 +2923,14 @@
             row.pokemonKnown++;
         }
         row.gold += sample.gold ?? 0;
+        if (sample.killGold !== null && Number.isFinite(sample.killGold)) {
+            row.killGold += sample.killGold;
+            row.killGoldKnown++;
+        }
+        if (sample.autoSale !== null && Number.isFinite(sample.autoSale)) {
+            row.autoSale += sample.autoSale;
+            row.autoSaleKnown++;
+        }
         if (!reset) {
             const gap = at - window.lastAt;
             if (gap >= 0 && gap <= 60000) row.productiveMs += gap;
@@ -2903,6 +2962,10 @@
             trainerKnown: sum('trainerKnown'),
             pokemonKnown: sum('pokemonKnown'),
             goldH: sum('gold') * 3600000 / elapsedMs,
+            killGoldH: sum('killGoldKnown') === samples
+                ? sum('killGold') * 3600000 / elapsedMs : null,
+            autoSaleH: sum('autoSaleKnown') === samples
+                ? sum('autoSale') * 3600000 / elapsedMs : null,
             productiveKillsH: productiveMs >= FARM_MIN_WINDOW_MS
                 ? samples * 3600000 / productiveMs : null,
             productiveMs, windowMs: elapsedMs, samples,
@@ -2911,6 +2974,180 @@
     }
     // HA MILESTONE A PURE END.
 
+
+
+    // HA MILESTONE C PURE BEGIN: economy amounts in Coins, not XP or Gems.
+    const FARM_SEEDS={NORMAL:'Luck Medallion',FIRE:'Magma Foot',
+        WATER:'Air Tank',GRASS:'Massive Vines',ELECTRIC:'Electric Tail',
+        ICE:'Ski Poles',FIGHTING:'Belt of Champion',POISON:'Female Ear',
+        GROUND:'Horn Drill',FLYING:'Colored Feather',PSYCHIC:'Fox Tail',
+        BUG:'Pinsir Horn',ROCK:'Solid Rock Paw',GHOST:'Traces of Ghost',
+        DRAGON:'Dragon Tooth',DARK:'Dark Moon',STEEL:'Steelix Tail',
+        FAIRY:'Luck Medallion'};
+    const FARM_DEAD=new Set(['strange pheromone','10000 carat emerald','moon stone']);
+    const farmNum = n => n===null||n===undefined||n===''||
+        !Number.isFinite(Number(n))||Number(n)<0 ? null : Number(n);
+    function farmNpcPrice(item, shopIds=new Set(),specialIds=new Set()) {
+        if (!item || !Number.isInteger(Number(item.id))) return null;
+        const name=String(item.name||'').toLowerCase().replace(/\./g,'');
+        if (item.category==='stone'&&name!=='rough gemstone') return 0;
+        if (['heal','revive'].includes(item.category)||shopIds.has(Number(item.id))||
+            specialIds.has(Number(item.id))||FARM_DEAD.has(name)) return 0;
+        const price=farmNum(item.npcPrice);
+        return item.category==='loot' ? price : null;
+    }
+    function farmLootValue(lines,priceOf) {
+        if (!Array.isArray(lines)) return {perKill:null,unknown:1,lines:0};
+        let value=0,unknown=0,seen=0;
+        for(const line of lines.slice(0,80)) {
+            const p=farmingLootChance(line?.chance);
+            const lo=farmNum(line?.minCount??1),hi=farmNum(line?.maxCount??1);
+            if(p===null||lo===null||hi===null||lo>hi){unknown++;continue;}
+            if(p===0)continue;
+            const price=priceOf(line?.name);
+            if(price===null||price===undefined){unknown++;continue;}
+            value+=p*(lo+hi)/2*price;seen++;
+        }
+        return {perKill:unknown?null:value,knownSubtotal:value,unknown,lines:seen};
+    }
+    // Reconstruct the shared economy-drop adjustments from the raw catalog.
+    // This is labeled "reconstructed", NOT the deployed server's final table.
+    function farmRebalanceLoot(species,priceOf) {
+        if(!species||!Array.isArray(species.loot)) return null;
+        const rows=species.loot.slice(0,80).map(x=>({...x}));
+        const n=farmNum(species.huntLevel);
+        if(!(n>=1))return null;
+        const gold=farmingGoldForLevel(n);
+        const base=n<=25000?gold:farmingGoldForLevel(25000)*(n/25000)**.30;
+        const target=Math.max(0,Math.round(base*1.15)-gold);
+        const paying=()=>rows.filter(x=>farmNum(x.chance)>0&&(priceOf(x.name)??0)>0);
+        if(!paying().length) {
+            const name=FARM_SEEDS[String(species.type1||'').toUpperCase()]||FARM_SEEDS.NORMAL;
+            const price=priceOf(name);
+            if(price>0)rows.push({name,chance:Math.max(1,
+                Math.round(Math.min(60,target/price*100)*1000)),
+                minCount:1,maxCount:1});
+        }
+        const lines=paying().filter(x=>x.name!=='Rare Pokémon Picture');
+        const ev=farmLootValue(lines,priceOf).perKill;
+        if(ev>0)for(const row of lines){
+            const scale=target/ev;
+            const min=Math.max(1,Math.min(20,Math.round((row.minCount??1)*scale)));
+            row.maxCount=Math.max(min,Math.min(20,Math.round((row.maxCount??1)*scale)));
+            row.minCount=min;
+        }
+        const after=farmLootValue(lines,priceOf).perKill;
+        const missing=after===null?0:target-after;
+        const rarePrice=priceOf('Rare Pokémon Picture');
+        const quantity=rarePrice>0?Math.round(missing/(.05*rarePrice)):0;
+        const rare=rows.find(x=>x.name==='Rare Pokémon Picture');
+        if(missing>0&&quantity>=1){
+            if(rare)Object.assign(rare,{chance:5000,minCount:quantity,maxCount:quantity});
+            else rows.push({name:'Rare Pokémon Picture',chance:5000,
+                minCount:quantity,maxCount:quantity});
+        }else if(rare)rows.splice(rows.indexOf(rare),1);
+        return rows;
+    }
+    function farmGoldPrediction(hunt,killsH){
+        if(!Number.isFinite(killsH)||killsH<0||
+            !Array.isArray(hunt?.especies)||!hunt.especies.length)return null;
+        const rows=hunt.especies.map(x=>({weight:Math.max(1,Number(x.pontos)||1),
+            level:farmNum(x.level??x.nivel??hunt.nivel)}));
+        if(rows.some(x=>!x.level))return null;
+        const total=rows.reduce((sum,x)=>sum+x.weight,0);
+        return killsH*rows.reduce((sum,x)=>sum+
+            x.weight*farmingGoldForLevel(x.level),0)/total;
+    }
+    function farmLootPrediction(hunt,known,killsH) {
+        if(!Number.isFinite(killsH)||killsH<0||
+            !Array.isArray(hunt?.especies)||!hunt.especies.length)
+            return {perHour:null,coverage:0,source:'unknown'};
+        let total=0,covered=0,weighted=0;
+        for(const x of hunt.especies){
+            const w=Math.max(1,Number(x.pontos)||1);
+            total+=w;
+            const row=known.get(Number(x.pokeId));
+            if(row&&Number.isFinite(row.perKill)){covered+=w;weighted+=row.perKill*w;}
+        }
+        return {perHour:covered===total?killsH*weighted/total:null,
+            coverage:total?Math.round(100*covered/total):0,
+            source:'reconstructed-upstream-catalog'};
+    }
+    function farmNormalizePrices(data,kind){
+        const rows=Array.isArray(data)?data:
+            data&&typeof data==='object'?Object.entries(data).map(([id,row])=>
+                row&&typeof row==='object'?{id,...row}:{id}):[];
+        const out=new Map();
+        for(const row of rows.slice(0,200)){
+            const id=Number(row?.id??row?.itemId??row?.ballId);
+            if(!Number.isInteger(id)||id<0)continue;
+            const coins=kind==='ball'?
+                farmNum(row.priceGold??row.precoGold??row.goldPrice):
+                farmNum(row.npcPrice??row.precoGold??row.priceGold);
+            const diamonds=farmNum(row.priceDiamond??row.precoDiamantes??row.diamondPrice);
+            out.set(id,{coins,diamonds,kind,source:'observed-client-catalog'});
+        }
+        return out;
+    }
+    function farmAppendUse(win,receipt,at){
+        if(!Number.isFinite(at)||!receipt)return win;
+        const rows=!win||at<win.lastAt||at-win.lastAt>900000?[]:
+            win.rows.filter(x=>x.at>=at-930000);
+        const bucket=Math.floor(at/30000);
+        let row=rows[rows.length-1];
+        if(!row||row.bucket!==bucket){row={bucket,at,uses:{}};rows.push(row);}
+        const type=receipt.kind==='bola'?'ball':
+            ['cura','revive'].includes(receipt.kind)?'item':null;
+        if(type&&receipt.itemId!==null){
+            const key=type+':'+receipt.itemId;
+            row.uses[key]=(row.uses[key]||0)+1;
+        }
+        if(rows.length>33)rows.splice(0,rows.length-33);
+        return {rows,lastAt:at};
+    }
+    function farmCostRates(win,from,to,catalogs,inventory){
+        if(!(to>from))return null;
+        const counts=new Map();
+        for(const row of win?.rows||[]){
+            if(row.at<from-30000||row.at>to)continue;
+            for(const [key,count] of Object.entries(row.uses))
+                counts.set(key,(counts.get(key)||0)+count);
+        }
+        let coins=0,diamonds=0,unknown=0;
+        const items=[];
+        for(const [key,count] of counts){
+            const [type,idText]=key.split(':');const id=Number(idText);
+            const price=(type==='ball'?catalogs.balls:catalogs.items)?.get(id);
+            if(price?.coins===null||price?.coins===undefined){
+                // Diamond-priced supplies are not free Coins; keep currency separate.
+                if(price?.diamonds===null||price?.diamonds===undefined)unknown+=count;
+            }else coins+=price.coins*count;
+            if(price?.diamonds!==null&&price?.diamonds!==undefined)
+                diamonds+=price.diamonds*count;
+            items.push({type,id,count,remaining:inventory?.get(key)??null,
+                priceSource:price?.source??'unknown'});
+        }
+        const hours=(to-from)/3600000;
+        return {coinsH:unknown?null:coins/hours,diamondsH:diamonds/hours,
+            unknown,items,source:'replacement-cost-not-spend'};
+    }
+    function farmFinancialSummary(killsH,modeledKillH,observedKillH,
+        observedAutoSaleH,npcLootEvH,cost){
+        const ok=x=>typeof x==='number'&&Number.isFinite(x)&&x>=0;
+        const killH=ok(observedKillH)?observedKillH:ok(modeledKillH)?
+            modeledKillH:null;
+        const realizedH=ok(observedKillH)&&ok(observedAutoSaleH)?
+            observedKillH+observedAutoSaleH:null;
+        // No unsold loot EV and no second copy of already-realized auto sales.
+        const netH=ok(realizedH)&&ok(cost?.coinsH)?
+            realizedH-cost.coinsH:null;
+        return {killsH,killCoinsH:killH,
+            killSource:ok(observedKillH)?'observed-server/event':'upstream-shared-model',
+            npcLootEvH:ok(npcLootEvH)?npcLootEvH:null,realizedH,netH,
+            replacementCostH:cost?.coinsH??null,diamondsH:cost?.diamondsH??null,
+            source:netH===null?'incomplete':'replacement-cost-adjusted'};
+    }
+    // HA MILESTONE C PURE END.
 
     // HA MILESTONE B PURE BEGIN: no live bonus is inferred from a prior kill.
     const XP_BONUS_FIELDS = Object.freeze([
@@ -2949,11 +3186,28 @@
         return Object.keys(result).length ? result : null;
     }
 
+    function xpBonusTimeScope(snapshot, now) {
+        const defined = [];
+        if (!snapshot || typeof snapshot !== 'object') return 'unknown';
+        for (const [name,value] of Object.entries(snapshot)) {
+            if (!value || typeof value !== 'object') continue;
+            const at = value.expiresAt ?? value.until;
+            // Only plausible Unix millisecond timestamps have interpretable
+            // expiration semantics. Unknown protocol units stay unverified.
+            if (typeof at === 'number' && at > 1400000000000 &&
+                at < 4100000000000) defined.push([
+                    name, now >= at ? 'expired' : 'active'
+                ]);
+        }
+        return JSON.stringify(defined.sort((a,b)=>a[0].localeCompare(b[0])));
+    }
+
     function xpBonusScope(snapshot) {
         if (!snapshot || typeof snapshot !== 'object') return 'unknown';
         // Fixed ordering means a delta with identical semantics won't reset data.
         return JSON.stringify(Object.keys(snapshot).sort()
-            .map(key => [key, snapshot[key]]));
+            .map(key => [key, snapshot[key]])) +
+            '|' + xpBonusTimeScope(snapshot, Date.now());
     }
 
     function observeXpTransition(record, channel, xp, base, at) {
@@ -3137,7 +3391,8 @@
             record.sessionToken = state.farmingSessionToken;
         }
         record.rateWindow = appendFarmingKill(record.rateWindow,
-            {at: now, trainerXp, pokemonXp, gold});
+            {at: now, trainerXp, pokemonXp, gold,
+                killGold:receipt.killCoins, autoSale:receipt.autoSaleCoins});
 
         const hunt =
             currentHunt();
@@ -3183,21 +3438,15 @@
             );
 
         if (slot) {
-            const target =
-                state.combatTargets.get(
-                    slot
-                );
-
-            recordTargetHp(
-                record,
-                target
-            );
-
-            state.combatTargets.delete(
-                slot
-            );
+            const target = state.combatTargets.get(slot);
+            const speciesId = receipt.speciesId ?? target?.speciesId;
+            if (speciesId && Object.keys(record.speciesKills).length < 80) {
+                const key = String(speciesId);
+                record.speciesKills[key] = (record.speciesKills[key] || 0) + 1;
+            }
+            recordTargetHp(record, target);
+            state.combatTargets.delete(slot);
         }
-
         savePerformance();
 
         if (
@@ -3256,7 +3505,8 @@
                 );
             } else {
                 const receipt = normalizeFarmingEvent(event);
-                if (receipt) acceptFarmingEvent(state.farmingLedger, receipt);
+                if (receipt && acceptFarmingEvent(state.farmingLedger, receipt))
+                    farmTrackUse(receipt);
             }
         }
     }
@@ -3510,6 +3760,7 @@
          * In the delta protocol, a missing key means "unchanged" while an
          * explicit null means "clear it".
          */
+        farmUpdateInventory(gameState);
         const beforeFarmingScope = farmingSnapshotScope();
         const farmSnapshot = normalizeFarmingSnapshot(gameState);
         if (farmSnapshot) Object.assign(state.farmingSnapshot, farmSnapshot);
@@ -3963,6 +4214,7 @@
                 );
             }
 
+            farmApplyRuntimeCatalog(message);
             mergeState(
                 message.estado,
                 true
@@ -5276,6 +5528,9 @@
                         creature.huntLevel
                     )
                     : previous.huntLevel,
+            rawLoot: Array.isArray(creature?.loot)
+                ? creature.loot.map(line => ({...line}))
+                : previous.rawLoot ?? null,
             catalogSellValue:
                 Number.isFinite(
                     Number(
@@ -5368,6 +5623,103 @@
         return null;
     }
 
+
+    function rebuildNpcLootCatalog() {
+        // Uses already-loaded raw item/creature assets once per catalog
+        // revision. It reconstructs upstream normalization, not server truth.
+        const shopIds = new Set(state.itemPrices.keys());
+        const special = new Set([70000]); // upstream Bronze Boss Token
+        const priceOf = name => {
+            const item = state.itemsByName.get(String(name || '').toLowerCase());
+            return farmNpcPrice(item, shopIds, special);
+        };
+        state.npcLootBySpecies.clear();
+        if (!state.itemsByName.size) return;
+        for (const [id, meta] of state.speciesCombat) {
+            if (!Array.isArray(meta.rawLoot)) continue;
+            const rebuilt = farmRebalanceLoot({
+                loot:meta.rawLoot, huntLevel:meta.huntLevel,
+                type1:meta.type1
+            }, priceOf);
+            const value = farmLootValue(rebuilt, priceOf);
+            state.npcLootBySpecies.set(id,value);
+        }
+    }
+
+    function farmApplyRuntimeCatalog(message) {
+        const balls = message?.catalogoBolas;
+        const items = message?.itensCompraveis;
+        if (balls !== undefined)
+            state.ballPrices = farmNormalizePrices(balls, 'ball');
+        if (items !== undefined) {
+            state.itemPrices = farmNormalizePrices(items, 'item');
+            if (state.itemsByName.size) rebuildNpcLootCatalog();
+        }
+    }
+
+    function farmUpdateInventory(snapshot) {
+        if (!snapshot || typeof snapshot !== 'object') return;
+        for (const [name,kind] of [['balls','ball'],['items','item']]) {
+            if (!Object.hasOwn(snapshot,name)) continue;
+            for (const key of [...state.inventoryForCosts.keys()])
+                if (key.startsWith(kind+':')) state.inventoryForCosts.delete(key);
+            const source = snapshot[name];
+            const entries = Array.isArray(source) ? source.map(x=>
+                [x?.id??x?.itemId??x?.ballId, x?.qtd??x?.quantity??x?.count])
+                : source && typeof source === 'object' ?
+                    Object.entries(source) : [];
+            for (const [id,quantity] of entries.slice(0,200)) {
+                const n = Number(id), count = farmNum(quantity);
+                if (Number.isInteger(n) && count !== null)
+                    state.inventoryForCosts.set(kind+':'+n,count);
+            }
+        }
+    }
+
+    function farmTrackUse(receipt, at=Date.now()) {
+        if (!receipt || !['bola','cura','revive'].includes(receipt.kind) ||
+            !isHuntHere()) return;
+        const record = performanceRecord(state.currentHuntSlug,true);
+        if (!record) return;
+        record.rateUseWindow = farmAppendUse(record.rateUseWindow,receipt,at);
+    }
+
+    function huntEconomyEstimate(hunt, xp = huntXpEstimate(hunt)) {
+        const killsH = Number.isFinite(xp?.killsH) ? xp.killsH : null;
+        const modelKillGoldH = farmGoldPrediction(hunt,killsH);
+        const loot = farmLootPrediction(hunt,state.npcLootBySpecies,killsH);
+        const current = isHuntHere(hunt?.slug);
+        const record = current ? performanceRecord(hunt?.slug,false) : null;
+        const rates = current ? observedRates(record) : null;
+        const now = Date.now();
+        const measuredStart = rates ? now-rates.windowMs : null;
+        const costs = measuredStart !== null
+            ? farmCostRates(record?.rateUseWindow, measuredStart, now,
+                {balls:state.ballPrices,items:state.itemPrices},
+                state.inventoryForCosts) : null;
+        // Missing/unlinked accepted throw events mean the consumed-ball
+        // cost ledger may be incomplete; do not publish an inflated net.
+        const uncertainCosts=state.farmingLedger.diagnostics.uncertainCosts || 0;
+        if (costs && uncertainCosts) costs.coinsH=null;
+        const summary = farmFinancialSummary(killsH,modelKillGoldH,
+            rates?.killGoldH ?? null,rates?.autoSaleH ?? null,
+            loot.perHour,costs);
+        return {...summary, lootCoverage:loot.coverage,
+            lootSource:loot.source,
+            sampleCount:rates?.samples??0,
+            windowMs:rates?.windowMs??null,
+            useEvidence:(costs?.items??[]).map(entry=>{
+                const hours=rates?.windowMs / 3600000;
+                const perHour=hours>0 ? entry.count/hours : null;
+                return {...entry,perHour,
+                    hoursRemaining:perHour>0 &&
+                        entry.remaining!==null ? entry.remaining/perHour : null};
+            }),
+            unknownCosts:costs?.unknown??null,
+            unlinkedCosts:uncertainCosts,
+            unboosted:!xp?.observed};
+    }
+
     function ensureCombatCatalog() {
         if (
             state.combatCatalogStatus ===
@@ -5430,14 +5782,16 @@
                     '/assets/creatures-audit-overrides.json'
                 ).catch(
                     () => null
-                )
+                ),
+                load('/assets/items.json').catch(() => null)
             ])
                 .then(
                     ([
                         base,
                         novos,
                         outland,
-                        audit
+                        audit,
+                        items
                     ]) => {
                         for (
                             const data of [
@@ -5466,6 +5820,19 @@
                                 override
                             );
                         }
+
+                        state.itemsByName.clear();
+                        state.itemsById.clear();
+                        if (Array.isArray(items?.items)) {
+                            for (const item of items.items) {
+                                const id = Number(item?.id);
+                                if (!Number.isInteger(id) || !item.name) continue;
+                                state.itemsById.set(id, item);
+                                state.itemsByName.set(String(item.name).toLowerCase(), item);
+                            }
+                            state.itemCatalogStatus = 'raw-upstream-catalog';
+                        } else state.itemCatalogStatus = 'unknown';
+                        rebuildNpcLootCatalog();
 
                         state.combatCatalogStatus =
                             'ready';
@@ -6239,7 +6606,8 @@
                 leadSignature() ||
                     '',
                 state.combatRevision,
-                state.combatCatalogStatus
+                state.combatCatalogStatus,
+                farmingSnapshotScope()
             ].join('|');
 
         if (
@@ -6932,7 +7300,8 @@
                 leadSignature() ||
                     '',
                 state.combatRevision,
-                state.combatCatalogStatus
+                state.combatCatalogStatus,
+                farmingSnapshotScope()
             ].join('|');
 
         if (
@@ -6970,10 +7339,13 @@
                 value:
                     observed.trainerXpH,
                 pokemonValue: observed.pokemonXpH,
+                killGoldH: observed.killGoldH,
+                autoSaleH: observed.autoSaleH,
                 trainerKnown: observed.trainerKnown,
                 pokemonKnown: observed.pokemonKnown,
                 goldValue:
                     observed.goldH,
+                goldSource: 'observed-server/combined-receipt',
                 killsH:
                     observed.killsH,
                 killMs:
@@ -7132,7 +7504,10 @@
             pokemonValue:
                 pokemonXpPerKill *
                 killsH,
-            goldValue: null,
+            goldValue: farmGoldPrediction(hunt,killsH),
+            goldSource: 'upstream-shared-model',
+            killGoldH: null,
+            autoSaleH: null,
             warmingUp: Boolean(record && record.rateWindow?.rows?.length &&
                 record.rateGeneration === state.rateGeneration),
             killsH,
@@ -7888,6 +8263,14 @@
             });
         }
 
+        // Compute at most one economy estimate per hunt during this sort.
+        const economySortCache = new Map();
+        const economyFor = hunt => {
+            if (!hunt?.slug) return null;
+            if (!economySortCache.has(hunt.slug))
+                economySortCache.set(hunt.slug, huntEconomyEstimate(hunt));
+            return economySortCache.get(hunt.slug);
+        };
         result.sort(
             (a, b) => {
                 const sort =
@@ -7995,6 +8378,15 @@
                             value(b),
                             true
                         );
+                } else if (sort === 'coins' || sort === 'netCoins') {
+                    // Null means unsupported, NOT free or equal to zero.
+                    const key = sort === 'coins' ? 'killCoinsH' : 'netH';
+                    const av = economyFor(a.hunt)?.[key];
+                    const bv = economyFor(b.hunt)?.[key];
+                    const aKnown = typeof av === 'number' && Number.isFinite(av);
+                    const bKnown = typeof bv === 'number' && Number.isFinite(bv);
+                    comparison = aKnown && bKnown ? (av - bv) * direction
+                        : aKnown ? -1 : bKnown ? 1 : 0;
                 } else if (
                     sort === 'npc'
                 ) {
@@ -10152,6 +10544,8 @@
                     <div class="mha-sort-control">
                         <select data-mha-filter="sort">
                             <option value="xp">${tr('sort.xp')}</option>
+                            <option value="coins">${tr('sort.coins')}</option>
+                            <option value="netCoins">${tr('sort.netCoins')}</option>
                             <option value="name">${tr('sort.name')}</option>
                             <option value="pokedex">${tr('sort.pokedex')}</option>
                             <option value="level">${tr('sort.level')}</option>
@@ -10931,6 +11325,7 @@
                 hunt
             );
 
+        const economicInfo = huntEconomyEstimate(hunt,xpInfo);
         const xpLabel =
             xpInfo?.value
                 ? tr(
@@ -10973,6 +11368,14 @@
                         : 'hunt.locked'
                 ),
                 xpLabel,
+                typeof economicInfo.killCoinsH === 'number'
+                    ? tr('econ.kill') + ': ' + formatRate(economicInfo.killCoinsH)
+                        + ' (' + (economicInfo.killSource === 'observed-server/event'
+                            ? tr('econ.observed') : tr('econ.model')) + ')'
+                    : null,
+                typeof economicInfo.netH === 'number'
+                    ? tr('econ.net') + ': ' + formatRate(economicInfo.netH)
+                    : null,
                 xpInfo?.incomplete ? tr('xp.incompleteShort', { percentage: xpInfo.coverage }) : null,
                 sharedHunts.length ? tr('location.shared', { hunts: sharedHunts.join(', ') }) : null
             ]
@@ -11365,6 +11768,50 @@
                 )
                 : false;
 
+        const economicHunt = current || best?.hunt || null;
+        const economic = economicHunt ? huntEconomyEstimate(economicHunt,
+            economicHunt.slug === best?.hunt?.slug
+                ? best.xp : huntXpEstimate(economicHunt)) : null;
+        const econValue = value => typeof value === 'number' &&
+            Number.isFinite(value) ? formatRate(value) : tr('econ.unknown');
+        const econLine = (label,value,source) => '<div class="mha-xp-note"><strong>' +
+            escapeHtml(label) + ': ' + escapeHtml(econValue(value)) +
+            '</strong>' + (source ? ' · ' + escapeHtml(source) : '') + '</div>';
+        const economyHtml = economic ? [
+            '<div class="mha-xp-list-title">' +
+                escapeHtml(tr('econ.title',{hunt:economicHunt.nome ||
+                    economicHunt.slug})) + '</div>',
+            econLine(tr('econ.kill'),economic.killCoinsH,
+                tr(economic.killSource === 'observed-server/event' ?
+                    'econ.observed':'econ.model')),
+            econLine(tr('econ.loot'),economic.npcLootEvH,
+                tr('econ.estimatedLoot',{coverage:economic.lootCoverage})),
+            econLine(tr('econ.realized'),economic.realizedH,
+                tr('econ.observed')),
+            econLine(tr('econ.net'),economic.netH,
+                tr('econ.cost')),
+            econLine(tr('econ.cost'),economic.replacementCostH,
+                tr('econ.observed')),
+            economic.diamondsH ? econLine(tr('econ.diamonds'),
+                economic.diamondsH,tr('econ.observed')) : '',
+            ...economic.useEvidence.filter(row=>
+                row.remaining !== null && row.hoursRemaining !== null
+            ).slice(0,3).map(row=>'<div class="mha-xp-note">' +
+                escapeHtml((row.type==='ball'?'Ball ':'Item ') + row.id) +
+                ': ' + escapeHtml(tr('econ.stock', {
+                    count:row.remaining,
+                    hours:row.hoursRemaining.toFixed(1)
+                })) + '</div>'),
+            '<div class="mha-xp-note">' +
+                escapeHtml(tr('econ.netCaveat')) + '</div>',
+            economic.unknownCosts ? '<div class="mha-xp-note">' +
+                escapeHtml(tr('econ.noPrice',
+                    {count:economic.unknownCosts})) + '</div>' : '',
+            economic.unlinkedCosts ? '<div class="mha-xp-note">' +
+                escapeHtml(tr('econ.unlinked',
+                    {count:economic.unlinkedCosts})) + '</div>' : ''
+        ].join('') : '';
+
         const html = `
             <div class="mha-xp-heading">
                 <strong>${escapeHtml(
@@ -11508,6 +11955,7 @@
                     )}
                 </div>
             </div>
+            ${economyHtml}
         `;
 
         // This summary is polled with the drawer, but should only replace its
@@ -11999,6 +12447,17 @@
                         xp?.source ||
                         'learning'
                     ),
+                    economy: (() => {
+                        const econ=huntEconomyEstimate(hunt,xp);
+                        return {
+                            killCoinsH:econ.killCoinsH,killSource:econ.killSource,
+                            npcLootEvH:econ.npcLootEvH,
+                            lootCoverage:econ.lootCoverage,
+                            realizedCoinsH:econ.realizedH,netCoinsH:econ.netH,
+                            replacementCoinsH:econ.replacementCostH,
+                            diamondCostH:econ.diamondsH
+                        };
+                    })(),
                     confidence: String(xp?.confidence || 'low'),
                     samples: Number(
                         xp?.samples || 0
@@ -12060,7 +12519,7 @@
             const here = currentHunt();
             const xp = here ? huntXpEstimate(here) : null;
             return {
-                version: '1.9.5',
+                version: '1.9.6',
                 indexes: {
                     locations: state.locationIndexStatus,
                     markerCount: state.locationsBySlug.size,
@@ -12173,7 +12632,7 @@
         );
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.5 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.6 experimental loaded'
         );
     }
 
