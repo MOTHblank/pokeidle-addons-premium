@@ -5211,7 +5211,17 @@
                     '<div class="moth-mw-reference-tools" id="moth-mw-reference-tools"></div>' +
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Recent activity')) + '</h4><span>' +
                     escapeHtml(tr('Purchase attempts, confirmations, and errors.')) + '</span></div>' +
-                    '<div class="moth-mw-log" id="moth-mw-activity-log"></div>';
+                    '<div class="moth-mw-log" id="moth-mw-activity-log"></div>' +
+                    '<section class="moth-mw-automation-block"><h4>' + escapeHtml(tr('Redacted diagnostics (opt-in)')) + '</h4>' +
+                    '<p class="moth-mw-rule-hint">' +
+                    escapeHtml(tr('Disabled by default. When on, keeps only 64 schema/count samples in memory. Never records packet values, seller names, listing IDs, credentials or private settings.')) +
+                    '</p><div class="moth-mw-rule-add-actions">' +
+                    '<button type="button" class="moth-mw-btn" id="moth-mw-diagnostics-toggle"></button>' +
+                    '<button type="button" class="moth-mw-btn" id="moth-mw-diagnostics-copy">' +
+                    escapeHtml(tr('Copy sanitized report')) + '</button>' +
+                    '<button type="button" class="moth-mw-btn" id="moth-mw-diagnostics-reset">' +
+                    escapeHtml(tr('Reset counters')) + '</button></div>' +
+                    '<p id="moth-mw-diagnostics-summary" class="moth-mw-rule-hint"></p></section>';
             }
             if (state.watchView === 'automation') content.dataset.settingsSignature = settingsSignature;
         }
@@ -5265,6 +5275,15 @@
                 '<div>' + new Date(row.at).toLocaleTimeString(currentLocale()) + ' · ' + escapeHtml(translateLog(row.text)) + '</div>').join('') :
                 '<div>' + escapeHtml(tr('No purchase attempts recorded this session.')) + '</div>';
             if (log && log.innerHTML !== logHtml) log.innerHTML = logHtml;
+            const diagButton = q('#moth-mw-diagnostics-toggle', content);
+            if (diagButton) diagButton.textContent = tr(state.diagnostics?.enabled
+                ? 'Stop diagnostics' : 'Start diagnostics');
+            const diagText = q('#moth-mw-diagnostics-summary', content);
+            if (diagText) diagText.textContent = tr('Diagnostic packets: {count} · recent shapes: {samples} · collection: {status}', {
+                count: num(state.diagnostics?.count || 0),
+                samples: num(state.diagnostics?.samples?.length || 0),
+                status: tr(state.diagnostics?.enabled ? 'ON' : 'OFF')
+            });
         }
     }
 
@@ -5326,6 +5345,20 @@
                     feeUnit: unit, feeQuantity: quantity, holdingDays: days };
                 state.economyNotice = tr('Seller fee estimate updated.');
                 renderWatch(true); return;
+            }
+            if (target.closest('#moth-mw-diagnostics-toggle')) {
+                diagnosticReset(!state.diagnostics?.enabled);
+                renderWatch(); return;
+            }
+            if (target.closest('#moth-mw-diagnostics-reset')) {
+                diagnosticReset(!!state.diagnostics?.enabled);
+                renderWatch(); return;
+            }
+            if (target.closest('#moth-mw-diagnostics-copy')) {
+                void copyText(JSON.stringify(diagnosticReport(), null, 2)).then(ok => {
+                    setAutomationNotice(tr(ok ? 'Sanitized report copied.' : 'Could not copy diagnostic report.'), ok ? 'ok' : 'warn');
+                });
+                return;
             }
             if (target.closest('#moth-mw-scan')) { runScan(true); return; }
             if (target.closest('#moth-mw-refresh-baseline')) {
