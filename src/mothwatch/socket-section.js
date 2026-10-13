@@ -91,7 +91,7 @@
                         event.anuncio?.id, event.listing?.id];
                     for (const id of ids) {
                         if (Number.isSafeInteger(Number(id)) && Number(id) > 0 &&
-                            resolveOrder(Number(id), 'confirmed')) break;
+                            resolveOrder(Number(id), 'confirmed', event)) break;
                     }
                 }
             }
