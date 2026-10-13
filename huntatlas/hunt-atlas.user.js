@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/huntatlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.4
+// @version      1.9.5
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.4');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.5');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -420,6 +420,17 @@
             'xp.currentModeled': ' · current modeled {value} trainer XP/h',
             'xp.warmingSession': 'warming up: sustained observations still insufficient',
             'xp.sessionEvidence': '{samples} kills / {minutes} min, wall-clock',
+            'xp.sourceLabel': 'source: {source}',
+            'xp.sourceMeasured': 'server kill rewards (observed)',
+            'xp.sourceModel': 'personalized combat projection',
+            'xp.sourceBaseline': 'unboosted static baseline',
+            'xp.sourceImmunity': 'known immunity',
+            'xp.ranged': 'heuristic range {low}–{high} trainer XP/h',
+            'xp.unboosted': 'modeled XP excludes unverified VIP, guild, stream, event and catch-up bonuses',
+            'xp.uncertainLeader': 'Leading candidate (uncertain): {hunt}',
+            'xp.fallback': 'reason: {reason}',
+            'xp.calibration': 'validated against {count} hunt(s) in this context; median absolute error {error}%',
+            'xp.unknownPokemon': 'Pokémon XP event stream incomplete (not combined with trainer XP)',
             'xp.modelNote': ' · exact upstream XP curve; real combat samples take priority over experimental move-index estimates.',
             'xp.possibleMoves': '{count} level-eligible indexed moves (not confirmed equipped)',
             'xp.knownMoves': '{count} named moves confirmed by battle events',
@@ -622,6 +633,17 @@
             'xp.currentModeled': ' · atual modelado {value} XP de treinador/h',
             'xp.warmingSession': 'aquecendo: ainda faltam medições sustentadas',
             'xp.sessionEvidence': '{samples} abates / {minutes} min, tempo corrido',
+            'xp.sourceLabel': 'fonte: {source}',
+            'xp.sourceMeasured': 'recompensas do servidor (medidas)',
+            'xp.sourceModel': 'projeção personalizada de combate',
+            'xp.sourceBaseline': 'estimativa-base sem bônus',
+            'xp.sourceImmunity': 'imunidade conhecida',
+            'xp.ranged': 'faixa heurística {low}–{high} XP de treinador/h',
+            'xp.unboosted': 'XP modelado não inclui bônus não verificados de VIP, guilda, lives, eventos ou catch-up',
+            'xp.uncertainLeader': 'Candidato principal (incerto): {hunt}',
+            'xp.fallback': 'motivo: {reason}',
+            'xp.calibration': 'comparado com {count} hunt(s) neste contexto; erro absoluto mediano {error}%',
+            'xp.unknownPokemon': 'evento de XP do Pokémon incompleto (não somado ao XP do treinador)',
             'xp.modelNote': ' · curva oficial de XP; amostras reais de combate têm prioridade sobre estimativas experimentais do índice de golpes.',
             'xp.possibleMoves': '{count} golpes possíveis neste nível (não confirmados como equipados)',
             'xp.knownMoves': '{count} golpes identificados nos eventos de combate',
@@ -849,6 +871,8 @@
         farmingSessionToken: Math.random().toString(36).slice(2),
         farmingLedger: makeFarmingLedger(),
         farmingSnapshot: {},
+        xpBonusState: {},
+        calibrationEvidence: new Map(),
         hunts: [],
         playerLevel: 0,
         currentHuntSlug: null,
@@ -1471,15 +1495,26 @@
             return null;
         }
 
+        const stats = pokemon.stats || {};
+        const iv = pokemon.ivs || pokemon.iv || {};
+        // Include battle-relevant values, NOT volatile current HP/XP or
+        // cooldown timers. A refreshed same-ID Pokémon can change combat stats.
+        const battleStats = ['atk', 'def', 'spAtk', 'spDef', 'speed']
+            .map(key => stats[key] ?? '?');
+        const speedIv = pokemon.speedIV ?? pokemon.speedIv ??
+            iv.speed ?? iv.spd ?? '?';
+        const moves = Array.isArray(pokemon.attacks)
+            ? pokemon.attacks.slice(0, 20).map(move => [
+                move?.name, move?.type, move?.category, move?.power
+            ].join(':')).sort().join(',') : '';
         return [
             pokemon.id,
             pokemon.speciesId,
             pokemon.tmElemental,
             pokemon.tmAoe,
             pokemon.heldItemId,
-            pokemon.megaId ||
-                pokemon.mega ||
-                ''
+            pokemon.megaId || pokemon.mega || '',
+            speedIv, ...battleStats, moves
         ]
             .map(
                 value =>
@@ -1556,7 +1591,8 @@
     function farmingSnapshotScope() {
         return [state.farmingSnapshot.outlandTier ?? '?',
             state.farmingSnapshot.catalogRevision ?? '?',
-            state.farmingSnapshot.boostSignature ?? '?'].join('|');
+            state.farmingSnapshot.boostSignature ?? '?',
+            xpBonusScope(state.xpBonusState)].join('|');
     }
 
     function performanceKey(
@@ -1581,7 +1617,8 @@
             state.farmingSessionToken + ':' + state.rateGeneration +
             '|tier:' + (state.farmingSnapshot.outlandTier ?? '?') +
             '|catalog:' + (state.farmingSnapshot.catalogRevision ?? '?') +
-            '|boost:' + (state.farmingSnapshot.boostSignature ?? '?')
+            '|boost:' + (state.farmingSnapshot.boostSignature ?? '?') +
+            '|xpBonus:' + xpBonusScope(state.xpBonusState)
         );
     }
 
@@ -1640,6 +1677,10 @@
             hpSamples: [],
             trainerXpMultSamples: [],
             pokemonXpMultSamples: [],
+            xpBonusTransitions: [],
+            lastTrainerBonusRatio: null,
+            lastPokemonBonusRatio: null,
+            predictedBeforeMeasurement: null,
 
             firstEventAt: 0,
             lastEventAt: 0,
@@ -2817,12 +2858,19 @@
         let row = rows[rows.length - 1];
         if (!row || row.bucket !== bucket) {
             row = {bucket, at, kills: 0, productiveMs: 0,
-                trainerXp: 0, pokemonXp: 0, gold: 0};
+                trainerXp: 0, pokemonXp: 0, gold: 0,
+                trainerKnown: 0, pokemonKnown: 0};
             rows.push(row);
         }
         row.kills++;
-        row.trainerXp += sample.trainerXp ?? 0;
-        row.pokemonXp += sample.pokemonXp ?? 0;
+        if (sample.trainerXp !== null && Number.isFinite(sample.trainerXp)) {
+            row.trainerXp += sample.trainerXp;
+            row.trainerKnown++;
+        }
+        if (sample.pokemonXp !== null && Number.isFinite(sample.pokemonXp)) {
+            row.pokemonXp += sample.pokemonXp;
+            row.pokemonKnown++;
+        }
         row.gold += sample.gold ?? 0;
         if (!reset) {
             const gap = at - window.lastAt;
@@ -2848,8 +2896,12 @@
         const sum = field => rows.reduce((total, row) => total + row[field], 0);
         const productiveMs = sum('productiveMs');
         return {killsH, killMs: 3600000 / killsH,
-            trainerXpH: sum('trainerXp') * 3600000 / elapsedMs,
-            pokemonXpH: sum('pokemonXp') * 3600000 / elapsedMs,
+            trainerXpH: sum('trainerKnown') === samples
+                ? sum('trainerXp') * 3600000 / elapsedMs : null,
+            pokemonXpH: sum('pokemonKnown') === samples
+                ? sum('pokemonXp') * 3600000 / elapsedMs : null,
+            trainerKnown: sum('trainerKnown'),
+            pokemonKnown: sum('pokemonKnown'),
             goldH: sum('gold') * 3600000 / elapsedMs,
             productiveKillsH: productiveMs >= FARM_MIN_WINDOW_MS
                 ? samples * 3600000 / productiveMs : null,
@@ -2858,6 +2910,158 @@
                 farmingConfidence(samples, elapsedMs, false)};
     }
     // HA MILESTONE A PURE END.
+
+
+    // HA MILESTONE B PURE BEGIN: no live bonus is inferred from a prior kill.
+    const XP_BONUS_FIELDS = Object.freeze([
+        'xpBoost', 'pokemonXpBoost', 'vip', 'guildBoost',
+        'guildRank', 'streamBonusPct', 'twitchBonusPct', 'kickBonusPct',
+        'eventXp', 'xpEvent', 'catchupBoost', 'catchupTarget',
+        'xpTreinadorBoost', 'xpPokemonBoost'
+    ]);
+    function xpBonusSnapshot(delta) {
+        if (!delta || typeof delta !== 'object') return null;
+        const result = {};
+        for (const section of [delta, delta.bonuses, delta.boosts]) {
+            if (!section || typeof section !== 'object' ||
+                Array.isArray(section)) continue;
+            for (const key of XP_BONUS_FIELDS) {
+                if (!Object.hasOwn(section, key)) continue;
+                const value = section[key];
+                // Only finite scalar numbers and booleans are safely scoped.
+                if (typeof value === 'boolean' ||
+                    (typeof value === 'number' && Number.isFinite(value)))
+                    result[key] = value;
+                else if (value === null) result[key] = null;
+                else if (typeof value === 'object' && value !== null) {
+                    const safe = {};
+                    for (const field of ['active','ativo','expiresAt','expiraEm',
+                        'until','multiplier','multiplicador','targetLevel']) {
+                        const v = value[field];
+                        if (typeof v === 'boolean' ||
+                            (typeof v === 'number' && Number.isFinite(v)))
+                            safe[field] = v;
+                    }
+                    result[key] = Object.keys(safe).length ? safe : 'unverified';
+                } else result[key] = 'unverified';
+            }
+        }
+        return Object.keys(result).length ? result : null;
+    }
+
+    function xpBonusScope(snapshot) {
+        if (!snapshot || typeof snapshot !== 'object') return 'unknown';
+        // Fixed ordering means a delta with identical semantics won't reset data.
+        return JSON.stringify(Object.keys(snapshot).sort()
+            .map(key => [key, snapshot[key]]));
+    }
+
+    function observeXpTransition(record, channel, xp, base, at) {
+        if (!record || !(base > 0) || !(xp >= 0) || !Number.isFinite(xp))
+            return;
+        const ratio = xp / base;
+        const key = channel === 'trainer' ? 'lastTrainerBonusRatio'
+            : 'lastPokemonBonusRatio';
+        const previous = record[key];
+        if (previous !== null && Number.isFinite(previous) &&
+            Math.abs(ratio - previous) > Math.max(.1, previous * .12)) {
+            record.xpBonusTransitions ||= [];
+            record.xpBonusTransitions.push({
+                channel, at, previous: Math.round(previous * 100) / 100,
+                next: Math.round(ratio * 100) / 100,
+                reason: 'bonus-or-catchup-transition-unverified'
+            });
+            if (record.xpBonusTransitions.length > 12)
+                record.xpBonusTransitions.shift();
+        }
+        record[key] = ratio;
+    }
+
+    function xpRewardReceipt(receipt) {
+        return {
+            trainerXp: Number.isFinite(receipt?.trainerXp)
+                ? receipt.trainerXp : null,
+            pokemonXp: Number.isFinite(receipt?.pokemonXp)
+                ? receipt.pokemonXp : null,
+            source: 'observed-server/event'
+        };
+    }
+
+    function xpGlobalAttackFloor(speedIv) {
+        // The Speed-IV rule is wiki-derived because server scheduling is absent.
+        const iv = Number(speedIv);
+        return Number.isInteger(iv) && iv >= 1 && iv <= 32
+            ? Math.max(400, 900 - 10 * iv) : 900;
+    }
+
+    function xpMoveCooldown(baseCooldownMs, baseSpeed, speedIv, alreadyAdjusted = false) {
+        const cooldown = Number(baseCooldownMs), speed = Number(baseSpeed);
+        const iv = Number(speedIv);
+        if (!(cooldown > 0) || !Number.isFinite(cooldown))
+            return null;
+        if (alreadyAdjusted) return Math.round(cooldown);
+        if (!(speed >= 0) || !Number.isInteger(iv) || iv < 1 || iv > 32)
+            return null; // Do not fake known runtime cooldown from unknown IVs.
+        const potential = Math.min(7, speed <= 120 ?
+            speed / 20 : 6 + (speed - 120) / 40);
+        return Math.round(cooldown * (1 - (potential * iv / 32) / 100));
+    }
+
+    function xpCooldownFromPower(power) {
+        const p = Math.max(15, Number(power) || 15);
+        const seconds = p <= 100 ? 10 + (p - 15) * (20 / 85)
+            : 30 + (p - 100) * (30 / 500);
+        return Math.round(seconds * 10) * 100;
+    }
+
+    function xpPredictionBand(estimate) {
+        const value = Number(estimate?.value);
+        if (!Number.isFinite(value) || value <= 0) return null;
+        const observed = estimate.observed === true;
+        const samples = Number(estimate.samples) || 0;
+        const coverage = Number(estimate.coverage);
+        const high = observed && samples >= 30 &&
+            Number(estimate.windowMs) >= 300000;
+        // These are explicitly heuristic uncertainty ranges, NOT statistical CIs.
+        const fraction = observed ? (high ? .12 : .28)
+            : estimate.source === 'baseline model' ? .65
+            : coverage < 100 || samples < 16 ? .5 : .3;
+        return {
+            low: Math.max(0, value * (1 - fraction)),
+            high: value * (1 + fraction),
+            kind: 'heuristic',
+            width: fraction
+        };
+    }
+
+    function xpCompareForecasts(a, b) {
+        const av = Number(a?.value) || 0, bv = Number(b?.value) || 0;
+        const ar = xpPredictionBand(a), br = xpPredictionBand(b);
+        if (ar && br && Math.abs(av - bv) <= Math.max(
+            ar.width * av, br.width * bv
+        )) {
+            // A ranking must not privilege an uncertain cold-start estimate
+            // merely because its point estimate is slightly larger.
+            const quality = x => x?.observed ? 3
+                : x?.source === 'named-move model' && x?.coverage === 100 ? 2
+                : x?.source === 'combat model' && x?.coverage === 100 ? 1 : 0;
+            if (quality(a) !== quality(b)) return quality(b) - quality(a);
+        }
+        return bv - av;
+    }
+
+    function xpForecastResidual(predictedKillMs, observedKillMs) {
+        if (!(Number(predictedKillMs) > 0) || !(Number(observedKillMs) > 0) ||
+            !Number.isFinite(predictedKillMs) || !Number.isFinite(observedKillMs))
+            return null;
+        const ratio = observedKillMs / predictedKillMs;
+        return {
+            ratio: Math.max(.5, Math.min(2, ratio)),
+            errorPct: Math.round(100 * (predictedKillMs - observedKillMs) /
+                observedKillMs)
+        };
+    }
+    // HA MILESTONE B PURE END.
 
     function recordDeathEvent(
         event
@@ -2914,12 +3118,13 @@
             1;
 
         // Distinct server receipts. Generic event.xp is not both streams.
-        const trainerXp = receipt.trainerXp ?? 0;
-        const pokemonXp = receipt.pokemonXp ?? 0;
+        const {trainerXp, pokemonXp} = xpRewardReceipt(receipt);
         const gold = (receipt.killCoins ?? 0) +
             (receipt.autoSaleCoins ?? 0);
-        record.trainerXp = Number(record.trainerXp || 0) + trainerXp;
-        record.pokemonXp = Number(record.pokemonXp || 0) + pokemonXp;
+        if (trainerXp !== null)
+            record.trainerXp = Number(record.trainerXp || 0) + trainerXp;
+        if (pokemonXp !== null)
+            record.pokemonXp = Number(record.pokemonXp || 0) + pokemonXp;
         record.gold = Number(record.gold || 0) + gold;
         record.goldKill = Number(record.goldKill || 0) +
             (receipt.killCoins ?? 0);
@@ -2939,13 +3144,15 @@
 
         const baseXp =
             xpDoNivel(
-                hunt?.nivel ||
                 event?.level ||
+                hunt?.nivel ||
                 1
             );
 
+        observeXpTransition(record, 'trainer', trainerXp, baseXp, now);
+        observeXpTransition(record, 'pokemon', pokemonXp, baseXp, now);
         if (
-            trainerXp > 0 &&
+            trainerXp !== null && trainerXp > 0 &&
             baseXp > 0
         ) {
             pushSample(
@@ -2958,7 +3165,7 @@
         }
 
         if (
-            pokemonXp > 0 &&
+            pokemonXp !== null && pokemonXp > 0 &&
             baseXp > 0
         ) {
             pushSample(
@@ -3306,6 +3513,8 @@
         const beforeFarmingScope = farmingSnapshotScope();
         const farmSnapshot = normalizeFarmingSnapshot(gameState);
         if (farmSnapshot) Object.assign(state.farmingSnapshot, farmSnapshot);
+        const incomingXpBonuses = xpBonusSnapshot(gameState);
+        if (incomingXpBonuses) Object.assign(state.xpBonusState, incomingXpBonuses);
         if (beforeFarmingScope !== farmingSnapshotScope()) {
             state.farmingLedger = makeFarmingLedger();
             state.combatRevision++;
@@ -3710,6 +3919,8 @@
             state.rateGeneration++;
             state.farmingLedger = makeFarmingLedger();
             state.farmingSnapshot = {};
+            state.xpBonusState = {};
+            state.calibrationEvidence.clear();
             state.combatTargets.clear();
             state.lastLeadPokemon = null;
             state.activePokemonId = null;
@@ -4345,6 +4556,8 @@
                     state.rateGeneration++;
                     state.farmingLedger = makeFarmingLedger();
                     state.farmingSnapshot = {};
+                    state.xpBonusState = {};
+                    state.calibrationEvidence.clear();
                     state.combatTargets.clear();
                     state.lastLeadPokemon = null;
 
@@ -6629,98 +6842,86 @@
         if (!coverage.complete) return null;
 
         const mobsPerWave = Math.max(1, Math.min(16, coverage.total));
+        const lead = typeof leadPokemon === 'function' ? leadPokemon() : null;
+        const iv = lead?.speedIV ?? lead?.speedIv ??
+            lead?.ivs?.speed ?? lead?.iv?.speed;
+        const firstAttackMs = typeof xpGlobalAttackFloor === 'function'
+            ? xpGlobalAttackFloor(iv) : UPSTREAM_GLOBAL_ATTACK_MS;
         const transitionMs =
-            profile.movementMs + UPSTREAM_WAVE_MS / mobsPerWave;
+            (Number(profile.movementMs) || 600) + UPSTREAM_WAVE_MS / mobsPerWave;
         let weightedMs = 0;
         for (const row of coverage.entries) {
             const attacksNeeded = Math.max(1, Math.ceil(row.hp / row.damage));
-            const killMs = transitionMs + UPSTREAM_GLOBAL_ATTACK_MS +
+            const killMs = transitionMs + firstAttackMs +
                 Math.max(0, attacksNeeded - 1) *
-                Math.max(UPSTREAM_GLOBAL_ATTACK_MS,
+                Math.max(firstAttackMs,
                     Number(profile.cadenceMs) || UPSTREAM_GLOBAL_ATTACK_MS);
             weightedMs += killMs * row.weight;
         }
         return weightedMs / coverage.total;
     }
 
-    function predictionCalibration(
-        profile
-    ) {
-        if (
-            profile &&
-            Number.isFinite(
-                profile._calibration
-            )
-        ) {
-            return profile._calibration;
+    // Validation is out-of-sample: freeze an early model estimate BEFORE
+    // sustained kills are available, then compare with later actual results.
+    function calibrationContextKey() {
+        const lead = leadSignature();
+        return lead ? lead + '|' + farmingSnapshotScope() : null;
+    }
+
+    function recordForecastResidual(hunt, record, observed, now = Date.now()) {
+        const prediction = record?.predictedBeforeMeasurement;
+        if (!hunt || !prediction || !observed || !(observed.samples >= 6) ||
+            observed.windowMs < 60000 ||
+            prediction.hunt !== hunt.slug || prediction.scope !== farmingSnapshotScope())
+            return null;
+        const residual = xpForecastResidual(prediction.killMs, observed.killMs);
+        if (!residual) return null;
+        const key = calibrationContextKey();
+        if (!key) return null;
+        let cases = state.calibrationEvidence.get(key);
+        if (!cases) {
+            cases = new Map();
+            state.calibrationEvidence.set(key, cases);
         }
-
-        const ratios = [];
-
-        for (
-            const record of
-            profile?.records ||
-            []
-        ) {
-            const observed =
-                observedRates(
-                    record
-                );
-
-            if (!observed) {
-                continue;
-            }
-
-            const hunt =
-                state.hunts.find(
-                    item =>
-                        item.slug ===
-                        record.huntSlug
-                );
-
-            if (!hunt) {
-                continue;
-            }
-
-            const predicted =
-                rawPredictedKillMs(
-                    hunt,
-                    profile
-                );
-
-            if (
-                Number.isFinite(predicted) &&
-                predicted > 0
-            ) {
-                ratios.push(
-                    observed.killMs /
-                    predicted
-                );
-            }
+        const previous = cases.get(hunt.slug);
+        if (!previous || now - previous.at >= 60000) {
+            cases.set(hunt.slug, {ratio: residual.ratio, errorPct: residual.errorPct,
+                at: now, samples: observed.samples, source: prediction.source});
+            while (cases.size > 12) cases.delete(cases.keys().next().value);
+            while (state.calibrationEvidence.size > 4)
+                state.calibrationEvidence.delete(state.calibrationEvidence.keys().next().value);
+            state.estimateCache.clear();
+            // This mutation is deliberately outside the per-kill handler to
+            // avoid costly recomputation on every high-frequency battle event.
         }
+        return residual;
+    }
 
-        const ratio =
-            robustMean(
-                ratios
-            );
+    function predictionCalibration(profile) {
+        const key = calibrationContextKey();
+        const cases = key ? state.calibrationEvidence.get(key) : null;
+        const ratios = cases ? [...cases.values()].filter(row =>
+            Date.now() - row.at < 90 * 60000 && row.samples >= 6)
+                .map(row => row.ratio) : [];
+        const ratio = robustMean(ratios);
+        return ratio && ratios.length
+            ? Math.max(.65, Math.min(1.65, ratio)) : 1;
+    }
 
-        const calibrated =
-            !ratio
-                ? 1
-                : Math.max(
-                    0.4,
-                    Math.min(
-                        3,
-                        ratio
-                    )
-                );
-
-        if (profile) {
-            profile._calibration =
-                calibrated;
-        }
-
-        return calibrated;
+    function calibrationDiagnostics() {
+        const key = calibrationContextKey();
+        const cases = key ? state.calibrationEvidence.get(key) : null;
+        const values = cases ? [...cases.values()].filter(row =>
+            Date.now() - row.at < 90 * 60000) : [];
+        return {
+            hunts: values.length,
+            medianErrorPct: values.length
+                ? Math.round(median(values.map(row => Math.abs(row.errorPct))))
+                : null,
+            source: 'personalized-model-validation',
+            // Transferring between hunts is an experimental heuristic.
+            confidence: values.length >= 3 ? 'medium' : 'low'
+        };
     }
 
     function huntXpEstimate(
@@ -6763,12 +6964,14 @@
          * Always check the live measurement before using a cached model.
          * Measurements evolve during a hunt and must take precedence.
          */
-        if (observed) {
-            return {
+        if (observed && observed.trainerXpH !== null) {
+            const residual = recordForecastResidual(hunt, record, observed);
+            const result = {
                 value:
                     observed.trainerXpH,
-                pokemonValue:
-                    observed.pokemonXpH,
+                pokemonValue: observed.pokemonXpH,
+                trainerKnown: observed.trainerKnown,
+                pokemonKnown: observed.pokemonKnown,
                 goldValue:
                     observed.goldH,
                 killsH:
@@ -6782,8 +6985,15 @@
                 confidence: observed.confidence,
                 samples: observed.samples,
                 windowMs: observed.windowMs,
-                denominator: observed.denominator
+                denominator: observed.denominator,
+                bonusSource: 'observed-server/event',
+                residualErrorPct: residual?.errorPct ?? null,
+                fallbackReason: null,
+                range: xpPredictionBand({value: observed.trainerXpH,
+                    observed: true, samples: observed.samples,
+                    windowMs: observed.windowMs})
             };
+            return result;
         }
 
         if (
@@ -6834,6 +7044,7 @@
             value: 0, pokemonValue: 0, goldValue: null,
             killsH: 0, killMs: Infinity, observed: false,
             source: 'immune combat model', confidence: 'low',
+            fallbackReason: 'known-immunity',
             samples: Number(profile?.moveSamples) || 0,
             ...coverageFields
         };
@@ -6883,6 +7094,15 @@
             2000 +
             UPSTREAM_WAVE_MS / mobsPerWave;
 
+        if (record && hasPersonalizedModel && !record.predictedBeforeMeasurement &&
+            profile.moveSamples >= 6 && !(record.rateWindow?.rows?.reduce(
+                (count, row) => count + row.kills, 0) >= 6)) {
+            record.predictedBeforeMeasurement = {
+                hunt: hunt.slug, scope: farmingSnapshotScope(),
+                killMs: rawKillMs, source: 'personalized-model'
+            };
+        }
+
         const killMs =
             hasPersonalizedModel
                 ? rawKillMs *
@@ -6899,25 +7119,13 @@
                 1
             );
 
-        const trainerXpPerKill =
-            Math.round(
-                baseXp *
-                (
-                    Number(profile?.trainerXpMult) ||
-                    1
-                )
-            );
+        // The bonus stack differs per XP stream and catch-up can cross a
+        // threshold mid-session. Never copy historical per-kill multipliers
+        // into an unvisited hunt, even from this same lead.
+        const trainerXpPerKill = baseXp;
+        const pokemonXpPerKill = baseXp;
 
-        const pokemonXpPerKill =
-            Math.round(
-                baseXp *
-                (
-                    Number(profile?.pokemonXpMult) ||
-                    1
-                )
-            );
-
-        return remember({
+        const forecast = {
             value:
                 trainerXpPerKill *
                 killsH,
@@ -6931,6 +7139,8 @@
             killMs,
             observed:
                 false,
+            bonusSource: 'unboosted-upstream-shared',
+            bonusCaveat: 'active boosts unverified; model does not include them',
             source:
                 !hasPersonalizedModel
                     ? 'baseline model'
@@ -6940,8 +7150,15 @@
             confidence: hasPersonalizedModel ? moveConfidence : 'low',
             samples:
                 Number(profile?.moveSamples) || 0,
+            fallbackReason: !profile ? 'no-lead-combat-samples'
+                : !coverage.complete ? 'incomplete-spawn-coverage'
+                : !hasPersonalizedModel ? 'insufficient-personalized-model'
+                : 'observed-attacks-with-unknown-live-scheduler',
+            calibration: calibrationDiagnostics(),
             ...coverageFields
-        });
+        };
+        forecast.range = xpPredictionBand(forecast);
+        return remember(forecast);
     }
 
     function rankedUnlockedHunts(
@@ -6992,7 +7209,7 @@
                     if (
                         av !== bv
                     ) {
-                        return bv - av;
+                        return xpCompareForecasts(a.xp, b.xp);
                     }
 
                     const levelDifference =
@@ -10858,8 +11075,24 @@
                     ) > 0
             );
 
-        const best =
-            usable[0] || null;
+        const best = usable[0] || null;
+        const xpSourceLabel = estimate => estimate?.observed
+            ? tr('xp.sourceMeasured')
+            : estimate?.source === 'immune combat model'
+                ? tr('xp.sourceImmunity')
+                : estimate?.source === 'baseline model'
+                    ? tr('xp.sourceBaseline')
+                    : tr('xp.sourceModel');
+        const rangeLabel = estimate => estimate?.range
+            ? tr('xp.ranged', {low: formatRate(estimate.range.low),
+                high: formatRate(estimate.range.high)}) : '';
+        const displayEvidence = estimate => [
+            tr('xp.sourceLabel', {source: xpSourceLabel(estimate)}),
+            rangeLabel(estimate),
+            estimate?.observed ? null : tr('xp.unboosted'),
+            estimate?.fallbackReason
+                ? tr('xp.fallback', {reason: estimate.fallbackReason}) : null
+        ].filter(Boolean).join(' · ');
 
         const current =
             currentHunt();
@@ -11108,7 +11341,7 @@
                                                 )
                                         }
                                     )
-                                )}${row.xp.incomplete ? ' · ' + escapeHtml(tr('xp.incompleteShort', {percentage: row.xp.coverage})) : ''}</span>
+                                )}${row.xp.incomplete ? ' · ' + escapeHtml(tr('xp.incompleteShort', {percentage: row.xp.coverage})) : ''} · ${escapeHtml(rangeLabel(row.xp))}</span>
                                 <button
                                     type="button"
                                     class="mha-go ${here ? 'current' : ''}"
@@ -11157,7 +11390,7 @@
                     <strong>${best
                         ? escapeHtml(
                             tr(
-                                'xp.best',
+                                best.xp.observed ? 'xp.best' : 'xp.uncertainLeader',
                                 {
                                     hunt:
                                         best.hunt.nome ||
@@ -11244,6 +11477,8 @@
                         total: currentXp.totalPoints,
                         percentage: currentXp.coverage
                     })) : ''}
+                    ${best ? ' · ' + escapeHtml(displayEvidence(best.xp)) : ''}
+                    ${currentXp?.pokemonValue === null ? ' · ' + escapeHtml(tr('xp.unknownPokemon')) : ''}
                     ${currentXp?.warmingUp ? ' · ' + escapeHtml(tr('xp.warmingSession')) : ''}
                     ${currentXp?.observed ? ' · ' + escapeHtml(tr('xp.sessionEvidence', {
                         samples: currentXp.samples,
@@ -11264,6 +11499,8 @@
                             )
                         )
                         : ''}
+                    ${currentXp?.residualErrorPct !== null && currentXp?.residualErrorPct !== undefined ? ' · forecast error ' + escapeHtml(String(currentXp.residualErrorPct)) + '%' : ''}
+                    ${currentXp?.calibration?.hunts ? ' · ' + escapeHtml(tr('xp.calibration', {count: currentXp.calibration.hunts, error: currentXp.calibration.medianErrorPct})) : ''}
                     ${escapeHtml(
                         tr(
                             'xp.modelNote'
@@ -11823,7 +12060,7 @@
             const here = currentHunt();
             const xp = here ? huntXpEstimate(here) : null;
             return {
-                version: '1.9.4',
+                version: '1.9.5',
                 indexes: {
                     locations: state.locationIndexStatus,
                     markerCount: state.locationsBySlug.size,
@@ -11862,8 +12099,25 @@
                     catalogRevision: state.farmingSnapshot.catalogRevision ?? null,
                     bonusSemantics: 'unverified'
                 },
+                xpEvidence: {
+                    source: 'observed-server/event',
+                    activeBonusFields: Object.keys(state.xpBonusState).sort(),
+                    bonusScopeKnown: Object.keys(state.xpBonusState).length > 0,
+                    serverStackingVerified: false,
+                    transitions: performanceRecord(here?.slug, false)
+                        ?.xpBonusTransitions?.slice(-6) || []
+                },
                 prediction: {
                     hunt: here?.slug || null,
+                    calibration: calibrationDiagnostics(),
+                    bonusSource: xp?.bonusSource ?? 'unknown',
+                    fallbackReason: xp?.fallbackReason ?? null,
+                    forecastRange: xp?.range
+                        ? {low: Math.round(xp.range.low),
+                            high: Math.round(xp.range.high),
+                            label: 'heuristic-not-confidence-interval'} : null,
+                    residualErrorPct: xp?.residualErrorPct ?? null,
+                    speedIvRule: 'wiki-derived; runtime scheduling not confirmed',
                     source: xp?.source || 'none',
                     moveConfidence: moveModelConfidence(profile),
                     trainerXpH: Math.round(xp?.value || 0),
@@ -11919,7 +12173,7 @@
         );
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.4 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.5 experimental loaded'
         );
     }
 

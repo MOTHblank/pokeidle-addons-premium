@@ -1,6 +1,6 @@
 # PokéIdle Hunt Atlas
 
-> **Versão experimental 1.9.4.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
+> **Versão experimental 1.9.5.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
 >
 > Não há mapa visual novo. O Atlas continua sendo uma lista pesquisável; o índice `map-markers.json` só adiciona contexto textual de localização para hunts com slug correspondente. O índice `moves-index.json` oferece golpes possíveis por espécie/nível, não uma lista de golpes equipados. Agora o Atlas compara os golpes dos índices com o catálogo mais recente de Pokémon e mostra divergências. Quando o jogo fornece nomes de golpes, o modelo usa **amostras por execução**, sem contar várias vítimas de um ataque em área como vários golpes. Quando o nome não chega, mantém o modelo por tipo. XP/h **medido** continua acima de qualquer projeção. Os índices são opcionais e podem estar desatualizados.
 >
@@ -13,6 +13,14 @@
 Os **XP/h medidos** agora exigem pelo menos **6 abates selvagens e 60 segundos** de amostragem da sessão atual. O denominador é **tempo corrido**, incluindo ondas e pausas breves; após 2 minutos sem abate a medição fica desatualizada e volta a aquecer no próximo abate. Trocar hunt, recarregar/reconectar ou mudar Pokémon/equipamento/estado relevante impede reutilizar uma medição incompatível. O cálculo conserva separados XP do treinador, XP do Pokémon, ouro por morte e ouro de venda automática. Eventos `bola`, `capturado`, `cura`, `revive` e boss são interpretados separadamente em um contador local, sem presumir que cada clique é uma bola aceita.
 
 O painel indica **aquecendo** enquanto o modelo ainda não reúne dados suficientes. Em `window.__mothHuntAtlasExperimentV1.snapshot().farmingEvidence`, podem ser consultadas apenas contagens e nomes de campos previamente permitidos, **sem** pacotes completos ou tokens. O protocolo ainda apresenta algumas ambiguidades; veja [a matriz técnica e os limites](../docs/HUNTATLAS_MILESTONE_A_PROTOCOL.md). Os cálculos puros de chances, Outland e Ovo Shiny são preparação para versões futuras; **não** foi adicionado um seletor de Outland nem previsão de captura nesta entrega.
+
+### Projeções de XP/h (v1.9.5 · Marco B)
+
+- **XP do treinador e do Pokémon são leituras distintas.** Se o evento não trouxe XP de um dos dois, a leitura daquele canal fica desconhecida; não se assume zero nem se soma os dois para anunciar uma taxa individual.
+- **Projeções para outras hunts são SEM bônus estimados** enquanto VIP, guilda, lives, eventos e catch-up não tiverem valores/aplicação confirmados pelo servidor. O Atlas deixou de copiar multiplicadores antigos de XP para uma hunt não visitada.
+- **Calibração contextual:** nível, identidade, atributos/IV de Speed, golpes declarados, TMs, Mega, região, boosts e catálogo são relevantes. O modelo pode comparar uma projeção feita *antes* de obter amostras suficientes com a taxa medida posteriormente na mesma hunt. Os erros ficam limitados à sessão, por até 90 minutos, sem histórico global de contas.
+- O Top 5 apresenta **candidato principal (incerto)** para projeções, fonte e **faixa heurística** (não é intervalo de confiança estatística). Projeções incertas quase empatadas não ultrapassam automaticamente resultados medidos.
+- As regras de Speed IV/cooldown têm testes matemáticos, mas o agendamento exato de ataques e o empilhamento de bônus ainda **não foram validados em jogo**. Detalhes: [Marco B](../docs/HUNTATLAS_MILESTONE_B.md).
 
 ### 🎮 Correio Maluco — minigame experimental (1.9.3)
 
@@ -103,6 +111,14 @@ O idioma do Hunt Atlas acompanha o idioma selecionado no PokéIdle. Atualmente h
 **Measured** XP/h now requires **6 wild kills and 60 seconds** within the current session. The denominator is **wall-clock time**, including waves and temporary downtime; after 2 minutes without a kill the reading is stale, and the next kill begins warming up again. Switching hunts, reconnecting/reloading or changing the relevant lead/loadout/context prevents incompatible reuse. Trainer XP, Pokémon XP, kill Coins and already-realized auto-NPC-sale Coins are recorded separately. `bola`, `capturado`, `cura`, `revive` and boss events have distinct local ledgers rather than counting automation clicks as accepted throws.
 
 The UI shows a **warming up** label until enough sustained evidence exists. `window.__mothHuntAtlasExperimentV1.snapshot().farmingEvidence` exposes only allowlisted field-name counts and totals, **never** raw packets or tokens. Live protocol ambiguity remains; see the [technical matrix and limitations](../docs/HUNTATLAS_MILESTONE_A_PROTOCOL.md). The deterministic Outland, Shiny Egg and probability helpers lay groundwork for later releases; this does **not** add an Outland tier picker or capture-rate predictor.
+
+### XP/h forecasts (v1.9.5 · Milestone B)
+
+- **Trainer and active Pokémon XP are independent channels.** Missing values stay unknown, never replaced with the other channel or combined as one training rate.
+- **Unvisited hunts use explicitly UNBOOSTED XP estimates** until the actual server bonus stacking is verified. Old VIP, guild, stream, event and catch-up multipliers are no longer extrapolated.
+- **Context-specific calibration:** exact lead, level, stats/Speed IV, move information, TMs/Mega, hunt, bonuses and catalog revision matter. A forecast frozen *before* sustained measurements can later be evaluated against the observed result from that hunt. Error samples are session-local, bounded and expire after 90 minutes.
+- A model-only Top 5 leader is marked a **leading candidate (uncertain)**. Source, coverage and a **heuristic** range—not a statistical confidence interval—are displayed. Close uncertain estimates do not automatically outrank reliable measured ones.
+- Speed IV/cooldown formulas have deterministic fixtures, but live move scheduling and native XP bonuses are **not yet server-verified**. Read the [Milestone B technical notes](../docs/HUNTATLAS_MILESTONE_B.md).
 
 ### 🎮 Parcel Panic — experimental mini-game (1.9.3)
 
