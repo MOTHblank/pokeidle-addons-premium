@@ -386,3 +386,34 @@ test('Any-item summary gating uses currency-specific price ceiling', () => {
     assert.equal(helpers.anyItemRuleCandidate({currency:'gold',buyMax:9000},targets),null);
     assert.deepEqual(helpers.anyItemRuleTargets([{currency:'orb',buyMax:2}]).map(v=>v.key),['107:orb']);
 });
+
+test('Pokémon categories honor price, currency, retention, owner and repeated attempts', () => {
+    const now=Date.now();
+    const state={pokemonAutoOffers:new Map([
+        ['gold',{updatedAt:now,offers:[
+            {id:11,preco:900000,ficha:{shiny:false,potencia:1}},
+            {id:12,preco:800000,ficha:{shiny:false,potencia:5}},
+            {id:13,preco:400000,ficha:{shiny:true,potencia:5}}
+        ]}],
+        ['orb',{updatedAt:now,offers:[
+            {id:14,preco:5,ficha:{shiny:true,potencia:2}},
+            {id:15,preco:4,ficha:{shiny:true,potencia:5},compravelEm:now+60000},
+            {id:16,preco:3,ficha:{shiny:true,potencia:5},vendedor:'self'}
+        ]}]
+    ]),attemptedListings:new Map()};
+    const src=section('    function anyItemRuleTargets(', '    function runMarketAutomation(');
+    const api=new Function('state','fixedRuleCandidate','pokemonCurrencyAllowed',
+        'isOwnListing','retentionUntil','serverNow','pokemonListingName',
+        src+'\nreturn {pokemonRuleMatches,pokemonRuleCandidate};')(
+        state,()=>null,(pk,c)=>c==='orb'||!pk.shiny,
+        l=>l.vendedor==='self',l=>l.compravelEm||0,()=>now,()=> 'Poke'
+    );
+    assert.equal(api.pokemonRuleCandidate({kind:'any',currency:'gold',buyMax:1000000}).listingId,12);
+    assert.equal(api.pokemonRuleCandidate({kind:'p5',currency:'gold',buyMax:1000000}).listingId,12);
+    assert.equal(api.pokemonRuleCandidate({kind:'shiny',currency:'orb',buyMax:5}).listingId,14);
+    assert.equal(api.pokemonRuleCandidate({kind:'shiny',currency:'gold',buyMax:1000000}),null);
+    state.attemptedListings.set(14,now+50000);
+    assert.equal(api.pokemonRuleCandidate({kind:'shiny',currency:'orb',buyMax:5}),null);
+    state.pokemonAutoOffers.get('gold').updatedAt=now-50000;
+    assert.equal(api.pokemonRuleCandidate({kind:'any',currency:'gold',buyMax:1000000}),null);
+});
