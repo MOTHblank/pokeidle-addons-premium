@@ -433,6 +433,11 @@
         "Unverified listing price": "Preço do anúncio não verificado",
         "Awaiting reconciliation": "Aguardando reconciliação",
         "Matches absolute-price rule": "Corresponde à regra de preço absoluto",
+        "Unknown Pokémon traits": "Atributos de Pokémon desconhecidos",
+        "Unverified quantity": "Quantidade não verificada",
+        "Unverified listing identity": "Identificador do anúncio não verificado",
+        "Your own listing": "Anúncio do próprio jogador",
+        "Listing still held": "Oferta ainda retida",
         "P5 Pokémon": "Pokémon P5",
         "Pokémon category": "Categoria de Pokémon",
         "Add any-item rule": "Adicionar regra para qualquer item",
@@ -1990,8 +1995,8 @@
     // otherwise explicitly supplied base attacking stats. Never infer from a name
     // or use this to set an absolute buy ceiling.
     function pokemonCombatRole(ficha) {
-        const rows = Array.isArray(ficha?.movimentos) ? ficha.movimentos :
-            Array.isArray(ficha?.moves) ? ficha.moves : null;
+        const rows = Array.isArray(ficha?.movimentosEquipados) ? ficha.movimentosEquipados :
+            Array.isArray(ficha?.equippedMoves) ? ficha.equippedMoves : null;
         const categories = rows?.map(move =>
             String(move?.categoria ?? move?.category ?? '').toUpperCase());
         if (categories?.length && categories.every(c => c === 'PHYSICAL' || c === 'SPECIAL')) {
@@ -2146,7 +2151,8 @@
                 Math.max(0, Math.floor((Date.now() - newestSoldAt) / 86400000));
             const dateCoverage = dated.length / matches.length;
             const dispersion = low > 0 ? high / low : Infinity;
-            const traitCoverage = Object.values(listing.traits || {}).every(flag => flag != null) &&
+            const traitCoverage = listing.form != null &&
+                Object.values(listing.traits || {}).every(flag => flag != null) &&
                 matches.every(sale => Object.values(sale.traits || {}).length === 6 &&
                     Object.values(sale.traits).every(flag => flag != null));
             const recent = dateCoverage === 1 && newestSoldAt != null &&
@@ -3862,10 +3868,23 @@
             let status = 'Rule paused';
             if (!rule.buyEnabled || !config.enabled || !config.fixedRulesEnabled ||
                 config.purchasesPaused) status = 'Rule paused';
-            else if (price > rule.buyMax) status = 'Above price ceiling';
             else if (!Number.isSafeInteger(price) || price <= 0) status = 'Unverified listing price';
+            else if (price > rule.buyMax) status = 'Above price ceiling';
+            else if (typeof listing?.ficha?.shiny !== 'boolean' ||
+                !Number.isSafeInteger(Number(listing?.ficha?.potencia)) ||
+                Number(listing.ficha.potencia) < 1 || Number(listing.ficha.potencia) > 5)
+                status = 'Unknown Pokémon traits';
+            else if (!Number.isSafeInteger(Number(listing?.qtd)) || Number(listing.qtd) !== 1)
+                status = 'Unverified quantity';
+            else if (!Number.isSafeInteger(Number(listing?.id)) || Number(listing.id) <= 0)
+                status = 'Unverified listing identity';
+            else if (isOwnListing(listing)) status = 'Your own listing';
+            else if (retentionUntil(listing) > serverNow()) status = 'Listing still held';
             else if (!state.orderJournal || unverifiedOrdersExist()) status = 'Awaiting reconciliation';
             else if (remainingBudget(currency, rule.id).spend < price) status = 'Budget blocked';
+            else if (balanceFor(currency) - reserveFor(currency) < price)
+                status = 'Insufficient spendable balance';
+            else if (state.pendingBuy) status = 'Waiting for acknowledgement';
             else status = 'Matches absolute-price rule';
             results.push({ kind: rule.kind, status,
                 buyMax: rule.buyMax, currency, ruleId: rule.id });
