@@ -1,0 +1,27 @@
+name: Hunt Atlas regression tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'huntatlas/**'
+      - '.github/workflows/huntatlas-tests.yml'
+  pull_request:
+    paths:
+      - 'huntatlas/**'
+      - '.github/workflows/huntatlas-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  huntatlas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check userscript syntax
+        run: node --check huntatlas/hunt-atlas.user.js
+      - name: Run Hunt Atlas regressions
+        run: node --test huntatlas/tests/*.test.cjs
