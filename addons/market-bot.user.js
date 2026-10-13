@@ -3066,12 +3066,15 @@
         }
 
         if (message.t === 'erro') {
-            if (isRateLimitError(message)) {
-                enterRateLimitBackoff();
-                return;
-            }
             // Game errors unrelated to an order must not clear an in-flight order.
             const listingId = Number(message.listingId ?? message.anuncioId ?? message.vendaId);
+            if (isRateLimitError(message)) {
+                enterRateLimitBackoff();
+                if (Number.isSafeInteger(listingId) && listingId > 0) {
+                    resolveOrder(listingId, 'refused');
+                }
+                return;
+            }
             if (listingId > 0 && resolveOrder(listingId, 'refused')) {
                 addLog('Purchase refused: ' + String(message.chave || message.msg || 'server error'));
             }
