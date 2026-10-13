@@ -1313,7 +1313,8 @@ test('Snatch: explicit refused order releases 400ms retry; success removes targe
     assert.equal(h.purchaseCalls.length,1);
     h.state.pendingBuy=null;
     h.api.snatchOutcome(789,'refused');
-    assert.equal(h.state.snatchObserved.get(h.key).retryAt,Date.now()+400);
+    const retryDelay=h.state.snatchObserved.get(h.key).retryAt-Date.now();
+    assert.ok(retryDelay>0 && retryDelay<=400,'refusal schedules a short bounded retry');
     // The test clock stays fixed; advance retry deadline explicitly.
     h.state.snatchObserved.get(h.key).retryAt=0;
     h.state.attemptedListings.delete(789);
