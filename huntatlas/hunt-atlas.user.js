@@ -3804,6 +3804,10 @@
         return killsH*rows.reduce((sum,x)=>sum+
             x.weight*farmingGoldForLevel(x.level),0)/total;
     }
+    // Hunt catalogs are stable between actual revisions; reuse baseline
+    // weighted loot once per hunt/catalog pair instead of per species card.
+    // Measured kill mixes are deliberately not cached.
+    const FARM_LOOT_BASELINE_CACHE = new WeakMap();
     function farmLootPrediction(hunt,known,killsH,mix=null) {
         if(!Number.isFinite(killsH)||killsH<0||
             !Array.isArray(hunt?.especies)||!hunt.especies.length)
@@ -3811,6 +3815,10 @@
         const reported=mix && typeof mix==='object'
             ? Object.values(mix).reduce((n,x)=>n+Number(x?.kills||0),0) : 0;
         const measured=reported>=30;
+        const cached=!measured ? FARM_LOOT_BASELINE_CACHE.get(hunt) : null;
+        if (cached?.catalog === known && cached.species === hunt.especies)
+            return {perHour:cached.perKill===null?null:killsH*cached.perKill,
+                coverage:cached.coverage,source:'reconstructed-upstream-catalog'};
         let total=0,covered=0,weighted=0;
         for(const x of hunt.especies){
             const id=Number(outlandNormalizeSpeciesId(x.pokeId));
@@ -3821,9 +3829,13 @@
             const row=known.get(id);
             if(row&&Number.isFinite(row.perKill)){covered+=w;weighted+=row.perKill*w;}
         }
-        return {perHour:total>0&&covered===total?killsH*weighted/total:null,
-            coverage:total?Math.round(100*covered/total):0,
-            source:measured?'observed-species-mix+reconstructed-loot':
+        const perKill=total>0&&covered===total?weighted/total:null;
+        const coverage=total?Math.round(100*covered/total):0;
+        if (!measured) FARM_LOOT_BASELINE_CACHE.set(hunt,{
+            catalog:known,species:hunt.especies,perKill,coverage
+        });
+        return {perHour:perKill===null?null:killsH*perKill,
+            coverage,source:measured?'observed-species-mix+reconstructed-loot':
                 'reconstructed-upstream-catalog'};
     }
     function farmNormalizePrices(data,kind){
@@ -6448,7 +6460,7 @@
             const item = state.itemsByName.get(String(name || '').toLowerCase());
             return farmNpcPrice(item, shopIds, special);
         };
-        state.npcLootBySpecies.clear();
+        state.npcLootBySpecies = new Map();
         state.captureRarities.clear();
         for(const [id,meta] of state.speciesCombat) {
             const rarity=captureRarityFromCatalog(meta);
