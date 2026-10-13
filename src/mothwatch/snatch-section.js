@@ -231,7 +231,7 @@
         }
         if (!state.orderJournal?.accountKey || !config.enabled || config.purchasesPaused ||
             !state.gameSocket || state.gameSocket.readyState !== 1 ||
-            state.pendingBuy || unverifiedOrdersExist() || gameIsLoading()) {
+            state.pendingBuy || gameIsLoading()) {
             snatchSchedule(10000); return;
         }
         const server = serverNow();
@@ -410,7 +410,7 @@
     function snatchDisplayStatus(target, observation) {
         if (!config.enabled) return {tone:'muted', text:tr('Moth Watch is disabled')};
         if (config.purchasesPaused) return {tone:'muted', text:tr('Purchases are paused')};
-        if (unverifiedOrdersExist()) return {tone:'warning', text:tr('Blocked by an unverified purchase')};
+        if (unresolvedListing(target.id)) return {tone:'warning', text:tr('Blocked by an unverified purchase')};
         if (!state.gameSocket || state.gameSocket.readyState !== 1)
             return {tone:'warning', text:tr('Waiting for game connection')};
         if (state.pendingBuy?.listingId === target.id)
