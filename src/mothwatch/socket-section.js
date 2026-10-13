@@ -39,6 +39,10 @@
             const catalog = message.mercado && Array.isArray(message.mercado.catalogo)
                 ? message.mercado.catalogo
                 : [];
+            // The catalog Map is mutated in place on a welcome refresh.
+            // A previous inventory memo must never survive that change.
+            state.itemInventoryMemo = null;
+            state.lastInventoryPaint = null;
             state.catalog.clear();
             for (const item of catalog) {
                 const id = Number(item && item.id);
