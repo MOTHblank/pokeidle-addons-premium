@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.6.5
+// @version      0.6.6
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -14,7 +14,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.5');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.6');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -295,7 +295,7 @@
         "Seller fee estimate updated.": "Estimativa de taxa atualizada.",
         "Diamond resale is not inferred: purchased-from-player and reward Diamonds are not equivalent to server-verified eligible first-party Diamonds.": "Não presumimos revenda de diamantes: diamantes adquiridos de jogadores ou prêmios não equivalem aos diamantes de primeira compra elegíveis e confirmados pelo servidor.",
 
-        "Read-only estimates and user-entered holdings; never realized proceeds.": "Estimativas somente de leitura e bens informados manualmente; nunca receitas realizadas.",
+        "Read-only fees, market eligibility, and recorded purchase exposure.": "Taxas, elegibilidade de itens e compras registradas, sem executar ações.",
         "Quantity": "Quantidade",
         "Unit price": "Preço unitário",
         "Sale quantity": "Quantidade na venda",
@@ -414,12 +414,14 @@
         "Maximum Coins per purchase": "Máximo de moedas por compra",
         "Maximum Gems per purchase": "Máximo de gemas por compra",
         "0 = no extra cap": "0 = sem limite adicional",
-        "Reference confidence": "Confiabilidade das referências",
-        "Minimum sold item units": "Mínimo de unidades de item vendidas",
-        "Minimum Pokémon sale samples": "Mínimo de vendas de Pokémon na amostra",
+        "Valuation sample settings (not buying limits)": "Amostragem de preços (não limita compras)",
+        "Sold item units for estimate confidence": "Unidades vendidas para estimar confiança",
+        "Comparable Pokémon sales for price estimates": "Vendas comparáveis para estimar preço",
         "Pokémon history pages": "Páginas do histórico de Pokémon",
         "Price references": "Referências de preço",
-        "Inspect and refresh reference data used to judge offers.": "Consulte e atualize as referências usadas para avaliar ofertas.",
+        "Inspect market-price evidence independently of your buying rules.": "Consulte referências de preço sem interferir nas suas regras de compra.",
+        "These settings affect price estimates and deal discovery only. Rules such as “buy any item below 10,000 Coins” never require historical sales.": "Estas opções afetam apenas estimativas e descoberta de ofertas. Regras como “comprar qualquer item abaixo de 10.000 moedas” não exigem vendas anteriores.",
+        "Scanning controls only. Price thresholds for suggestions never authorize or restrict your explicit buying rules.": "Somente opções de monitoramento. Limites para sugestões de preço não autorizam nem restringem suas regras de compra.",
         "Item references:": "Referências de itens:",
         "live server 7-day averages with a saved fallback captured": "médias do servidor em 7 dias, com referência alternativa salva em",
         " item types; ": " tipos de item; ",
@@ -4580,8 +4582,8 @@
         gemReserve: 'Gems that must remain untouched. This is subtracted before calculating an affordable purchase.',
         maxCoinsPerBuy: 'Maximum Coin spend on one purchase. Set to 0 for no extra cap beyond your reserve and balance.',
         maxGemsPerBuy: 'Maximum Gem spend on one purchase. Set to 0 for no extra cap beyond your reserve and balance.',
-        minItemUnits: 'Require at least this many sold units before using an item reference for automatic buying.',
-        minPokemonSamples: 'Require this many completed Pokémon sales before automatic buying can use that reference.',
+        minItemUnits: 'Minimum sold item units used to label confidence in read-only price suggestions. Does not restrict buying rules.',
+        minPokemonSamples: 'Minimum comparable completed Pokémon sales for read-only price estimates. Does not restrict buying rules.',
         pokemonHistoryPages: 'How many pages of completed-sale history to read. More pages take longer and use more requests.'
     });
     const CONFIG_LIMITS = Object.freeze({
@@ -5889,7 +5891,7 @@
             } else if (state.watchView === 'economy') {
                 content.innerHTML = '<div class="moth-mw-section-title"><h4>' +
                     escapeHtml(tr('Economy & holdings')) + '</h4><span>' +
-                    escapeHtml(tr('Read-only estimates and user-entered holdings; never realized proceeds.')) +
+                    escapeHtml(tr('Read-only fees, market eligibility, and recorded purchase exposure.')) +
                     '</span></div><div id="moth-mw-economy"></div>';
             } else if (state.watchView === 'snatches') {
                 content.innerHTML =
@@ -5928,20 +5930,23 @@
                     fixedRulesHtml() + categoryRulesHtml('any') + categoryRulesHtml('pokemon') +
                     '<details class="moth-mw-advanced"><summary>' + escapeHtml(tr('Advanced monitoring & references')) +
                     '</summary><div class="moth-mw-advanced-body"><p class="moth-mw-advanced-note">' +
-                    escapeHtml(tr('Scanning and reference-quality controls. These do not authorize orders by themselves.')) +
+                    escapeHtml(tr('Scanning controls only. Price thresholds for suggestions never authorize or restrict your explicit buying rules.')) +
                     '</p><div class="moth-mw-settings-grid"><section class="moth-mw-settings-card"><h4>' + escapeHtml(tr('Watch rules')) +
                     '</h4><div class="moth-mw-config">' + configField('Watch price threshold', 'watchPercent', 'range', '%') +
                     configField('Scan interval', 'scanSeconds', 'number', 'seconds') + configField('Watch items', 'scanItems', 'checkbox') +
                     configField('Watch Pokémon', 'scanPokemon', 'checkbox') + configField('Watch diamonds', 'scanDiamonds', 'checkbox') +
-                    '</div></section><section class="moth-mw-settings-card"><h4>' + escapeHtml(tr('Reference confidence')) +
-                    '</h4><div class="moth-mw-config">' + configField('Minimum sold item units', 'minItemUnits', 'number', '') +
-                    configField('Minimum Pokémon sale samples', 'minPokemonSamples', 'number', '') +
-                    configField('Pokémon history pages', 'pokemonHistoryPages', 'number', '') +
                     '</div></section></div></div></details>';
             } else {
                 content.innerHTML =
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Price references')) + '</h4><span>' +
-                    escapeHtml(tr('Inspect and refresh reference data used to judge offers.')) + '</span></div>' +
+                    escapeHtml(tr('Inspect market-price evidence independently of your buying rules.')) + '</span></div>' +
+                    '<section class="moth-mw-settings-card"><h4>' + escapeHtml(tr('Valuation sample settings (not buying limits)')) +
+                    '</h4><p class="moth-mw-rule-hint">' + escapeHtml(tr('These settings affect price estimates and deal discovery only. Rules such as “buy any item below 10,000 Coins” never require historical sales.')) +
+                    '</p><div class="moth-mw-config">' +
+                    configField('Sold item units for estimate confidence', 'minItemUnits', 'number', '') +
+                    configField('Comparable Pokémon sales for price estimates', 'minPokemonSamples', 'number', '') +
+                    configField('Pokémon history pages', 'pokemonHistoryPages', 'number', '') +
+                    '</div></section>' +
                     '<div class="moth-mw-reference-tools" id="moth-mw-reference-tools"></div>' +
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Recent activity')) + '</h4><span>' +
                     escapeHtml(tr('Purchase attempts, confirmations, and errors.')) + '</span></div>' +
@@ -6413,7 +6418,7 @@
                         setAutomationNotice(tr('Rule-based buying is on. No other purchase switches are required. Spending safeguards still apply.'), 'ok');
                     }
                 }
-                if (key === 'pokemonHistoryPages' || key === 'minPokemonSamples') ensurePokemonHistory(true);
+                if (key === 'pokemonHistoryPages') ensurePokemonHistory(true);
                 // Spending switches and numeric fields do not need a new market scan.
                 // Only changes to scanning conditions should request fresh data.
                 if (['scanItems', 'scanPokemon', 'scanDiamonds', 'scanSeconds', 'watchPercent'].includes(key)) {
@@ -6933,7 +6938,7 @@
         }
 
         ensureUi();
-        console.info('[Moth Watch] v0.6.5 loaded');
+        console.info('[Moth Watch] v0.6.6 loaded');
     }
 
     bootstrap();
