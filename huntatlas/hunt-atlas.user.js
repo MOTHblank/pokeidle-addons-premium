@@ -13300,7 +13300,7 @@
                 saveFilters();
                 renderXpSummary(drawer,results);
             });
-        });
+        }
         q('[data-mha-sort-outland-tier]',host)?.addEventListener('change',event=>{
             const tier=Number(event.target.value);
             if(!Number.isInteger(tier)||tier<1||tier>8)return;
