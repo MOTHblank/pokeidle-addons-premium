@@ -549,15 +549,15 @@ test('Milestone A: session/day caps account for outstanding unknown orders acros
         maxCoinsPerDay:220,maxGemsPerDay:0,
         maxPurchasesPerSession:2,maxQuantityPerSession:3,
         fixedRulesEnabled:false};
-    const state = {attemptedListings:new Map(),pendingBuy:null,lastPurchaseOutcome:'idle'};
+    const state = {nick:'synthetic-alice',attemptedListings:new Map(),pendingBuy:null,lastPurchaseOutcome:'idle'};
     const source = section('    function orderSessionId(', '    function loadConfig()');
     const log = [];
     const api = new Function('state','config','localStorage','sessionStorage',
-        'ORDER_JOURNAL_KEY','ORDER_SESSION_KEY','addLog','queueRender',
+        'ORDER_JOURNAL_KEY','ORDER_SESSION_KEY','normalize','addLog','queueRender',
         'sanitizeFixedItemRules','sanitizeAnyItemRules','sanitizePokemonBuyRules',
-        source + '\nreturn {loadOrderJournal,saveOrderJournal,reserveOrder,settleOrder,'+
+        source + '\nreturn {orderAccountKey,loadOrderJournal,saveOrderJournal,reserveOrder,settleOrder,'+
         'resolveOrder,unresolvedListing,remainingBudget,orderExposure};')(
-        state,config,storage,session,'orders','session',text=>log.push(text),
+        state,config,storage,session,'orders','session',text=>text.toLowerCase(),text=>log.push(text),
         ()=>{},()=>[],()=>[],()=>[]);
     state.orderJournal=api.loadOrderJournal();
     const at=Date.now();
@@ -579,6 +579,14 @@ test('Milestone A: session/day caps account for outstanding unknown orders acros
         'confirmed purchases retain quoted upper bound');
     assert.equal(api.unresolvedListing(77),false);
     assert.equal(api.remainingBudget('orb').spend,Infinity);
+    state.nick='synthetic-bob';
+    state.orderJournal=api.loadOrderJournal();
+    assert.equal(state.orderJournal.orders.length,0,'different game accounts must not share buys');
+    state.nick='synthetic-alice';
+    state.orderJournal=api.loadOrderJournal();
+    assert.equal(state.orderJournal.orders[0].status,'confirmed');
+    assert.ok([...disk.keys()].every(key=>!key.includes('synthetic-alice')),
+        'raw nickname must never enter the stored journal key');
 });
 
 test('Milestone A: per-rule spend and quantity limits are independent of global caps', () => {
