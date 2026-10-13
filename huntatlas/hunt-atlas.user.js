@@ -1672,6 +1672,7 @@
             pokemonXp: 0,
             gold: 0,
             rateUseWindow: null,
+            speciesKills: {},
 
             killIntervals: [],
             sameTargetIntervals: [],
@@ -2702,6 +2703,8 @@
             pokemonXp: kind === 'morte' ? pokemonXp : null,
             killCoins: kind === 'morte' ? killCoins : null,
             autoSaleCoins: kind === 'morte' ? autoSaleCoins : null,
+            speciesId: kind === 'morte' ? farmNum(event.speciesId ?? event.pokeId) : null,
+            mobLevel: kind === 'morte' ? farmNum(event.level) : null,
             drops: kind === 'morte' || kind === 'bossMorto' ? drops : [],
             shinySeen: kind === 'bola' ? event.shiny === true : null,
             shinyCaught: kind === 'capturado'
@@ -2867,7 +2870,9 @@
         if (!row || row.bucket !== bucket) {
             row = {bucket, at, kills: 0, productiveMs: 0,
                 trainerXp: 0, pokemonXp: 0, gold: 0,
-                trainerKnown: 0, pokemonKnown: 0};
+                trainerKnown: 0, pokemonKnown: 0,
+                killGold: 0, autoSale: 0, killGoldKnown: 0,
+                autoSaleKnown: 0};
             rows.push(row);
         }
         row.kills++;
@@ -2880,6 +2885,14 @@
             row.pokemonKnown++;
         }
         row.gold += sample.gold ?? 0;
+        if (sample.killGold !== null && Number.isFinite(sample.killGold)) {
+            row.killGold += sample.killGold;
+            row.killGoldKnown++;
+        }
+        if (sample.autoSale !== null && Number.isFinite(sample.autoSale)) {
+            row.autoSale += sample.autoSale;
+            row.autoSaleKnown++;
+        }
         if (!reset) {
             const gap = at - window.lastAt;
             if (gap >= 0 && gap <= 60000) row.productiveMs += gap;
@@ -2911,6 +2924,10 @@
             trainerKnown: sum('trainerKnown'),
             pokemonKnown: sum('pokemonKnown'),
             goldH: sum('gold') * 3600000 / elapsedMs,
+            killGoldH: sum('killGoldKnown') === samples
+                ? sum('killGold') * 3600000 / elapsedMs : null,
+            autoSaleH: sum('autoSaleKnown') === samples
+                ? sum('autoSale') * 3600000 / elapsedMs : null,
             productiveKillsH: productiveMs >= FARM_MIN_WINDOW_MS
                 ? samples * 3600000 / productiveMs : null,
             productiveMs, windowMs: elapsedMs, samples,
@@ -3319,7 +3336,8 @@
             record.sessionToken = state.farmingSessionToken;
         }
         record.rateWindow = appendFarmingKill(record.rateWindow,
-            {at: now, trainerXp, pokemonXp, gold});
+            {at: now, trainerXp, pokemonXp, gold,
+                killGold:receipt.killCoins, autoSale:receipt.autoSaleCoins});
 
         const hunt =
             currentHunt();
@@ -3365,21 +3383,15 @@
             );
 
         if (slot) {
-            const target =
-                state.combatTargets.get(
-                    slot
-                );
-
-            recordTargetHp(
-                record,
-                target
-            );
-
-            state.combatTargets.delete(
-                slot
-            );
+            const target = state.combatTargets.get(slot);
+            const speciesId = receipt.speciesId ?? target?.speciesId;
+            if (speciesId && Object.keys(record.speciesKills).length < 80) {
+                const key = String(speciesId);
+                record.speciesKills[key] = (record.speciesKills[key] || 0) + 1;
+            }
+            recordTargetHp(record, target);
+            state.combatTargets.delete(slot);
         }
-
         savePerformance();
 
         if (
@@ -7152,6 +7164,8 @@
                 value:
                     observed.trainerXpH,
                 pokemonValue: observed.pokemonXpH,
+                killGoldH: observed.killGoldH,
+                autoSaleH: observed.autoSaleH,
                 trainerKnown: observed.trainerKnown,
                 pokemonKnown: observed.pokemonKnown,
                 goldValue:
@@ -7315,6 +7329,8 @@
                 pokemonXpPerKill *
                 killsH,
             goldValue: null,
+            killGoldH: null,
+            autoSaleH: null,
             warmingUp: Boolean(record && record.rateWindow?.rows?.length &&
                 record.rateGeneration === state.rateGeneration),
             killsH,
