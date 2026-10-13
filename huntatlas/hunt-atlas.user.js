@@ -12230,49 +12230,6 @@
             null;
 
         const worldLocation = locationForHunt(hunt);
-        const sharedHunts = sharedWorldLocation(hunt);
-        const sub =
-            [
-                String(
-                    hunt.area ||
-                    worldLocation?.area ||
-                    ''
-                ).toUpperCase(),
-                tr(
-                    'hunt.level',
-                    {
-                        level:
-                            Number(
-                                hunt.nivel ||
-                                0
-                            )
-                    }
-                ),
-                tr(
-                    unlocked
-                        ? 'hunt.unlocked'
-                        : 'hunt.locked'
-                ),
-                xpLabel,
-                catchCard,
-                shinyCard,
-                meta?.captureLevelCeiling ? tr('catch.levelCap',{
-                    level:Math.min(Number(hunt.nivel)||1,
-                        meta.captureLevelCeiling)}):null,
-                typeof economicInfo.killCoinsH === 'number'
-                    ? tr('econ.kill') + ': ' + formatRate(economicInfo.killCoinsH)
-                        + ' (' + (economicInfo.killSource === 'observed-server/event'
-                            ? tr('econ.observed') : tr('econ.model')) + ')'
-                    : null,
-                typeof economicInfo.netH === 'number'
-                    ? tr('econ.net') + ': ' + formatRate(economicInfo.netH)
-                    : null,
-                xpInfo?.incomplete ? tr('xp.incompleteShort', { percentage: xpInfo.coverage }) : null,
-                sharedHunts.length ? tr('location.shared', { hunts: sharedHunts.join(', ') }) : null
-            ]
-                .filter(Boolean)
-                .join(' · ');
-
         const label =
             tr(
                 current
@@ -12290,6 +12247,7 @@
         const activeChance=selectedBall===5?beastPct:ultraPct;
         const detailId=String(species.id)+'|'+String(hunt.slug);
         const expanded=state.openHuntDetails.has(detailId);
+        const sharedHunts=expanded?sharedWorldLocation(hunt):[];
         const metricRate=value=>typeof value==='number'&&Number.isFinite(value)
             ?formatRate(value):tr('rank.unknown');
         const compactSub=[
@@ -12313,10 +12271,15 @@
             tr('rank.capture',{chance:activeChance===null?'—':
                 (activeChance*100).toFixed(3)}),
             shinyCard??tr('rank.invalid'),
+            meta?.captureLevelCeiling?tr('catch.levelCap',{
+                level:Math.min(Number(hunt.nivel)||1,meta.captureLevelCeiling)
+            }):null,
+            sharedHunts.length?tr('location.shared',{
+                hunts:sharedHunts.join(', ')}):null,
             tr('rank.confidence',{confidence:xpInfo?.confidence??'low'}),
             tr('rank.coverage',{percent:xpInfo?.coverage??0}),
             xpInfo?.observed?tr('econ.observed'):tr('rank.unboosted')
-        ].join(' · ');
+        ].filter(Boolean).join(' · ');
 
         const huntMarkup =
             `
@@ -12408,10 +12371,6 @@
         // unknown/unavailable. Never mistake a missing observation for zero.
         const usable=ranked.filter(row=>haMetricNumber(row.score)!==null);
         const best=usable[0]||null;
-        const metricText=row=>objective==='ballEfficiency'?
-            tr('rank.efficiency',{value:formatRate(row.score)}):
-            tr('rank.value',{value:formatRate(row.score),
-                source:row.source||tr('rank.unknown')});
         const xpSourceLabel = estimate => estimate?.observed
             ? tr('xp.sourceMeasured')
             : estimate?.source === 'immune combat model'
