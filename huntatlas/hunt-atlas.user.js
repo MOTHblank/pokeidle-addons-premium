@@ -420,6 +420,22 @@
             'xp.currentModeled': ' · current modeled {value} trainer XP/h',
             'xp.warmingSession': 'warming up: sustained observations still insufficient',
             'xp.sessionEvidence': '{samples} kills / {minutes} min, wall-clock',
+            'sort.coins': 'Kill Coins/hour',
+            'sort.netCoins': 'Net Coins/hour (measured)',
+            'econ.title': 'Farming economy · {hunt}',
+            'econ.kill': 'Kill Coins/h',
+            'econ.loot': 'NPC loot EV/h',
+            'econ.realized': 'Realized Coins/h',
+            'econ.net': 'Net Coins/h',
+            'econ.cost': 'Replacement cost of used items',
+            'econ.diamonds': 'Diamonds/h (separate)',
+            'econ.model': 'shared model (unboosted, catalog fallback level)',
+            'econ.observed': 'observed server receipts',
+            'econ.estimatedLoot': 'reconstructed static loot · {coverage}% coverage (not verified server drops)',
+            'econ.netCaveat': 'Net = realized hunt Coins minus replacement cost of consumed balls/potions/revives, not a wallet-balance change. Unsold loot and potential market sales are excluded.',
+            'econ.noPrice': 'Costs unavailable: missing official shop price for {count} uses',
+            'econ.stock': 'Stock {count} · runway {hours}h at observed use rate',
+            'econ.unknown': '— (insufficient evidence)',
             'xp.sourceLabel': 'source: {source}',
             'xp.sourceMeasured': 'server kill rewards (observed)',
             'xp.sourceModel': 'personalized combat projection',
@@ -633,6 +649,22 @@
             'xp.currentModeled': ' · atual modelado {value} XP de treinador/h',
             'xp.warmingSession': 'aquecendo: ainda faltam medições sustentadas',
             'xp.sessionEvidence': '{samples} abates / {minutes} min, tempo corrido',
+            'sort.coins': 'Moedas/h por abate',
+            'sort.netCoins': 'Moedas líquidas/h (medido)',
+            'econ.title': 'Economia da hunt · {hunt}',
+            'econ.kill': 'Moedas/h dos abates',
+            'econ.loot': 'EV/h de loot vendável ao NPC',
+            'econ.realized': 'Moedas/h realizadas',
+            'econ.net': 'Moedas líquidas/h',
+            'econ.cost': 'Reposição dos itens consumidos',
+            'econ.diamonds': 'Diamantes/h (separado)',
+            'econ.model': 'modelo-base (sem bônus, nível da hunt)',
+            'econ.observed': 'recibos observados do servidor',
+            'econ.estimatedLoot': 'loot reconstruído do catálogo · cobertura {coverage}% (drops do servidor não verificados)',
+            'econ.netCaveat': 'Líquido = moedas realizadas na hunt menos custo de reposição de bolas/poções/revives usados, não variação do saldo. Loot guardado e vendas futuras não entram.',
+            'econ.noPrice': 'Custo indisponível: falta preço oficial de {count} usos',
+            'econ.stock': 'Estoque {count} · duração {hours}h no ritmo observado',
+            'econ.unknown': '— (evidência insuficiente)',
             'xp.sourceLabel': 'fonte: {source}',
             'xp.sourceMeasured': 'recompensas do servidor (medidas)',
             'xp.sourceModel': 'projeção personalizada de combate',
@@ -1127,6 +1159,8 @@
 
             const validSorts = [
                 'xp',
+                'coins',
+                'netCoins',
                 'name',
                 'pokedex',
                 'level',
@@ -8193,6 +8227,14 @@
             });
         }
 
+        // Compute at most one economy estimate per hunt during this sort.
+        const economySortCache = new Map();
+        const economyFor = hunt => {
+            if (!hunt?.slug) return null;
+            if (!economySortCache.has(hunt.slug))
+                economySortCache.set(hunt.slug, huntEconomyEstimate(hunt));
+            return economySortCache.get(hunt.slug);
+        };
         result.sort(
             (a, b) => {
                 const sort =
@@ -8300,6 +8342,15 @@
                             value(b),
                             true
                         );
+                } else if (sort === 'coins' || sort === 'netCoins') {
+                    // Null means unsupported, NOT free or equal to zero.
+                    const key = sort === 'coins' ? 'killCoinsH' : 'netH';
+                    const av = economyFor(a.hunt)?.[key];
+                    const bv = economyFor(b.hunt)?.[key];
+                    const aKnown = typeof av === 'number' && Number.isFinite(av);
+                    const bKnown = typeof bv === 'number' && Number.isFinite(bv);
+                    comparison = aKnown && bKnown ? (av - bv) * direction
+                        : aKnown ? -1 : bKnown ? 1 : 0;
                 } else if (
                     sort === 'npc'
                 ) {
@@ -10457,6 +10508,8 @@
                     <div class="mha-sort-control">
                         <select data-mha-filter="sort">
                             <option value="xp">${tr('sort.xp')}</option>
+                            <option value="coins">${tr('sort.coins')}</option>
+                            <option value="netCoins">${tr('sort.netCoins')}</option>
                             <option value="name">${tr('sort.name')}</option>
                             <option value="pokedex">${tr('sort.pokedex')}</option>
                             <option value="level">${tr('sort.level')}</option>
@@ -11670,6 +11723,39 @@
                 )
                 : false;
 
+        const economicHunt = current || best?.hunt || null;
+        const economic = economicHunt ? huntEconomyEstimate(economicHunt,
+            economicHunt.slug === best?.hunt?.slug
+                ? best.xp : huntXpEstimate(economicHunt)) : null;
+        const econValue = value => typeof value === 'number' &&
+            Number.isFinite(value) ? formatRate(value) : tr('econ.unknown');
+        const econLine = (label,value,source) => '<div class="mha-xp-note"><strong>' +
+            escapeHtml(label) + ': ' + escapeHtml(econValue(value)) +
+            '</strong>' + (source ? ' · ' + escapeHtml(source) : '') + '</div>';
+        const economyHtml = economic ? [
+            '<div class="mha-xp-list-title">' +
+                escapeHtml(tr('econ.title',{hunt:economicHunt.nome ||
+                    economicHunt.slug})) + '</div>',
+            econLine(tr('econ.kill'),economic.killCoinsH,
+                tr(economic.killSource === 'observed-server/event' ?
+                    'econ.observed':'econ.model')),
+            econLine(tr('econ.loot'),economic.npcLootEvH,
+                tr('econ.estimatedLoot',{coverage:economic.lootCoverage})),
+            econLine(tr('econ.realized'),economic.realizedH,
+                tr('econ.observed')),
+            econLine(tr('econ.net'),economic.netH,
+                tr('econ.cost')),
+            econLine(tr('econ.cost'),economic.replacementCostH,
+                tr('econ.observed')),
+            economic.diamondsH ? econLine(tr('econ.diamonds'),
+                economic.diamondsH,tr('econ.observed')) : '',
+            '<div class="mha-xp-note">' +
+                escapeHtml(tr('econ.netCaveat')) + '</div>',
+            economic.unknownCosts ? '<div class="mha-xp-note">' +
+                escapeHtml(tr('econ.noPrice',
+                    {count:economic.unknownCosts})) + '</div>' : ''
+        ].join('') : '';
+
         const html = `
             <div class="mha-xp-heading">
                 <strong>${escapeHtml(
@@ -11813,6 +11899,7 @@
                     )}
                 </div>
             </div>
+            ${economyHtml}
         `;
 
         // This summary is polled with the drawer, but should only replace its
