@@ -3979,6 +3979,21 @@
         return Math.round(seconds * 10) * 100;
     }
 
+    // Without directly observed attack intervals, fast kill throughput is
+    // not a reliable proxy for live move readiness. Keep a conservative
+    // baseline until enough timed combat evidence is available.
+    function xpForecastCastCadence(profile, globalMs, fallbackMs) {
+        const global = Number(globalMs);
+        const fallback = Number(fallbackMs);
+        if (!(global > 0) || !Number.isFinite(global) ||
+            !(fallback > 0) || !Number.isFinite(fallback)) return null;
+        const measured = Number(profile?.cadenceMs);
+        return profile?.cadenceMeasured === true &&
+            Number.isFinite(measured) && measured > 0
+            ? Math.max(global, measured)
+            : Math.max(global, fallback);
+    }
+
     function xpPredictionBand(estimate) {
         const value = Number(estimate?.value);
         if (!Number.isFinite(value) || value <= 0) return null;
@@ -8132,13 +8147,14 @@
             ? xpGlobalAttackFloor(iv) : UPSTREAM_GLOBAL_ATTACK_MS;
         const transitionMs =
             (Number(profile.movementMs) || 600) + UPSTREAM_WAVE_MS / mobsPerWave;
+        const castCadenceMs = xpForecastCastCadence(
+            profile, firstAttackMs, UPSTREAM_FALLBACK_MOVE_MS
+        );
         let weightedMs = 0;
         for (const row of coverage.entries) {
             const attacksNeeded = Math.max(1, Math.ceil(row.hp / row.damage));
             const killMs = transitionMs + firstAttackMs +
-                Math.max(0, attacksNeeded - 1) *
-                Math.max(firstAttackMs,
-                    Number(profile.cadenceMs) || UPSTREAM_GLOBAL_ATTACK_MS);
+                Math.max(0, attacksNeeded - 1) * castCadenceMs;
             weightedMs += killMs * row.weight;
         }
         return weightedMs / coverage.total;
