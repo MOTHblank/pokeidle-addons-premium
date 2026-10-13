@@ -34,7 +34,7 @@ Related: [Pokémon valuation](./POKEMON_VALUATION_REFERENCE.md), [Hunt rewards a
 | --- | --- | --- | --- |
 | `market.itens` | `{t}` | Global per-item summary and price averages | `{t:'market',aba:'itens',resumo,medias}` |
 | `market.item` | `{t,itemId,moeda}` | All current offers for an item and currency | `{t:'market',aba:'item',itemId,moeda,linhas}` |
-| `market.listar` | `{t,tipo,moeda,ordem,pagina,...filtros}` | Browse Pokémon or Diamond offers (the addon currently requests page **0**) | `{t:'market',aba:'vitrine',linhas,...}` |
+| `market.listar` | `{t,tipo,moeda,ordem,pagina,...filtros}` | Browse Pokémon or Diamond offers (ordinary scan page **0**, Pokémon buying scan up to **3** pages) | `{t:'market',aba:'vitrine',linhas,...}` |
 | `market.historicoGlobal` | `{t,pagina,tipo:'pokemon',moeda}` | Completed Pokémon sale history by currency | `{t:'market',aba:'historicoGlobal',linhas,temMais}` |
 | `market.comprar` | `{t,id,qtd,preco,moeda}` | **Attempt** to purchase a specific listing at a protected unit price | Relevant `batalha.ev[k:'marketComprado']` on success; listing-specific `erro` or timeout otherwise |
 
@@ -58,7 +58,7 @@ Related: [Pokémon valuation](./POKEMON_VALUATION_REFERENCE.md), [Hunt rewards a
 
 The values `106` and `12345` are **illustrative IDs**, not live currently available item/listing IDs. **Never submit illustrative requests to a live market.**
 
-For Pokémon scans the addon sends `market.listar` with `tipo:'pokemon'`, `moeda:'gold'|'orb'`, `ordem:'recentes'`, `pagina:0`, `especieId:0` and neutral values for `busca`, `criterios`, `elemento`, `categoria`, `soShiny`, `soP5`, `soTmElemental`, `soTmAoe`, `semOutland`, and level/potency/IV/quality/grade ranges. Diamond scanning uses `tipo:'diamante'`, `ordem:'baratos'`, the same neutral filters and `pagina:0`. The complete optional `market.listar` request contract and all server-side filter aliases are **not verified**.
+For Pokémon scans the addon sends `market.listar` with `tipo:'pokemon'`, `moeda:'gold'|'orb'`, `ordem:'recentes'` for reference-only discovery or `ordem:'baratos'` with active purchase rules, and `pagina:0..2` (bounded), `especieId:0` and neutral values for `busca`, `criterios`, `elemento`, `categoria`, `soShiny`, `soP5`, `soTmElemental`, `soTmAoe`, `semOutland`, and level/potency/IV/quality/grade ranges. Diamond scanning uses `tipo:'diamante'`, `ordem:'baratos'`, the same neutral filters and `pagina:0`. The complete optional `market.listar` request contract and all server-side filter aliases are **not verified**.
 
 ### 2.2 Inbound envelope excerpts
 
@@ -216,7 +216,7 @@ The addon accepts `string` JSON or an `ArrayBuffer` containing JSON. It does not
 
 **Anti-outlier safeguard:** once **at least three active listings** are available for a particular item and currency, a **lower active listing median** caps a larger historical mean for reference purposes. The cap is kept for up to **10 minutes**. This is a conservative *discovery heuristic*, **not a completed-sale median** and not an objective fair value. The source field `referenceSource` distinguishes `live-7d`, `frozen-fallback`, `active-median` and no reference.
 
-**Pokémon history:** premium v0.2.1 uses separate local references per **currency, species/form, shiny, potency** and then narrower conditional comparisons by score/quality/IVs/refinement and level bands. It samples completed sales with a bounded `market.historicoGlobal` pagination: default **12 pages per currency**, configurable up to **50**, and refreshes default every **60 minutes**. A query with no score/usable comparable sample is *context*, not an actionable Pokémon bargain. The code does **not** automatically buy Pokémon based on the result.
+**Pokémon history:** premium v0.2.1 uses separate local references per **currency, species/form, shiny, potency** and then narrower conditional comparisons by score/quality/IVs/refinement and level bands. It samples completed sales with a bounded `market.historicoGlobal` pagination: default **12 pages per currency**, configurable up to **50**, and refreshes default every **60 minutes**. A query with no score/usable comparable sample is *context*, not an actionable Pokémon bargain. As of v0.3.0 the code can buy Pokémon under explicit fixed-price `pokemonBuyRules`, **not** automatically from valuation reference results. Normal discovery remains grade-aware.
 
 Reference: [`docs/POKEMON_VALUATION_REFERENCE.md`](./POKEMON_VALUATION_REFERENCE.md) provides valuation/grade constraints and missing-schema warnings. **Different Pokémon of the same species are not fungible**; do not assume a generic mean predicts the price of a specific N=4.0/P4/shiny specimen. Asking prices and completed sales measure different things.
 
@@ -274,6 +274,15 @@ InventoryAssetValue != completedSaleProceeds
 **Diamonds:** The wiki distinguishes Diamonds actually **purchased via PIX/card** (the only ones eligible for listing) from freebies/rewards or Diamonds **bought from another player** (not resellable). Announced Diamonds leave the eligible balance and cancelled remnants return. Moth Watch's `market.listar tipo:'diamante'` scanner does **not** establish a way to manufacture eligibility or transfer Diamonds. It also should not price Beast Balls as a player-market commodity.
 
 **No automatic seller activity in premium Moth Watch**: item-rule automation is strictly **buy-only**. Disabled old settings must never silently restore auto-selling or percentage-based auto-buy.
+
+
+### Premium v0.3.0: explicit-price automated purchase rules
+
+**[ADDON]** `fixedItemRules`, `anyItemRules`, and `pokemonBuyRules` are separate user-configured arrays, with a shared `fixedRulesEnabled` master switch (default false). `anyItemRules` specify currency and maximum **unit** price. The server item-summary minima nominate candidate item types, then a recent `market.item` detail response verifies the actual listed unit price. This avoids attempting a purchase directly from aggregated statistics and keeps the detail request queue bounded.
+
+**[ADDON]** Pokémon rules specify category `any`, `shiny`, or `p5`, currency, and maximum **per-specimen** price. Shiny is Gem-only, P5 is detected through `ficha.potencia`, and the server remains authoritative on invalid/missing metadata. A rule uses current listing data, not estimated fair value, and never requires historical sales. It skips own listings, retained listings, recent attempts, incompatible currency and non-single-unit specimen offers. The same `tryBuy()`, quantity/balance/reserve/per-order-cap validation, one-pending-order gate, and acknowledgement/cooldown path applies to all item and Pokémon rules.
+
+**[ADDON / UNVERIFIED]** Pokémon buying asks the market for the cheapest-priced listings and follows at most **three pages per currency** when `temMais` is true. This is a low-resource, bounded sample, not proof of exhaustive market coverage or confirmed server-side sort semantics. The ordinary scanner still requests the first recent page. Empty `vitrine` responses, changing listings between pages and parallel native market interaction still require live protocol verification. The native market continues to govern retention, payment and winning any release lottery.
 
 ## 10. Scanner cadence, rate limits and low-resource operation
 
