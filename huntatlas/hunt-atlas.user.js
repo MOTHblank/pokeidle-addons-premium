@@ -13076,9 +13076,7 @@
 
         q('[data-mha-sort-outland-tier]',host)?.addEventListener('change',event=>{
             const tier=Number(event.target.value);
-            if(!farmingTier(tier,state.playerLevel) &&
-                !Number.isInteger(tier))return;
-            if(tier<1||tier>8)return;
+            if(!Number.isInteger(tier)||tier<1||tier>8)return;
             state.filters.outlandPreviewTier=tier;
             saveFilters();
             renderDrawer();
