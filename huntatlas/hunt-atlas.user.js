@@ -447,7 +447,7 @@
             'catch.clamp': 'Beast ×8 does not always double Ultra ×4 after the 10% cap.',
             'catch.mystic': 'Mystic Arena uses a separate capture table',
             'catch.mysticTitle': 'Mystic Arena',
-            'catch.mysticRate': '{ball}: {chance} per attempt',
+            'catch.mysticRates': 'Chance per ball',
             'catch.mysticTicket': 'One MysticTicket per encounter; one accepted throw',
             'catch.mysticStock': 'MysticTickets: {count}',
             'catch.mysticNote': 'Unverified Capture Boost not applied',
@@ -773,7 +773,7 @@
             'catch.clamp': 'Beast ×8 nem sempre dobra a chance da Ultra ×4 após o teto de 10%.',
             'catch.mystic': 'A Arena Mística tem tabela própria de captura',
             'catch.mysticTitle': 'Arena Mística',
-            'catch.mysticRate': '{ball}: {chance} por tentativa',
+            'catch.mysticRates': 'Chance por bola',
             'catch.mysticTicket': 'Um MysticTicket por encontro; uma bola aceita',
             'catch.mysticStock': 'MysticTickets: {count}',
             'catch.mysticNote': 'Bônus de captura não verificado, não aplicado',
@@ -12528,12 +12528,11 @@
             tr('catch.source',{coverage:chosen.coverage}):tr('catch.unknown');
         const mysticArena = state.currentHuntSlug === 'arena_mistica';
         const mysticTickets = state.inventoryForCosts.get('item:70090');
-        const mysticBallName = activeCaptureId===5?'Beast Ball':'Ultra Ball';
         const mysticHtml = [
             '<div class="mha-xp-list-title">'+escapeHtml(tr('catch.mysticTitle'))+'</div>',
-            captureLine(tr('catch.mysticRate',{
-                ball:mysticBallName,
-                chance:formatProbability(captureMysticChance(activeCaptureId))})),
+            captureLine(tr('catch.mysticRates'),CAPTURE_BALLS.map(ball=>
+                ball.name+' '+formatProbability(captureMysticChance(ball.id)))
+                .join(' · ')),
             '<div class="mha-xp-note">'+escapeHtml(tr('catch.mysticTicket'))+'</div>',
             Number.isSafeInteger(mysticTickets) ? '<div class="mha-xp-note">'+
                 escapeHtml(tr('catch.mysticStock',{count:mysticTickets}))+'</div>':'',
