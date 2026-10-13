@@ -25,6 +25,7 @@
             state.nick = String(message.estado?.nick || '');
             mergePlayer(message.estado, true);
             state.orderJournal = loadOrderJournal();
+            snatchRestore();
             state.economyHoldings = loadEconomyHoldings();
             state.economyNotice = '';
             state.exposureCache.clear();
@@ -98,6 +99,7 @@
         }
 
         if (message.t !== 'market') return;
+        snatchObservePacket(message);
 
         if (message.mediaDiamante && typeof message.mediaDiamante === 'object') {
             state.liveDiamondAverages = message.mediaDiamante;
