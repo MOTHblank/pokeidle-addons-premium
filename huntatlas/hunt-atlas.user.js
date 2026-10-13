@@ -444,8 +444,12 @@
             'catch.clamp': 'Beast ×8 does not always double Ultra ×4 after the 10% cap.',
             'catch.mystic': 'Mystic Arena uses a separate ball table and consumes one ticket per attempt; never included in ordinary hunt odds.',
             'catch.card': 'Ultra {ultra}% · Beast {beast}% (wiki-conditional)',
+            'catch.levelCap': 'Caught level cap: {level} (wild rewards unchanged)',
             'catch.cardUnknown': 'Capture chance unavailable (rarity unresolved)',
-            'catch.targetRate': 'Target {captures} captures/h · {shiny} shiny caught/h (upper bound if all bodies targeted)',
+            'catch.targetRate': 'Target {captures} captures/h · {shiny} shiny caught/h ({source})',
+            'catch.targetObserved': 'observed throw coverage',
+            'catch.targetCeiling': 'upper bound if all bodies targeted',
+            'catch.shinyMean': 'Mean wait for shiny caught: {hours}h · ≈{throws} accepted attempts/shiny caught',
             'sort.coins': 'Kill Coins/hour',
             'sort.netCoins': 'Net Coins/hour (measured)',
             'econ.title': 'Farming economy · {hunt}',
@@ -725,8 +729,12 @@
             'catch.clamp': 'Beast ×8 nem sempre dobra a chance da Ultra ×4 após o teto de 10%.',
             'catch.mystic': 'A Arena Mística usa tabela especial de bolas e consome um ticket por tentativa; não entra nas odds das hunts comuns.',
             'catch.card': 'Ultra {ultra}% · Beast {beast}% (condicional da wiki)',
+            'catch.levelCap': 'Teto do nível ao capturar: {level} (recompensas do selvagem não mudam)',
             'catch.cardUnknown': 'Chance de captura indisponível (raridade não verificada)',
-            'catch.targetRate': 'Alvo {captures} capturas/h · {shiny} shinies capturados/h (teto se todos os corpos receberem bola)',
+            'catch.targetRate': 'Alvo {captures} capturas/h · {shiny} shinies capturados/h ({source})',
+            'catch.targetObserved': 'cobertura medida de arremessos',
+            'catch.targetCeiling': 'teto se todos os corpos receberem bola',
+            'catch.shinyMean': 'Espera média por shiny capturado: {hours}h · ≈{throws} bolas aceitas/shiny capturado',
             'sort.coins': 'Moedas/h por abate',
             'sort.netCoins': 'Moedas líquidas/h (medido)',
             'econ.title': 'Economia da hunt · {hunt}',
@@ -3313,6 +3321,9 @@
         }
         const chance=captureWikiChance(rarity,efficiency);
         if(!total||!matches||chance===null)return null;
+        const hasMeasuredFraction=typeof options.acceptedFraction==='number' &&
+            Number.isFinite(options.acceptedFraction) &&
+            options.acceptedFraction>=0&&options.acceptedFraction<=1;
         const fraction=typeof options.acceptedFraction==='number'&&
             options.acceptedFraction>=0&&options.acceptedFraction<=1?
                 options.acceptedFraction:1;
@@ -3322,6 +3333,7 @@
             ?null:true;
         const shinyP=options.hypotheticalLure?1/12000:1/24000;
         return {chance,targetFraction:matches/total,acceptedH,catchesH,
+            acceptedSource:hasMeasuredFraction?'observed':'ceiling',
             shinySeenH:eligible?acceptedH*shinyP:null,
             shinyCaughtH:eligible?catchesH*shinyP:null,
             meanHoursShiny:eligible&&catchesH>0?1/(catchesH*shinyP):null,
@@ -5991,6 +6003,10 @@
                         creature.huntLevel
                     )
                     : previous.huntLevel,
+            captureLevelCeiling:Number.isInteger(Number(
+                creature?.tetoCaptura)) && Number(creature.tetoCaptura)>0
+                ? Number(creature.tetoCaptura)
+                :previous.captureLevelCeiling??null,
             rawLoot: Array.isArray(creature?.loot)
                 ? creature.loot.map(line => ({...line}))
                 : previous.rawLoot ?? null,
@@ -11995,7 +12011,9 @@
         const shinyCard=chosenSpeciesPlan?
             tr('catch.targetRate',{captures:chosenSpeciesPlan.catchesH.toFixed(2),
                 shiny:chosenSpeciesPlan.shinyCaughtH===null?'—':
-                    chosenSpeciesPlan.shinyCaughtH.toFixed(6)}) :
+                    chosenSpeciesPlan.shinyCaughtH.toFixed(6),
+                source:tr(chosenSpeciesPlan.acceptedSource==='observed'
+                    ?'catch.targetObserved':'catch.targetCeiling')}) :
             null;
 
         const worldLocation = locationForHunt(hunt);
@@ -12025,6 +12043,9 @@
                 xpLabel,
                 catchCard,
                 shinyCard,
+                meta?.captureLevelCeiling ? tr('catch.levelCap',{
+                    level:Math.min(Number(hunt.nivel)||1,
+                        meta.captureLevelCeiling)}):null,
                 typeof economicInfo.killCoinsH === 'number'
                     ? tr('econ.kill') + ': ' + formatRate(economicInfo.killCoinsH)
                         + ' (' + (economicInfo.killSource === 'observed-server/event'
@@ -12601,6 +12622,10 @@
                 count:rate(chosen.catchesH),
                 balls:rate(chosen.ballsPerCapture)
             })):'',
+            chosen && chosen.shinyCaughtH>0 ? captureLine(tr('catch.shinyMean',{
+                hours:formatRate(1/chosen.shinyCaughtH),
+                throws:formatRate(1/(chosen.chance*chosen.shinyP))
+            }),tr('catch.limit')):'',
             chosen ? captureLine(tr('catch.seen',{
                 count:rate(chosen.shinySeenH),
                 caught:rate(chosen.shinyCaughtH)
@@ -12784,9 +12809,9 @@
                     )}
                 </div>
             </div>
+            ${captureHtml}
             ${economyHtml}
             ${rareHtml}
-            ${captureHtml}
         `;
 
         // This summary is polled with the drawer, but should only replace its
