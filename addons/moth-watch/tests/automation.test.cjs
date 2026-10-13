@@ -1,13 +1,13 @@
 'use strict';
 
-// Run with node --test tests/moth-watch-automation.test.cjs.
+// Run with node --test addons/moth-watch/tests/automation.test.cjs.
 // These tests exercise userscript code without a live game or real orders.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const script = fs.readFileSync(path.join(__dirname, '..', 'addons', 'market-bot.user.js'), 'utf8');
-const protocolFixtures = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'moth-watch-market-protocol.json'), 'utf8'));
+const script = fs.readFileSync(path.join(__dirname, '..', 'moth-watch.user.js'), 'utf8');
+const protocolFixtures = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'market-protocol.json'), 'utf8'));
 
 
 function section(start, end) {
@@ -657,13 +657,13 @@ test('Explicit-price automation does not require historical-sale sample minimums
 });
 
 test('Price-estimate controls are separate from the automatic buying editor', () => {
-    const source = fs.readFileSync(path.join(__dirname, '..', 'src/mothwatch/ui-render-section.js'), 'utf8');
+    const source = fs.readFileSync(path.join(__dirname, '..', 'src/ui-render-section.js'), 'utf8');
     const automation = source.slice(source.indexOf("state.watchView === 'automation') {"),
         source.indexOf('            } else {\n                content.innerHTML =', source.indexOf("state.watchView === 'automation') {")));
     assert.doesNotMatch(automation, /minItemUnits|minPokemonSamples/);
     assert.match(source, /Valuation sample settings \(not buying limits\)/);
     assert.match(source, /Rules such as “buy any item below 10,000 Coins” never require historical sales/);
-    const events = fs.readFileSync(path.join(__dirname, '..', 'src/mothwatch/ui-events-section.js'), 'utf8');
+    const events = fs.readFileSync(path.join(__dirname, '..', 'src/ui-events-section.js'), 'utf8');
     assert.doesNotMatch(events, /key === 'minPokemonSamples'\) ensurePokemonHistory\(true\)/);
 });
 
@@ -1016,13 +1016,13 @@ function milestoneDDiagnosticsHarness() {
 }
 
 test('Milestone D: diagnostics source is synchronized with standalone userscript', () => {
-    const source=fs.readFileSync(path.join(__dirname,'..','src','mothwatch',
+    const source=fs.readFileSync(path.join(__dirname,'..','src',
         'diagnostics-section.js'),'utf8').trimEnd();
     const embedded=section('    // BEGIN MOTHWATCH DIAGNOSTICS GENERATED\n',
         '    // END MOTHWATCH DIAGNOSTICS GENERATED')
         .replace(/^    \/\/ BEGIN MOTHWATCH DIAGNOSTICS GENERATED\n/, '').trimEnd();
     assert.equal(embedded,source,'module must exactly match generated userscript section');
-    const tool=fs.readFileSync(path.join(__dirname,'..','tools','build-mothwatch.cjs'),'utf8');
+    const tool=fs.readFileSync(path.join(__dirname,'..','build.cjs'),'utf8');
     assert.match(tool,/--check/);
     assert.match(script,/@version\s+0\.6\.9/);
     assert.doesNotMatch(script,/^\s*\/\/\s*@(?:downloadURL|updateURL)/m,
@@ -1152,7 +1152,7 @@ test('MothWatch v0.6.1: source sections match the single distributable userscrip
         const end = '\n    // END MOTHWATCH ' + id + ' GENERATED';
         const a = script.indexOf(begin), b = script.indexOf(end, a + begin.length);
         assert.ok(a >= 0 && b > a, 'module markers: ' + id);
-        const moduleSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'mothwatch', name), 'utf8').trimEnd();
+        const moduleSource = fs.readFileSync(path.join(__dirname, '..', 'src', name), 'utf8').trimEnd();
         assert.equal(script.slice(a + begin.length, b), moduleSource, 'generated parity: ' + id);
     }
     assert.match(script, /@version\s+0\.6\.9/);
@@ -1236,7 +1236,7 @@ test('MothWatch v0.6.1: inventory memo invalidates across account, locale, colla
 });
 
 test('MothWatch v0.6.1: off-tab view updates avoid candidate sorting and settings serialization', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'mothwatch',
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src',
         'ui-render-section.js'), 'utf8');
     assert.match(src, /if \(state\.watchView === 'opportunities'\) candidates\.sort\(candidateSort\)/);
     assert.match(src, /const baseline = state\.watchView === 'activity' \? baselineStats\(\) : null/);
@@ -1282,7 +1282,7 @@ function heldSnatchHarness() {
         lastDetailRequest:new Map()
     };
     const config={enabled:true,fixedRulesEnabled:true,purchasesPaused:false};
-    const src=fs.readFileSync(path.join(__dirname,'..','src','mothwatch','snatch-section.js'),'utf8');
+    const src=fs.readFileSync(path.join(__dirname,'..','src','snatch-section.js'),'utf8');
     const api=new Function('state','config','Date','setTimeout','clearTimeout',
         'orderAccountKey','serverNow','isOwnListing','unresolvedListing',
         'activeRuleById','sanitizeFixedItemRules','sanitizeAnyItemRules',
@@ -1417,13 +1417,13 @@ test('Snatch UX: queue displays exact listing, ceiling, origin and immediate can
 });
 
 test('Snatch UX: dedicated queue, focus recovery and responsive controls are wired', () => {
-    const render=fs.readFileSync(path.join(__dirname,'..','src/mothwatch',
+    const render=fs.readFileSync(path.join(__dirname,'..','src',
         'ui-render-section.js'),'utf8');
-    const events=fs.readFileSync(path.join(__dirname,'..','src/mothwatch',
+    const events=fs.readFileSync(path.join(__dirname,'..','src',
         'ui-events-section.js'),'utf8');
-    const style=fs.readFileSync(path.join(__dirname,'..','src/mothwatch',
+    const style=fs.readFileSync(path.join(__dirname,'..','src',
         'ui-style-section.js'),'utf8');
-    const source=fs.readFileSync(path.join(__dirname,'..','src/mothwatch',
+    const source=fs.readFileSync(path.join(__dirname,'..','src',
         'snatch-section.js'),'utf8');
     assert.match(render,/data-moth-view="snatches"/);
     assert.match(render,/moth-mw-snatch-tab/);
@@ -1448,7 +1448,7 @@ test('Snatch UX: dedicated queue, focus recovery and responsive controls are wir
 
 
 test('Snatch hardening: progressive acknowledged-refusal retries and protected release window', () => {
-    const source=fs.readFileSync(path.join(__dirname,'..','src','mothwatch','snatch-section.js'),'utf8');
+    const source=fs.readFileSync(path.join(__dirname,'..','src','snatch-section.js'),'utf8');
     const body=section('    function snatchRetryDelay(', '    function snatchKey(');
     const retry=new Function('SNATCH_RETRY_MS',body+'\nreturn snatchRetryDelay;')(400);
     assert.deepEqual([0,29,30,89,90,250].map(retry),[400,400,1500,1500,5000,5000]);
@@ -1482,7 +1482,7 @@ test('Throughput: native browsing does not suspend buys, but snatch release wins
 });
 
 test('Throughput: verified broad-rule details survive target rotation', () => {
-    const source=fs.readFileSync(path.join(__dirname,'..','src/mothwatch',
+    const source=fs.readFileSync(path.join(__dirname,'..','src',
         'item-scanner-section.js'),'utf8');
     const segment=source.slice(source.indexOf('    function processItemListingPayload('),
         source.indexOf('    function itemMediaFor('));
@@ -1513,7 +1513,7 @@ test('Throughput: native item detail is usable without an outgoing scan', () => 
 });
 
 test('Throughput: native Pokemon price pages update rule evidence only when typed', () => {
-    const source=fs.readFileSync(path.join(__dirname,'..','src/mothwatch',
+    const source=fs.readFileSync(path.join(__dirname,'..','src',
         'pokemon-scanner-section.js'),'utf8');
     const part=source.slice(source.indexOf('    function handlePokemonListings('));
     const state={pokemonScan:null,pokemonAutoOffers:new Map()};

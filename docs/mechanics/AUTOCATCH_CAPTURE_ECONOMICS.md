@@ -1,6 +1,6 @@
 # Capture probabilities and resource management — PokéIdle wiki ↔ upstream
 
-> **Technical reference for [Auto Catch+](../addons/autocatch.user.js) and [Hunt Atlas](../addons/hunt-atlas.user.js)**. Defines ordinary and special capture probabilities, capture opportunities, ball efficiency, consumable/revive economics, restock safety, and how to estimate sustainable captures/hour without inventing live server behavior.
+> **Technical reference for Auto Catch+ and [Hunt Atlas](../../addons/hunt-atlas/hunt-atlas.user.js)**. Defines ordinary and special capture probabilities, capture opportunities, ball efficiency, consumable/revive economics, restock safety, and how to estimate sustainable captures/hour without inventing live server behavior.
 >
 > **Scope:** documentation only; no capture, purchasing, sorting, or automated hunting behavior was changed.
 
@@ -8,7 +8,7 @@
 **Source tiers:** **[WIKI]** owner-supplied current rules; **[UPSTREAM]** inspected client/shared mirror in [MOTHblank/pokeidle-upstream](https://github.com/MOTHblank/pokeidle-upstream); **[ADDON]** present implementation in pokeidle-addons; **[DERIVED]** arithmetic/engineering inference with assumptions; **[UNVERIFIED]** needs deployed server or observed, authorized game messages.  
 **Important:** this upstream mirror does **not** contain the full authoritative server simulation. Functions referenced by wiki/client such as the ordinary server `chanceCaptura` are not available in the checked files; a client-side formula is not proof that every live server path currently applies it.
 
-Related: [Hunt rewards and rare drops](./HUNT_REWARDS_AND_RARE_LOOT.md), [Pokémon grade/valuation](./POKEMON_VALUATION_REFERENCE.md), [Wiki ↔ upstream mechanics map](./POKEIDLE_WIKI_UPSTREAM_MECHANICS_MAP.md).
+Related: [Hunt rewards and rare drops](./HUNT_REWARDS_AND_RARE_LOOT.md), [Pokémon grade/valuation](../market/POKEMON_VALUATION_REFERENCE.md), [Wiki ↔ upstream mechanics map](./POKEIDLE_WIKI_UPSTREAM_MECHANICS_MAP.md).
 
 ## 1. Core capture model and its boundaries
 
@@ -347,7 +347,7 @@ expectedCoinConsumableCost/h = Σ ballsUsedById/h * npcCoinPrice[ballId]
                              + Σ healingUsedById/h * npcCoinPrice[healId]
 ```
 
-Never convert expected Pokémon captures into a single RMT “ideal price” without the **specimen's unknown score/P/IV/Q distribution** and **actual comparable sold prices**. The [Pokémon valuation reference](./POKEMON_VALUATION_REFERENCE.md) explains why even two N=4.0 Pokémon of the same species can have very different buyer demand.
+Never convert expected Pokémon captures into a single RMT “ideal price” without the **specimen's unknown score/P/IV/Q distribution** and **actual comparable sold prices**. The [Pokémon valuation reference](../market/POKEMON_VALUATION_REFERENCE.md) explains why even two N=4.0 Pokémon of the same species can have very different buyer demand.
 
 **Hunt Atlas integration:** compare hunts by capture opportunities/h, expected captured Pokémon/h, estimated ball cost/h, and *expected* viable farmed specimens. Show **measured versus modeled**, probability provenance and missing inputs; avoid using mean kill speed and a flat capture chance across mixed species.
 

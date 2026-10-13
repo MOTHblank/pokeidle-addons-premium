@@ -2,7 +2,7 @@
 // @name         PokéIdle Hunt Atlas
 // @namespace    moth.pokeidle
 // @author       MOTHblank
-// @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/huntatlas
+// @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/addons/hunt-atlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
 // @version      1.9.17
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
@@ -10964,7 +10964,7 @@
                 <span class="mha-credit-sep">·</span>
 
                 <a
-                    href="https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/huntatlas"
+                    href="https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/addons/hunt-atlas"
                     target="_blank"
                     rel="noopener noreferrer"
                 >${tr('footer.source')}</a>

@@ -2,7 +2,7 @@
 
 **Status:** upstream research, premium Moth Watch v0.4.0 valuation and rule-engine reference  
 **Reviewed:** 2026-10-13  
-**Sources:** the complete PokéIdle wiki supplied by the project owner (especially *Stats, Qualidade e IV*, *Nota, Poder e Calculadora*, *Potência*, *Shiny*, *Combate*, *Evolução*, *Mercado da Comunidade*, and *Todas as taxas*); [pokeidle-upstream](https://github.com/MOTHblank/pokeidle-upstream) `master`; and this repository's [Moth Watch](../addons/market-bot.user.js).  
+**Sources:** the complete PokéIdle wiki supplied by the project owner (especially *Stats, Qualidade e IV*, *Nota, Poder e Calculadora*, *Potência*, *Shiny*, *Combate*, *Evolução*, *Mercado da Comunidade*, and *Todas as taxas*); [pokeidle-upstream](https://github.com/MOTHblank/pokeidle-upstream) `master`; and this repository's [Moth Watch](../../addons/moth-watch/moth-watch.user.js).  
 **Source authority:** wiki = stated live game rules; upstream mirror = inspected client/shared implementation; Moth Watch = existing behavior. Where a server-only calculation, message shape, live transaction sample, or buyer preference is missing, this document says so rather than guessing.
 
 ## Premium Moth Watch v0.4.0: empirical evidence, not an automatic buy signal
@@ -11,7 +11,7 @@ Moth Watch now maintains an **independent v3 completed-sale cache**, partitioned
 
 The read-only **Pokémon price evidence** tab displays sampled listings, matching stage and counts, median, P25–P75/P10–P90 empirical sale ranges, age, dispersion, combat role annotation and a preview of user-owned absolute-price rules. Reference confidence is downgraded for unknown/old sale timestamps, missing collectible/form metadata, broad matching or wide price dispersion. The view **never authorizes** an order; buying remains governed solely by explicit maximum prices, fresh quotes and the separate purchase safeguards.
 
-**Unverified:** deployed `vendidoEm`/`soldAt` date aliases, `formId`/`formaId`, accessory/rarity flags, equipped-move arrays, explicit transfers and exact settlement shape. These field candidates must be checked against authorized redacted packets. See [Milestone B source/field contract](./MOTHWATCH_MILESTONE_B_EVIDENCE.md). Full combat-dependent pricing is intentionally **not** implemented; approximate role hints never add a price multiplier.
+**Unverified:** deployed `vendidoEm`/`soldAt` date aliases, `formId`/`formaId`, accessory/rarity flags, equipped-move arrays, explicit transfers and exact settlement shape. These field candidates must be checked against authorized redacted packets. The current source and tests are under [`addons/moth-watch/`](../../addons/moth-watch/). Full combat-dependent pricing is intentionally **not** implemented; approximate role hints never add a price multiplier.
 
 ## Historical source: Premium Moth Watch v0.3.0: explicit-price Pokémon purchasing
 
@@ -147,7 +147,7 @@ The **3.5 floor creates selection bias**: ordinary below-floor specimens are abs
 
 ## 5. What Moth Watch v0.1.51 did before the migration (historical baseline)
 
-Source: [`addons/market-bot.user.js`](../addons/market-bot.user.js).
+Source: [`addons/market-bot.user.js`](../../addons/moth-watch/moth-watch.user.js).
 
 1. It requests `market.historicoGlobal` pages for Pokémon separately in `gold` and `orb`; it takes `line.ficha` and a positive `line.bruto ?? line.preco`. Default: **12 history pages**, **60-minute** refresh, **minimum 3 completed-sale samples**. It retains up to 200 prices per bucket and stores a local reference (version 1).
 2. `pokemonBucketKeys()` uses `currency | speciesId | shiny | potency | level band`, falling back to `currency | speciesId | shiny | potency`. Level bands: <100, 100–499, 500–999, 1000–4999, 5000–9999, 10000–24999, 25000+.

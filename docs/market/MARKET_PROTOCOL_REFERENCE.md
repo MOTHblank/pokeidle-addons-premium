@@ -1,16 +1,16 @@
 # Community Market protocol, fees and automation — wiki ↔ upstream ↔ Moth Watch
 
-> **Implementation and maintenance reference for Moth Watch** (`addons/market-bot.user.js`), focused on *real Community Market* requests/responses, transaction safety and economic meaning. This is a **description of existing behavior and proposed validation**, **not a new API**, an invitation to bypass server restrictions, or an automatic trading strategy.
+> **Implementation and maintenance reference for Moth Watch** (`addons/moth-watch/moth-watch.user.js`), focused on *real Community Market* requests/responses, transaction safety and economic meaning. This is a **description of existing behavior and proposed validation**, **not a new API**, an invitation to bypass server restrictions, or an automatic trading strategy.
 >
-> **Reviewed:** 2026-10-13 · **Addon inspected:** premium **Moth Watch v0.3.1**. Live server packet shapes and settlement semantics are still **UNVERIFIED**. For synthetic protocol data and regression coverage, see the [market fixture](../tests/fixtures/moth-watch-market-protocol.json) and [automation tests](../tests/moth-watch-automation.test.cjs). Historical v0.2.1 descriptions are explicitly labeled below.
+> **Reviewed:** 2026-10-13 · **Addon inspected:** premium **Moth Watch v0.3.1**. Live server packet shapes and settlement semantics are still **UNVERIFIED**. For synthetic protocol data and regression coverage, see the [market fixture](../../addons/moth-watch/tests/fixtures/market-protocol.json) and [automation tests](../../addons/moth-watch/tests/automation.test.cjs). Historical v0.2.1 descriptions are explicitly labeled below.
 
 ## Scope, trust model and linked sources
 
-**[WIKI]** The owner's supplied complete PokéIdle wiki, especially *Mercado da Comunidade* and *Todas as taxas*, describes stated game/server rules. **[UPSTREAM]** Inspectable shared/client code in [`pokeidle-upstream`](https://github.com/MOTHblank/pokeidle-upstream) validates a subset, including the seller-fee helper, Pokémon listing eligibility, price-table window and NPC-sale exclusions. **[ADDON]** The current [premium Moth Watch userscript](../addons/market-bot.user.js) establishes exact outbound JSON it sends, the inbound fields it currently parses, its local state/cadence and safety guards.
+**[WIKI]** The owner's supplied complete PokéIdle wiki, especially *Mercado da Comunidade* and *Todas as taxas*, describes stated game/server rules. **[UPSTREAM]** Inspectable shared/client code in [`pokeidle-upstream`](https://github.com/MOTHblank/pokeidle-upstream) validates a subset, including the seller-fee helper, Pokémon listing eligibility, price-table window and NPC-sale exclusions. **[ADDON]** The current [premium Moth Watch userscript](../../addons/moth-watch/moth-watch.user.js) establishes exact outbound JSON it sends, the inbound fields it currently parses, its local state/cadence and safety guards.
 
 **Limit of evidence:** the accessible upstream mirror does **not** contain the complete authoritative `server/market-db.mjs`, server-side `market.comprar` dispatch and database transaction/lottery implementation. Do not infer its complete packet schema or transaction atomicity from comments or the userscript alone. Use **[UNVERIFIED]** where live/server validation is necessary. Packet examples below are **observed source usage** or explicitly labeled *shape excerpts*, **not invented exhaustive schemas**.
 
-Related: [Pokémon valuation](./POKEMON_VALUATION_REFERENCE.md), [Hunt rewards and rare drops](./HUNT_REWARDS_AND_RARE_LOOT.md), [Wiki/upstream mechanics map](./POKEIDLE_WIKI_UPSTREAM_MECHANICS_MAP.md).
+Related: [Pokémon valuation](./POKEMON_VALUATION_REFERENCE.md), [Hunt rewards and rare drops](../mechanics/HUNT_REWARDS_AND_RARE_LOOT.md), [Wiki/upstream mechanics map](../mechanics/POKEIDLE_WIKI_UPSTREAM_MECHANICS_MAP.md).
 
 ## 1. Three currencies, two markets, and one unit price
 
@@ -38,7 +38,7 @@ Related: [Pokémon valuation](./POKEMON_VALUATION_REFERENCE.md), [Hunt rewards a
 | `market.historicoGlobal` | `{t,pagina,tipo:'pokemon',moeda}` | Completed Pokémon sale history by currency | `{t:'market',aba:'historicoGlobal',linhas,temMais}` |
 | `market.comprar` | `{t,id,qtd,preco,moeda}` | **Attempt** to purchase a specific listing at a protected unit price | Relevant `batalha.ev[k:'marketComprado']` on success; listing-specific `erro` or timeout otherwise |
 
-**These exact requests are in** [`addons/market-bot.user.js`](../addons/market-bot.user.js). The addon does **not** send `market.criar`, sell/cancel/edit packets or bulk-buy requests. Native game trading UI may send additional commands that are **not part of this verified addon contract**; do not invent their names or payloads in code based on this document.
+**These exact requests are in** [`addons/moth-watch/moth-watch.user.js`](../../addons/moth-watch/moth-watch.user.js). The addon does **not** send `market.criar`, sell/cancel/edit packets or bulk-buy requests. Native game trading UI may send additional commands that are **not part of this verified addon contract**; do not invent their names or payloads in code based on this document.
 
 ### 2.1 Small, source-backed request examples
 
@@ -220,7 +220,7 @@ The addon accepts `string` JSON or an `ArrayBuffer` containing JSON. It does not
 
 **Pokémon history:** premium v0.2.1 uses separate local references per **currency, species/form, shiny, potency** and then narrower conditional comparisons by score/quality/IVs/refinement and level bands. It samples completed sales with a bounded `market.historicoGlobal` pagination: default **12 pages per currency**, configurable up to **50**, and refreshes default every **60 minutes**. A query with no score/usable comparable sample is *context*, not an actionable Pokémon bargain. As of v0.3.0 the code can buy Pokémon under explicit fixed-price `pokemonBuyRules`, **not** automatically from valuation reference results. Normal discovery remains grade-aware.
 
-Reference: [`docs/POKEMON_VALUATION_REFERENCE.md`](./POKEMON_VALUATION_REFERENCE.md) provides valuation/grade constraints and missing-schema warnings. **Different Pokémon of the same species are not fungible**; do not assume a generic mean predicts the price of a specific N=4.0/P4/shiny specimen. Asking prices and completed sales measure different things.
+Reference: [`docs/market/POKEMON_VALUATION_REFERENCE.md`](./POKEMON_VALUATION_REFERENCE.md) provides valuation/grade constraints and missing-schema warnings. **Different Pokémon of the same species are not fungible**; do not assume a generic mean predicts the price of a specific N=4.0/P4/shiny specimen. Asking prices and completed sales measure different things.
 
 ## 8. Seller commissions — exact shared Gem function and marginal brackets
 
@@ -344,7 +344,7 @@ No new live purchases are needed to validate the **read-only** paths; tests may 
 - [ ] Confirm normal closed-panel/active-rule background scanner sends remain bounded and do not compete with manual market UI.
 - [ ] Treat server-side release lottery outcomes, bulk-buy atomicity and actual order execution timestamps as **unverified** unless a real deployed implementation or redacted trace proves them.
 
-**Existing local tests:** [`tests/moth-watch-automation.test.cjs`](../tests/moth-watch-automation.test.cjs) already asserts important defaults, rule affordability, reserve/cap constraints, legacy-option removal, scanning cadence, and buy-rule handling; it is **not** a substitute for live transactional verification.
+**Existing local tests:** [`tests/moth-watch-automation.test.cjs`](../../addons/moth-watch/tests/automation.test.cjs) already asserts important defaults, rule affordability, reserve/cap constraints, legacy-option removal, scanning cadence, and buy-rule handling; it is **not** a substitute for live transactional verification.
 
 ## 13. Engineering summary
 

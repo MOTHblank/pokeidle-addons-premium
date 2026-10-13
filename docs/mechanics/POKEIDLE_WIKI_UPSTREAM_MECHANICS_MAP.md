@@ -1,7 +1,7 @@
 # PokéIdle wiki ↔ upstream mechanics map
 
 **Reviewed:** 2026-10-12  
-**Scope:** implementation-oriented mechanics outside the Pokémon [valuation reference](./POKEMON_VALUATION_REFERENCE.md).  
+**Scope:** implementation-oriented mechanics outside the Pokémon [valuation reference](../market/POKEMON_VALUATION_REFERENCE.md).  
 **Evidence:** the owner's supplied PokéIdle wiki (chapters cited below), the currently inspected `MOTHblank/pokeidle-upstream` shared/client files, and the addon files in this repository.  
 **Confidence rule:** a wiki claim, a mirror implementation, and an addon assumption are three distinct sources. An upstream shared constant is good evidence of intended game logic, but not proof of what a deployed game server is using at this moment. This upstream mirror does **not** include the entire authoritative server.
 
@@ -11,7 +11,7 @@ This is a source map and a set of actionable contracts, not a replacement for th
 
 **Wiki:** *Níveis e XP*; *Combate → Ondas e corpos*; *Mapa e Hunt Analyser*; *A Sessão*.  
 **Upstream:** [`shared/sell-value.mjs`](https://github.com/MOTHblank/pokeidle-upstream/blob/master/shared/sell-value.mjs), [`shared/recompensa-hunt.mjs`](https://github.com/MOTHblank/pokeidle-upstream/blob/master/shared/recompensa-hunt.mjs), [`shared/economia-drop.mjs`](https://github.com/MOTHblank/pokeidle-upstream/blob/master/shared/economia-drop.mjs), [`hunt-analyser.mjs`](https://github.com/MOTHblank/pokeidle-upstream/blob/master/hunt-analyser.mjs).  
-**Addons:** [Hunt Atlas](../addons/hunt-atlas.user.js), [Moth Watch](../addons/market-bot.user.js).
+**Addons:** [Hunt Atlas](../../addons/hunt-atlas/hunt-atlas.user.js), [Moth Watch](../../addons/moth-watch/moth-watch.user.js).
 
 ### Exact upstream per-kill reward curves
 
@@ -100,14 +100,14 @@ The tier list is **frozen intentionally**: inserting a new hunt level does not s
 - The hunt amplifies matchups through `amplificarHunt(..., 1.5)`: ordinary ×2 becomes **×2.5**, ×4 becomes **×5.5**, ×0.5 becomes **×1/3**. Neutral and immune multipliers stay unchanged. This amplification is a **hunt-specific** rule, not the ordinary matchup chart.
 - Physical moves use ATK vs DEF, special moves use Sp.Atk vs Sp.Def; STAB is **×1.5**, randomness is **0.85–1.0** by the wiki. Native move choice prefers highest expected damage among ready moves. Identifying `PHYSICAL` and `SPECIAL` moves from the indexed catalog can improve Atlas modelling.
 - The generic move cooldown curve is in `shared/cooldown-golpes.mjs`; species base Speed gives up to **7%** skill cooldown reduction potential, scaled by Speed IV/32. The wiki describes a distinct **10 ms reduction per Speed IV point** for basic attack/global interval. Do not treat displayed Speed as movement velocity, and do not add cooldown reduction twice.
-- A Pokémon's N grade and ranking ⚔ are **not** direct damage inputs. Refer to [valuation documentation](./POKEMON_VALUATION_REFERENCE.md) for their definitions.
+- A Pokémon's N grade and ranking ⚔ are **not** direct damage inputs. Refer to [valuation documentation](../market/POKEMON_VALUATION_REFERENCE.md) for their definitions.
 
 **Documentation value:** a dedicated *Combat Model Contract* with formulas, move categories, source versions, observed-cast counterexamples, uncertainty ranges, and how the measured Hunt Atlas model calibrates against static upstream assumptions.
 
 ## 5. Capture, level ceilings and automation safeguards
 
 **Wiki:** *Captura*; *Desmaiar e curar*; *Automações*; *Oferenda de Pokémon*.  
-**Upstream:** [`shared/teto-captura.mjs`](https://github.com/MOTHblank/pokeidle-upstream/blob/master/shared/teto-captura.mjs), [`shared/pokemon-nivel-treinador.mjs`](https://github.com/MOTHblank/pokeidle-upstream/blob/master/shared/pokemon-nivel-treinador.mjs), [`shared/reduzir-nivel.mjs`](https://github.com/MOTHblank/pokeidle-upstream/blob/master/shared/reduzir-nivel.mjs), [`shared/oferenda.mjs`](https://github.com/MOTHblank/pokeidle-upstream/blob/master/shared/oferenda.mjs), [Auto Catch+](../addons/autocatch.user.js).
+**Upstream:** [`shared/teto-captura.mjs`](https://github.com/MOTHblank/pokeidle-upstream/blob/master/shared/teto-captura.mjs), [`shared/pokemon-nivel-treinador.mjs`](https://github.com/MOTHblank/pokeidle-upstream/blob/master/shared/pokemon-nivel-treinador.mjs), [`shared/reduzir-nivel.mjs`](https://github.com/MOTHblank/pokeidle-upstream/blob/master/shared/reduzir-nivel.mjs), [`shared/oferenda.mjs`](https://github.com/MOTHblank/pokeidle-upstream/blob/master/shared/oferenda.mjs), Auto Catch+.
 
 - The wiki's normal capture formula depends on a **species economic-price-derived rarity**, ball effectiveness and target HP; it is clamped to **0.30%–10%** per throw. A downed corpse gives **one attempt** before disappearing, remains for **30 seconds**, and the wiki documents **1.2 seconds** between built-in VIP auto-throws. This capture probability is **wiki-derived**: the mirror's `shared/teto-captura.mjs` defines **captured level**, not the authoritative server capture-probability function.
 - Captured level is distinct from the wild's combat/hunt level: above level 100, chain stages cap new captures at **20 / 40 / 100** for 3-stage evolutions, **40 / 100** for 2-stage evolutions, and **100** for standalone species. At or below level 100, the captured level remains the wild's level. `shared/teto-captura.mjs` implements these ceilings.
@@ -132,7 +132,7 @@ The tier list is **frozen intentionally**: inserting a new hunt level does not s
 
 **Wiki:** *Configurações e modos de tela*; *Uma sessão por conta*; *Bônus de live*.  
 **Upstream:** [`preferencias.mjs`](https://github.com/MOTHblank/pokeidle-upstream/blob/master/preferencias.mjs), [`campo.mjs`](https://github.com/MOTHblank/pokeidle-upstream/blob/master/campo.mjs).  
-**Addons:** [Performance+](../addons/performance.user.js), [Twitch Low Resource](../addons/twitch-low-resource.user.js), Controller [`controller/src/monitor.rs`](../controller/src/monitor.rs).
+**Addons:** Performance+, Twitch Low Resource, Controller the public controller monitor.
 
 The wiki says native **Modo Economia** stops rendering the field while keeping the server session active; **Modo otimizado** keeps the field but removes effects. The inspected `preferencias.mjs` uses local keys `cfg-economia` and `cfg-otimizado`, and Performance+ explicitly recognizes the native `modo-economia` class.
 

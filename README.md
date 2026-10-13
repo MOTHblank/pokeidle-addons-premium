@@ -6,9 +6,9 @@ Private repository for premium and experimental [PokéIdle](https://pokeidle.io/
 
 | Script | Purpose |
 | --- | --- |
-| [Moth Watch](addons/market-bot.user.js) | Community Market browser, rule-based item/Pokémon buying, Snatch queue, purchase activity and read-only pricing/economy context. |
-| [Hunt Atlas experiment](huntatlas/) | Alternative hunt finder with measured and modeled XP, resource and rare-drop comparisons, and capture planning. Independent of the public Hunt Atlas installation. |
-| [Upstream Scraper & Exporter](addons/scraper-exporter.user.js) | Manually export publicly served game client assets and a manifest, with download limits and cancellation. |
+| [Moth Watch](addons/moth-watch/moth-watch.user.js) | Community Market browser, rule-based item/Pokémon buying, Snatch queue, purchase activity and read-only pricing/economy context. |
+| [Hunt Atlas experiment](addons/hunt-atlas/) | Alternative hunt finder with measured and modeled XP, resource and rare-drop comparisons, and capture planning. Independent of the public Hunt Atlas installation. |
+| [Upstream Scraper & Exporter](addons/upstream-scraper/scraper-exporter.user.js) | Manually export publicly served game client assets and a manifest, with download limits and cancellation. |
 
 ## Manual installation and updates
 
@@ -35,11 +35,18 @@ The **Activity & references**, **Pokémon price evidence**, and **Economy & hold
 
 ## Development
 
-Moth Watch is assembled into the standalone userscript from `src/mothwatch/`:
+Moth Watch is assembled into the standalone userscript from `addons/moth-watch/src/`:
 
 ```sh
-node tools/build-mothwatch.cjs
-node --test tests/moth-watch-automation.test.cjs
+node addons/moth-watch/build.cjs
+node --test addons/moth-watch/tests/automation.test.cjs
 ```
 
-See [Hunt Atlas instructions](huntatlas/README.md) for experiment-specific usage. Durable protocol, economics, combat and pricing references are indexed in [docs/](docs/README.md).
+See [Hunt Atlas instructions](addons/hunt-atlas/README.md) for experiment-specific usage. Durable protocol, economics, combat and pricing references are indexed in [docs/](docs/README.md).
+
+## Repository layout
+
+- `addons/moth-watch/` — distributable script, source sections, builder and tests.
+- `addons/hunt-atlas/` — experimental standalone script, instructions and preview.
+- `addons/upstream-scraper/` — client-asset export userscript.
+- `docs/mechanics/`, `docs/market/`, `docs/references/` — topic-specific technical references.

@@ -4,15 +4,15 @@ This directory holds **long-lived mechanics and implementation references**, not
 
 ## Game mechanics
 
-- [PokéIdle wiki and upstream mechanics map](POKEIDLE_WIKI_UPSTREAM_MECHANICS_MAP.md)
-- [Combat model, moves, cooldowns and matchups](COMBAT_MODEL_CONTRACT.md)
-- [Hunt rewards, XP, NPC income and rare drops](HUNT_REWARDS_AND_RARE_LOOT.md)
-- [Auto Catch capture probabilities and resource economics](AUTOCATCH_CAPTURE_ECONOMICS.md)
+- [PokéIdle wiki and upstream mechanics map](mechanics/POKEIDLE_WIKI_UPSTREAM_MECHANICS_MAP.md)
+- [Combat model, moves, cooldowns and matchups](mechanics/COMBAT_MODEL_CONTRACT.md)
+- [Hunt rewards, XP, NPC income and rare drops](mechanics/HUNT_REWARDS_AND_RARE_LOOT.md)
+- [Auto Catch capture probabilities and resource economics](mechanics/AUTOCATCH_CAPTURE_ECONOMICS.md)
 
 ## Market and pricing
 
-- [Community Market protocol, fees and transaction behavior](MARKET_PROTOCOL_REFERENCE.md)
-- [Pokémon grading, combat value and market pricing](POKEMON_VALUATION_REFERENCE.md)
+- [Community Market protocol, fees and transaction behavior](market/MARKET_PROTOCOL_REFERENCE.md)
+- [Pokémon grading, combat value and market pricing](market/POKEMON_VALUATION_REFERENCE.md)
 - [Archived original valuation reference](archive/POKEMON_VALUATION_REFERENCE_ORIGINAL.md)
 
 ## External comparison data
