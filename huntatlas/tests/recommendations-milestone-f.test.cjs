@@ -37,8 +37,8 @@ test('explicit multiple real ranking dimensions, no implicit trainer XP substitu
 test('ranking respects selected direction and null last without allowing missing XP to win',()=>{
     const candidates=[row('high-xp-no-rare',null),row('rare-strong',.05),
         row('rare-weak',.0002),row('unknown',null)];
-    const desc=h.haRankMetricRows(candidates,'desc','rare').map(x=>x.hunt.slug);
-    const asc=h.haRankMetricRows(candidates,'asc','rare').map(x=>x.hunt.slug);
+    const desc=Array.from(h.haRankMetricRows(candidates,'desc','rare'),x=>x.hunt.slug);
+    const asc=Array.from(h.haRankMetricRows(candidates,'asc','rare'),x=>x.hunt.slug);
     assert.deepEqual(desc,['rare-strong','rare-weak',
         'high-xp-no-rare','unknown']);
     assert.deepEqual(asc,['rare-weak','rare-strong',
@@ -53,7 +53,7 @@ test('Coins/capture efficiency defaults cheapest known positive ratio, reverse o
 test('stable ties use level and slug, do not mutate input order or state',()=>{
     const rows=[row('z',10,200),row('a',10,200),row('x',10,300)];
     const sorted=h.haRankMetricRows(rows,'desc','coins');
-    assert.deepEqual(sorted.map(x=>x.hunt.slug),['x','a','z']);
+    assert.deepEqual(Array.from(sorted,x=>x.hunt.slug),['x','a','z']);
     assert.equal(rows[0].hunt.slug,'z');
 });
 test('Outland rare preview must select actual desired item, validate tier gate and exclude eggs',()=>{
