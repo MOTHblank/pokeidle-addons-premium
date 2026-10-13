@@ -2722,6 +2722,12 @@
             ? n / 100000 : null;
     }
 
+    function outlandNormalizeSpeciesId(value) {
+        const n=Number(value);
+        return Number.isInteger(n) && n>=10501 && n<10548 ?
+            n-8500 : value;
+    }
+
     function farmingTier(tier, playerLevel) {
         const n = Number(tier), level = Number(playerLevel);
         if (!Number.isInteger(n) || n < 1 || n > 8 ||
@@ -3059,11 +3065,6 @@
         // The upstream default is 1 even before trainer level 150, but the
         // map remains LOCKED. Never advertise tier 1 as unlocked below 150.
         return 1;
-    }
-    function outlandNormalizeSpeciesId(value) {
-        const n=Number(value);
-        return Number.isInteger(n) && n>=10501 && n<10548 ?
-            n-8500 : value;
     }
     function outlandTierSnapshot(source) {
         if(!source || typeof source!=='object') return null;
