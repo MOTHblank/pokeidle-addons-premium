@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.2.1
-// @description  Community Market, evidence-aware Pokémon valuations, and guarded item-buy rules.
+// @version      0.3.0
+// @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/market-bot.user.js
@@ -15,7 +15,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.2.1');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.3.0');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -62,6 +62,8 @@
         scanDiamonds: true,
         fixedRulesEnabled: false,
         fixedItemRules: [],
+        anyItemRules: [],
+        pokemonBuyRules: [],
         goldReserve: 0,
         gemReserve: 0,
         maxCoinsPerBuy: 0,
@@ -90,6 +92,8 @@
         liveItemAverages: {},
         loadedItemKeys: new Set(),
         ruleItemKeys: new Set(),
+        anyItemScanCursor: 0,
+        pokemonAutoOffers: new Map(),
         liveDiamondAverages: null,
         diamondStatus: 'waiting',
         diamondPendingCurrency: null,
@@ -497,6 +501,47 @@
         }).filter(Boolean);
     }
 
+
+    function sanitizeAnyItemRules(value) {
+        if (!Array.isArray(value)) return [];
+        return value.map((rule, index) => {
+            const buyMax = Math.floor(Number(rule?.buyMax));
+            if (!Number.isSafeInteger(buyMax) || buyMax <= 0) return null;
+            return { id: String(rule?.id || 'any-item-' + index),
+                currency: rule?.currency === 'orb' ? 'orb' : 'gold',
+                buyMax, buyEnabled: rule?.buyEnabled === true };
+        }).filter(Boolean);
+    }
+
+    function sanitizePokemonBuyRules(value) {
+        if (!Array.isArray(value)) return [];
+        return value.map((rule, index) => {
+            const buyMax = Math.floor(Number(rule?.buyMax));
+            const kind = ['any', 'shiny', 'p5'].includes(rule?.kind) ? rule.kind : null;
+            const currency = rule?.currency === 'orb' ? 'orb' : 'gold';
+            if (!Number.isSafeInteger(buyMax) || buyMax <= 0 || !kind ||
+                (kind === 'shiny' && currency !== 'orb')) return null;
+            return { id: String(rule?.id || 'pokemon-' + index), kind, currency,
+                buyMax, buyEnabled: rule?.buyEnabled === true };
+        }).filter(Boolean);
+    }
+
+    function activeAnyItemRules() {
+        return config.enabled && config.fixedRulesEnabled
+            ? sanitizeAnyItemRules(config.anyItemRules).filter(rule => rule.buyEnabled) : [];
+    }
+
+    function activePokemonRules() {
+        return config.enabled && config.fixedRulesEnabled
+            ? sanitizePokemonBuyRules(config.pokemonBuyRules).filter(rule => rule.buyEnabled) : [];
+    }
+
+    function hasAnyBuyingRules() {
+        return config.enabled && config.fixedRulesEnabled &&
+            (sanitizeFixedItemRules(config.fixedItemRules).some(rule => rule.buyEnabled && rule.buyMax > 0) ||
+                activeAnyItemRules().length > 0 || activePokemonRules().length > 0);
+    }
+
     function loadConfig() {
         let saved = {};
         try {
@@ -509,6 +554,8 @@
             if (Object.prototype.hasOwnProperty.call(saved, key)) loaded[key] = saved[key];
         }
         loaded.fixedItemRules = sanitizeFixedItemRules(saved.fixedItemRules);
+        loaded.anyItemRules = sanitizeAnyItemRules(saved.anyItemRules);
+        loaded.pokemonBuyRules = sanitizePokemonBuyRules(saved.pokemonBuyRules);
         return loaded;
     }
 
@@ -1802,7 +1849,7 @@
     }
 
     function startPokemonScan() {
-        if (!config.scanPokemon || state.pokemonScan) return;
+        if ((!config.scanPokemon && !activePokemonRules().length) || state.pokemonScan) return;
 
         /*
          * Bot requests share the game's WebSocket. A background market.listar
@@ -1815,7 +1862,7 @@
             return;
         }
 
-        if (!state.pokemonReference.capturedAt) {
+        if (!state.pokemonReference.capturedAt && !activePokemonRules().length) {
             ensurePokemonHistory(false);
             return;
         }
@@ -1944,6 +1991,7 @@
         );
         if (!looksLikeOurResponse) return false;
 
+        state.pokemonAutoOffers.set(currency, { offers: lines.slice(), updatedAt: Date.now() });
         const group = 'pokemon:' + currency + ':';
         removeCandidateGroup(group);
         const scanRatio = discoveryRatio();
@@ -2467,20 +2515,116 @@
         };
     }
 
+
+    // Summary minima only nominate item types; only fresh offer details
+    // authorize an actual order.
+    function anyItemRuleTargets(rules) {
+        const targets = [];
+        for (const [key, row] of Object.entries(state.itemSummary || {})) {
+            const itemId = Number(key);
+            if (!Number.isSafeInteger(itemId) || itemId <= 0 || !row?.anuncios) continue;
+            for (const currency of ['gold', 'orb']) {
+                const minimum = Number(currency === 'orb' ? row.minOrb : row.minGold);
+                if (!Number.isFinite(minimum) || minimum <= 0) continue;
+                if (rules.some(rule => rule.currency === currency && minimum <= rule.buyMax)) {
+                    targets.push({ itemId, currency, key: itemId + ':' + currency, minimum });
+                }
+            }
+        }
+        return targets.sort((a, b) => a.minimum - b.minimum || a.itemId - b.itemId);
+    }
+
+    function anyItemRuleCandidate(rule, targets) {
+        let best = null;
+        for (const target of targets) {
+            if (target.currency !== rule.currency || target.minimum > rule.buyMax) continue;
+            const candidate = fixedRuleCandidate({
+                itemId: target.itemId, currency: rule.currency, buyMax: rule.buyMax
+            });
+            if (candidate && (!best || candidate.price < best.price ||
+                (candidate.price === best.price && candidate.listingId < best.listingId))) {
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    function pokemonRuleMatches(rule, ficha, currency) {
+        if (!ficha || !rule || rule.currency !== currency ||
+            !pokemonCurrencyAllowed(ficha, currency)) return false;
+        if (rule.kind === 'shiny') return ficha.shiny === true && currency === 'orb';
+        if (rule.kind === 'p5') return Number(ficha.potencia) === 5;
+        return rule.kind === 'any';
+    }
+
+    function pokemonRuleCandidate(rule) {
+        const record = state.pokemonAutoOffers.get(rule.currency);
+        if (!record || Date.now() - record.updatedAt > 45000) return null;
+        let best = null;
+        for (const listing of record.offers) {
+            const id = Number(listing?.id), unitPrice = Number(listing?.preco);
+            if (!Number.isSafeInteger(id) || id <= 0 ||
+                !Number.isSafeInteger(unitPrice) || unitPrice <= 0 ||
+                unitPrice > rule.buyMax || Number(listing.qtd || 1) !== 1 ||
+                !pokemonRuleMatches(rule, listing.ficha, rule.currency) ||
+                isOwnListing(listing) || retentionUntil(listing) > serverNow() ||
+                Number(state.attemptedListings.get(id) || 0) > Date.now()) continue;
+            if (!best || unitPrice < best.price || (unitPrice === best.price && id < best.listingId)) {
+                best = {
+                    key: 'rule:pokemon:' + id,
+                    kind: 'pokemon', listingId: id,
+                    pokemonId: Number(listing.pokemonId || listing.ficha.id || 0),
+                    ficha: listing.ficha, name: pokemonListingName(listing.ficha),
+                    currency: rule.currency, price: unitPrice, unitPrice, qty: 1,
+                    average: 0, ratio: 1, retainedUntil: 0
+                };
+            }
+        }
+        return best;
+    }
+
     function runMarketAutomation() {
-        if (!config.enabled || !config.fixedRulesEnabled || gameIsLoading()) return;
+        if (!hasAnyBuyingRules() || gameIsLoading()) {
+            state.ruleItemKeys.clear();
+            return;
+        }
         if (!state.socket || state.socket.readyState !== 1) return;
         if (q('#modal .cm-folha') || state.pendingBuy) return;
         const now = Date.now();
         if (now - Number(state.automationLastRunAt || 0) < 1000) return;
         state.automationLastRunAt = now;
-        const rules = sanitizeFixedItemRules(config.fixedItemRules)
+        const fixed = sanitizeFixedItemRules(config.fixedItemRules)
             .filter(rule => rule.buyEnabled && rule.buyMax > 0);
-        state.ruleItemKeys = new Set(rules.map(rule => String(rule.itemId) + ':' + rule.currency));
-        for (const rule of rules) automationDetail(rule.itemId, rule.currency);
-        // A cooled-down listing must never block another offer for the same item.
-        for (const rule of rules) {
+        const broad = activeAnyItemRules();
+        const pokemon = activePokemonRules();
+        const targets = anyItemRuleTargets(broad);
+        state.ruleItemKeys = new Set([
+            ...fixed.map(rule => rule.itemId + ':' + rule.currency),
+            ...targets.map(row => row.key)
+        ]);
+        for (const rule of fixed) automationDetail(rule.itemId, rule.currency);
+        if (broad.length && targets.length && state.detailQueue.length + (state.detailPending ? 1 : 0) < 12) {
+            let count = 0;
+            while (count < Math.min(8, targets.length)) {
+                const target = targets[state.anyItemScanCursor % targets.length];
+                state.anyItemScanCursor = (state.anyItemScanCursor + 1) % targets.length;
+                count++;
+                automationDetail(target.itemId, target.currency);
+            }
+        }
+        // Serialized purchases share balances, reserves, caps and cooldowns.
+        for (const rule of fixed) {
             const candidate = fixedRuleCandidate(rule);
+            if (candidate && purchaseQuantity(candidate) > 0 &&
+                tryBuy(candidate, false, null, true)) return;
+        }
+        for (const rule of broad) {
+            const candidate = anyItemRuleCandidate(rule, targets);
+            if (candidate && purchaseQuantity(candidate) > 0 &&
+                tryBuy(candidate, false, null, true)) return;
+        }
+        for (const rule of pokemon) {
+            const candidate = pokemonRuleCandidate(rule);
             if (candidate && purchaseQuantity(candidate) > 0 &&
                 tryBuy(candidate, false, null, true)) return;
         }
@@ -2501,17 +2645,15 @@
         const userInterval = Math.max(1, Number(config.scanSeconds || 5)) * 1000;
         // Only slow general scans in closed-panel buying mode. User-selected
         // scan frequency and manual scan commands stay intact otherwise.
-        const interval = !state.watchOpen && config.fixedRulesEnabled && state.ruleItemKeys.size
+        const interval = !state.watchOpen && hasAnyBuyingRules()
             ? Math.max(userInterval, BACKGROUND_SCAN_WITH_RULES_MS)
             : userInterval;
         if (!force && now - state.lastScanAt < interval) return;
         state.lastScanAt = now;
 
-        if (config.scanItems) requestItemSummary();
-        if (config.scanPokemon) {
-            ensurePokemonHistory(false);
-            startPokemonScan();
-        }
+        if (config.scanItems || activeAnyItemRules().length) requestItemSummary();
+        if (config.scanPokemon) ensurePokemonHistory(false);
+        if (config.scanPokemon || activePokemonRules().length) startPokemonScan();
         if (config.scanDiamonds) requestDiamondListings();
 
         pruneCandidates();
