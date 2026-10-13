@@ -1271,6 +1271,7 @@
             rareSortItem: 70000,
             detailOpen: false,
             referenceOpen: false,
+            referenceAdvancedOpen: false,
             referenceEnabled: false,
             referenceShinyBoost: false,
             referenceCatchBoost: false,
@@ -1311,7 +1312,7 @@
             next.rareSortItem=[70000,70011,70012,70013,70017].includes(
                 Number(next.rareSortItem))?Number(next.rareSortItem):70000;
             next.detailOpen=next.detailOpen===true;
-            for(const key of ['referenceOpen','referenceEnabled',
+            for(const key of ['referenceOpen','referenceAdvancedOpen','referenceEnabled',
                 'referenceShinyBoost','referenceCatchBoost',
                 'referenceKickShiny','referenceKickCatch'])
                 next[key]=next[key]===true;
@@ -12845,6 +12846,10 @@
 
         q('[data-mha-reference]',host)?.addEventListener('toggle',event=>{
             state.filters.referenceOpen=event.target.open;
+            saveFilters();
+        });
+        q('[data-mha-reference-extra]',host)?.addEventListener('toggle',event=>{
+            state.filters.referenceAdvancedOpen=event.target.open;
             saveFilters();
         });
         for(const control of qa('[data-mha-reference-setting]',host)){
