@@ -1,10 +1,10 @@
 # PokéIdle Addons Premium
 
-Moth Watch **v0.6.0** lives in this repository. The standard `pokeidle-addons` controller does not install or update it automatically.
+Moth Watch **v0.6.1** lives in this repository. The standard `pokeidle-addons` controller does not install or update it automatically.
 
 ## Development roadmap
 
-See [**Moth Watch roadmap**](docs/MOTHWATCH_ROADMAP.md) for the prioritized, 20-task implementation queue: purchase safety and protocol validation first, Pokémon pricing second, economy analysis third, and UI/distribution improvements throughout. The roadmap explicitly separates implemented v0.6.0 behavior from proposed work and unverified live-server assumptions.
+See [**Moth Watch roadmap**](docs/MOTHWATCH_ROADMAP.md) for the prioritized, 20-task implementation queue: purchase safety and protocol validation first, Pokémon pricing second, economy analysis third, and UI/distribution improvements throughout. The roadmap explicitly separates implemented v0.6.1 behavior from proposed work and unverified live-server assumptions.
 
 ## Moth Watch installation
 
@@ -38,7 +38,9 @@ An optional versioned `MOTH_ECONOMY_TELEMETRY_V1` session snapshot can report ob
 
 See [Milestone C economy contract](docs/MOTHWATCH_MILESTONE_C_ECONOMY.md) for source requirements, formulas, privacy and remaining live-field limitations.
 
-## Operator safety, diagnostics and release process (v0.6.0)
+## Operator safety, diagnostics and release process (v0.6.0–v0.6.1)
+
+**v0.6.1 maintenance:** Scanning, WebSocket handling, and UI rendering/event handling now live in additional source sections under `src/mothwatch/`, while the distributed Violentmonkey file remains standalone. The item-market inventory view caches markup until its catalog, summary, selected offer, or locale changes; other tabs avoid unrelated candidate sorting and price-reference formatting. No additional scanning interval, game request, or browser observer is introduced. See [Milestone D release guide](docs/MOTHWATCH_MILESTONE_D_RELEASE.md) for the testing boundary.
 
 Newly activating an **uncapped Any item / Any Pokémon / Shiny / P5** rule, or enabling the master switch for such configured rules, prompts for confirmation; declining does not change the existing settings. The automation tab explains per-unit versus per-Pokémon price caps, currency, scan coverage and cumulative spending limitations. Existing stored permissions remain unchanged on upgrade.
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.6.0
+// @version      0.6.1
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -14,7 +14,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.0');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.1');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -114,6 +114,8 @@
         anyItemTargetsCache: null,
         pokemonAutoOffers: new Map(),
         pokemonEvidenceMemo: null,
+        itemInventoryMemo: null,
+        lastInventoryPaint: null,
         economyHoldings: [],
         economyInput: { itemId: 0, quantity: 1, holdingCurrency: 'gold', feeCurrency: 'gold', feeKind: 'item', feeUnit: 100, feeQuantity: 1, holdingDays: 1 },
         economyUiCache: null,
@@ -1147,6 +1149,7 @@
     }
 
     function refreshCatalogNames() {
+        state.itemInventoryMemo = null;
         for (const candidate of state.candidates.values()) {
             if (candidate.kind === 'item') {
                 candidate.name = catalogName(candidate.itemId);
@@ -1551,6 +1554,7 @@
         }
     }
 
+    // BEGIN MOTHWATCH ITEM_SCANNER GENERATED
     function queueItemDetail(itemId, currency) {
         const key = String(itemId) + ':' + currency;
         const now = Date.now();
@@ -1742,6 +1746,7 @@
              */
             if (candidate.retainedUntil && candidate.retainedUntil > now) continue;
             state.candidates.delete(key);
+            state.itemInventoryMemo = null;
         }
     }
 
@@ -1807,6 +1812,8 @@
         candidate.firstSeenAt = Number(candidate.firstSeenAt) > 0 ? Number(candidate.firstSeenAt) : now;
         state.firstSeenCache.set(candidate.key, { firstSeenAt: candidate.firstSeenAt, lastSeenAt: now });
         state.candidates.set(candidate.key, candidate);
+        if (candidate.kind === 'item' && state.selectedItemFocus?.key ===
+            String(candidate.itemId) + ':' + candidate.currency) state.itemInventoryMemo = null;
         while (state.candidates.size > MAX_CANDIDATES) {
             const oldest = state.candidates.keys().next().value;
             const evicted = state.candidates.get(oldest);
@@ -1942,6 +1949,7 @@
         scanSuspiciousItemSummaries();
         queueRender();
     }
+    // END MOTHWATCH ITEM_SCANNER GENERATED
 
     // BEGIN MOTHWATCH PRICING GENERATED
     function levelBand(level) {
@@ -2308,6 +2316,7 @@
     }
     // END MOTHWATCH PRICING GENERATED
 
+    // BEGIN MOTHWATCH POKEMON_SCANNER GENERATED
     function requestHistoryPage() {
         const fetch = state.historyFetch;
         if (!fetch) return;
@@ -2709,6 +2718,7 @@
         queueRender();
         return true;
     }
+    // END MOTHWATCH POKEMON_SCANNER GENERATED
 
     function balanceFor(currency) {
         return currency === 'orb' ? state.orbs : state.gold;
@@ -2996,6 +3006,7 @@
         };
     }
 
+    // BEGIN MOTHWATCH AUTO_SCANNER GENERATED
     function finishPendingBuy(reason) {
         const pending = state.pendingBuy;
         if (!pending) return;
@@ -3004,7 +3015,10 @@
             reason === 'refused' ? 'refused' : 'unknown';
         settleOrder(pending.order, status);
         diagnosticOutcome(status);
-        if (status === 'confirmed') state.candidates.delete(pending.candidateKey);
+        if (status === 'confirmed') {
+            state.candidates.delete(pending.candidateKey);
+            state.itemInventoryMemo = null;
+        }
         requestItemSummary(activeAnyItemRules().length > 0);
         setTimeout(startPokemonScan, 250);
         queueRender();
@@ -3308,7 +3322,10 @@
         const nowServer = serverNow();
         for (const [key, candidate] of state.candidates) {
             if (candidate.retainedUntil && candidate.retainedUntil > nowServer) continue;
-            if (candidate.seenAt < cutoff) state.candidates.delete(key);
+            if (candidate.seenAt < cutoff) {
+                state.candidates.delete(key);
+                state.itemInventoryMemo = null;
+            }
         }
         pruneDetailCache();
         for (const [id, until] of state.attemptedListings) {
@@ -3318,6 +3335,7 @@
             if (nowServer - Number(seen.lastSeenAt || 0) > 60 * 60 * 1000) state.firstSeenCache.delete(key);
         }
     }
+    // END MOTHWATCH AUTO_SCANNER GENERATED
 
     function decodeMessage(data) {
         if (typeof data === 'string') {
@@ -3423,6 +3441,7 @@
     }
     // END MOTHWATCH DIAGNOSTICS GENERATED
 
+    // BEGIN MOTHWATCH SOCKET GENERATED
     function handleProtocolObject(message, sourceSocket = null) {
         if (!message || typeof message !== 'object') return;
         diagnosticProtocol(message);
@@ -3464,6 +3483,10 @@
             const catalog = message.mercado && Array.isArray(message.mercado.catalogo)
                 ? message.mercado.catalogo
                 : [];
+            // The catalog Map is mutated in place on a welcome refresh.
+            // A previous inventory memo must never survive that change.
+            state.itemInventoryMemo = null;
+            state.lastInventoryPaint = null;
             state.catalog.clear();
             for (const item of catalog) {
                 const id = Number(item && item.id);
@@ -3679,7 +3702,9 @@
         const socket = state.gameSocket || state.socket;
         if (!socket || socket.readyState !== 1) adoptBridgeSocket();
     }, 1000);
+    // END MOTHWATCH SOCKET GENERATED
 
+    // BEGIN MOTHWATCH UI_STYLE GENERATED
     function injectStyle() {
         if (q('#moth-market-watch-style')) return;
         const style = document.createElement('style');
@@ -3890,6 +3915,7 @@
         ].join('\n');
         (document.head || document.documentElement).appendChild(style);
     }
+    // END MOTHWATCH UI_STYLE GENERATED
 
     function baselineStats() {
         const rows = Object.values(state.baseline.items || {});
@@ -4315,6 +4341,7 @@
     }
     // END MOTHWATCH ECONOMY GENERATED
 
+    // BEGIN MOTHWATCH UI_BROWSER GENERATED
     function renderItemInventory() {
         const entries = Object.entries(state.itemSummary || {})
             .map(([rawId, row]) => ({ itemId: Number(rawId), row: row || {}, name: catalogName(rawId) }))
@@ -4879,6 +4906,8 @@
 
     // Checking/confirming a newly activated broad rule changes no legacy
     // authorization; persisted options remain exactly as configured.
+    // END MOTHWATCH UI_BROWSER GENERATED
+
     // BEGIN MOTHWATCH RULE_SAFETY GENERATED
     function broadRuleUnbounded(rule) {
         if (!rule?.buyEnabled || !(Number(rule.buyMax) > 0) ||
@@ -4935,6 +4964,7 @@
     }
     // END MOTHWATCH RULE_SAFETY GENERATED
 
+    // BEGIN MOTHWATCH UI_RULES GENERATED
     function fixedRuleStatus(rule) {
         if (!rule.buyEnabled || !(rule.buyMax > 0)) return tr('Rule paused');
         if (!config.enabled) return tr('Moth Watch disabled');
@@ -5113,6 +5143,45 @@
                 escapeHtml(tr(pokemon ? 'No Pokémon rules configured.' : 'No any-item rules configured.')) +
                 '</div>') + '</div></section>';
     }
+    // END MOTHWATCH UI_RULES GENERATED
+
+    // BEGIN MOTHWATCH UI_RENDER GENERATED
+    // Avoid rebuilding the 120-item inventory HTML on every unrelated socket
+    // notification. Cache only for the current view and invalidate on meaningful
+    // summary, catalog, focused-offer or locale changes.
+    function inventoryViewSnapshot() {
+        const focus = state.selectedItemFocus?.key || '';
+        const current = focus ? state.itemOfferDetails.get(focus) : null;
+        const pending = state.detailPending?.key === focus;
+        const queued = focus && (state.detailQueued.has(focus) ||
+            state.detailQueue.some(job => job.key === focus));
+        const previous = state.itemInventoryMemo;
+        const same = previous &&
+            previous.accountKey === state.orderJournal?.accountKey &&
+            previous.itemSummary === state.itemSummary &&
+            previous.catalog === state.catalog &&
+            previous.itemNamesSize === state.itemNames.size &&
+            previous.focus === focus &&
+            previous.offerDetail === current &&
+            previous.offerStatus === state.itemDetailStatus &&
+            previous.pending === pending &&
+            previous.queued === !!queued &&
+            previous.collapsed === state.itemInventoryCollapsed &&
+            previous.locale === currentLocale();
+        if (same) return previous;
+        const snapshot = {
+            accountKey: state.orderJournal?.accountKey,
+            itemSummary: state.itemSummary,
+            catalog: state.catalog,
+            itemNamesSize: state.itemNames.size,
+            focus, offerDetail: current, offerStatus: state.itemDetailStatus,
+            pending, queued: !!queued, collapsed: state.itemInventoryCollapsed,
+            locale: currentLocale(),
+            html: renderItemInventory()
+        };
+        state.itemInventoryMemo = snapshot;
+        return snapshot;
+    }
 
     function renderWatch(forceViewBuild = false) {
         const panel = q('#moth-market-watch-panel');
@@ -5143,7 +5212,7 @@
             bindWatchEvents(panel);
         }
 
-        const baseline = baselineStats();
+        const baseline = state.watchView === 'activity' ? baselineStats() : null;
         const currencyFilter = ['gold', 'orb'].includes(config.viewCurrency) ? config.viewCurrency : 'all';
         const kindFilter = ['item', 'pokemon', 'diamond'].includes(config.viewKind) ? config.viewKind : 'all';
         const searchTerm = normalize(state.opportunitySearch);
@@ -5153,8 +5222,13 @@
             // Unreferenced diamonds remain inspectable. Referenced diamonds must meet the watch threshold.
             const visibleWithoutReference = manuallyLoaded || (c.kind === 'diamond' && !(Number(c.average) > 0));
             return (visibleWithoutReference || c.ratio <= Math.max(0.01, Number(config.watchPercent) / 100)) && candidateVisible(c);
-        }).sort(candidateSort);
-        const captured = state.baseline.capturedAt ? new Date(state.baseline.capturedAt).toLocaleString(locale) : tr('no reference captured yet');
+        });
+        // Other tabs still display the matching-listing count, but do not pay
+        // for sorting or price-reference formatting they never render.
+        if (state.watchView === 'opportunities') candidates.sort(candidateSort);
+        const captured = state.watchView === 'activity'
+            ? (state.baseline.capturedAt ? new Date(state.baseline.capturedAt).toLocaleString(locale)
+                : tr('no reference captured yet')) : '';
 
         const status = q('#moth-mw-status', panel);
         const statusText = tr('Items: {items} · Pokémon: {pokemon} · Diamonds: {diamonds}', {
@@ -5176,7 +5250,8 @@
 
         const content = q('#moth-mw-view-content', panel);
         const viewChanged = content.dataset.view !== state.watchView;
-        const settingsSignature = JSON.stringify(Object.keys(DEFAULTS).sort().map(key => [key, config[key]]));
+        const settingsSignature = state.watchView === 'automation'
+            ? JSON.stringify(Object.keys(DEFAULTS).sort().map(key => [key, config[key]])) : '';
         const settingsChanged = state.watchView === 'automation' && !viewChanged &&
             content.dataset.settingsSignature !== settingsSignature &&
             !(content.contains(document.activeElement) && document.activeElement.matches('input, select, textarea'));
@@ -5286,11 +5361,13 @@
             updateCandidateRows(list, candidates);
         } else if (state.watchView === 'inventory') {
             const host = q('#moth-mw-inventory-content', content);
-            const html = renderItemInventory();
-            if (host && host.innerHTML !== html) {
+            const snapshot = inventoryViewSnapshot();
+            if (host && (viewChanged || forceViewBuild ||
+                state.lastInventoryPaint !== snapshot)) {
                 const oldScroller = q('.moth-mw-inventory-list', host);
                 const scrollTop = oldScroller ? oldScroller.scrollTop : 0;
-                host.innerHTML = html;
+                host.innerHTML = snapshot.html;
+                state.lastInventoryPaint = snapshot;
                 const newScroller = q('.moth-mw-inventory-list', host);
                 if (newScroller) newScroller.scrollTop = scrollTop;
             }
@@ -5331,7 +5408,9 @@
             });
         }
     }
+    // END MOTHWATCH UI_RENDER GENERATED
 
+    // BEGIN MOTHWATCH UI_EVENTS GENERATED
     function bindWatchEvents(panel) {
         if (panel.dataset.mothWatchEvents) return;
         panel.dataset.mothWatchEvents = '1';
@@ -5751,6 +5830,8 @@
 
     function closeWatch() {
         state.watchOpen = false;
+        state.itemInventoryMemo = null;
+        state.lastInventoryPaint = null;
 
         /*
          * The native modal reuses #modal-corpo when navigating between RMT
@@ -5952,6 +6033,7 @@
 
         return true;
     }
+    // END MOTHWATCH UI_EVENTS GENERATED
 
     function controllerSnapshot() {
         const configView = {
