@@ -3703,7 +3703,9 @@
         const retainedSeconds = candidate.retainedUntil > serverNow() ? Math.ceil((candidate.retainedUntil - serverNow()) / 1000) : 0;
         const attemptedUntil = Number(state.attemptedListings.get(candidate.listingId) || 0);
         const recentlyAttempted = attemptedUntil > Date.now();
-        const canBuy = !state.pendingBuy && !recentlyAttempted && !retainedSeconds && purchaseQuantity(candidate) > 0;
+        const canBuy = !state.pendingBuy && !config.purchasesPaused &&
+            !unverifiedOrdersExist() && !recentlyAttempted && !retainedSeconds &&
+            purchaseQuantity(candidate) > 0;
         const total = candidate.kind === 'item' || candidate.kind === 'diamond' ? candidate.price * candidate.qty : candidate.price;
         const pokemonIvs = candidate.kind === 'pokemon' ? pokemonIVs(candidate.ficha) : null;
         let referenceLabel;
@@ -3726,8 +3728,10 @@
         const kind = candidate.kind === 'pokemon' ? tr('Pokémon') : candidate.kind === 'diamond' ? tr('Diamonds') : tr('Items');
         const quantityLabel = candidate.kind === 'diamond' ? tr('diamonds') : tr('units');
         const availableLabel = retainedSeconds ? tr('retained · {seconds}s', { seconds: retainedSeconds }) : tr('available');
-        const buyLabel = state.pendingBuy?.candidateKey === candidate.key ? tr('Buying…')
-            : retainedSeconds ? tr('Wait') : recentlyAttempted ? tr('Tried recently') : tr('Buy');
+        const buyLabel = config.purchasesPaused ? tr('Purchases paused') :
+            unverifiedOrdersExist() ? tr('Unknown purchase outcome') :
+            state.pendingBuy?.candidateKey === candidate.key ? tr('Buying…') :
+            retainedSeconds ? tr('Wait') : recentlyAttempted ? tr('Tried recently') : tr('Buy');
         return '<div class="moth-mw-row">' +
             '<div class="moth-mw-name"><b><span class="moth-mw-kind">' + escapeHtml(kind) + '</span>' + escapeHtml(candidate.name) + '</b><span>' +
             ((candidate.kind === 'item' || candidate.kind === 'diamond')
@@ -4966,7 +4970,8 @@
                 firstSeenAt: Number(candidate.firstSeenAt || candidate.seenAt || 0),
                 seenAt: Number(candidate.seenAt || 0),
                 purchaseQuantity: purchaseQuantity(candidate),
-                canBuy: !state.pendingBuy &&
+                canBuy: !state.pendingBuy && !config.purchasesPaused &&
+                    !unverifiedOrdersExist() &&
                     !(candidate.retainedUntil && candidate.retainedUntil > serverNow()) &&
                     purchaseQuantity(candidate) > 0,
                 referenceSource: String(candidate.referenceSource || ''),
