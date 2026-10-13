@@ -73,6 +73,8 @@ test('UI selection, top five and species list use the real chosen metric',()=>{
     assert.match(src,/const score=haMetricValue\(metric,\{xp,economy,rare,capture\}\)/);
     assert.match(src,/haRankMetricRows\(rows,state.filters.sortDirection,metric\)/);
     assert.match(src,/data-mha-rare-item/);
+    assert.match(src,/data-mha-sort-outland-tier/);
+    assert.match(src,/data-mha-sort-capture-ball/);
     assert.match(src,/const objectiveLabel=tr\('sort\.'\+objective\)/);
     assert.match(src,/value:formatRate\(row.score\)/);
     assert.match(src,/sort==='ballEfficiency'/);
