@@ -239,7 +239,7 @@
         const attemptedUntil = Number(state.attemptedListings.get(candidate.listingId) || 0);
         const recentlyAttempted = attemptedUntil > Date.now();
         const canBuy = !state.pendingBuy && !config.purchasesPaused &&
-            !unverifiedOrdersExist() && !recentlyAttempted && !retainedSeconds &&
+            !unresolvedListing(candidate.listingId) && !recentlyAttempted && !retainedSeconds &&
             purchaseQuantity(candidate) > 0;
         const total = candidate.kind === 'item' || candidate.kind === 'diamond' ? candidate.price * candidate.qty : candidate.price;
         const pokemonIvs = candidate.kind === 'pokemon' ? pokemonIVs(candidate.ficha) : null;
@@ -264,7 +264,7 @@
         const quantityLabel = candidate.kind === 'diamond' ? tr('diamonds') : tr('units');
         const availableLabel = retainedSeconds ? tr('retained · {seconds}s', { seconds: retainedSeconds }) : tr('available');
         const buyLabel = config.purchasesPaused ? tr('Purchases paused') :
-            unverifiedOrdersExist() ? tr('Unknown purchase outcome') :
+            unresolvedListing(candidate.listingId) ? tr('Unknown purchase outcome') :
             state.pendingBuy?.candidateKey === candidate.key ? tr('Buying…') :
             retainedSeconds ? tr('Wait') : recentlyAttempted ? tr('Tried recently') : tr('Buy');
         return '<div class="moth-mw-row">' +
@@ -521,7 +521,7 @@
             '</p><p class="moth-mw-rule-hint">' + escapeHtml(tr('Session exposure: {gold} Coins · {orb} Gems', { gold: num(sessCoins), orb: num(sessGems) })) +
             ' · ' + escapeHtml(tr('Daily exposure: {gold} Coins · {orb} Gems', { gold: num(dayCoins), orb: num(dayGems) })) +
             '</p>' + (unknown ? '<p class="moth-mw-budget-warning">' + escapeHtml(tr('Unverified orders: {count}', { count: num(unknown) })) +
-            ' · ' + escapeHtml(tr('A purchase may remain unverified after timeout or restart. Never retry that listing until authoritative reconciliation.')) + '</p>' : '') +
+            ' · ' + escapeHtml(tr('The affected listings remain blocked until authoritative reconciliation; other rules continue monitoring.')) + '</p>' : '') +
             '</section>';
     }
 
