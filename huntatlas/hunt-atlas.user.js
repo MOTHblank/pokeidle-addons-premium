@@ -432,7 +432,9 @@
             'catch.seen': 'Shinies seen: {count} · shinies caught: {caught}',
             'catch.oneDay': '≥1 shiny caught in 24h: {chance} (if steady conditions)',
             'catch.cost': 'Replacement: {coins} Coins per expected capture',
-            'catch.diamondCost': 'Beast requires Diamonds; no Coin cost assumed',
+            'catch.diamondCost': 'Beast uses Diamonds',
+            'catch.diamondsPerCapture': '{count} Diamonds/capture',
+            'catch.diamondsPriceUnknown': 'Diamond cost unavailable',
             'catch.stock': 'Stock: {count} · coverage at observed throw rate: {hours}h',
             'catch.observed': 'Observed: {throws} accepted throws, {caught} captures, {seen} shiny seen, {shiny} shiny caught; {fraction}% of killed corpses thrown at',
             'catch.observedBall': 'Selected ball: {throws} accepted · {caught} confirmed captures (small samples are noisy)',
@@ -746,7 +748,9 @@
             'catch.seen': 'Shinies vistos: {count} · shinies capturados: {caught}',
             'catch.oneDay': '≥1 shiny capturado em 24h: {chance} (com condições constantes)',
             'catch.cost': 'Reposição: {coins} Moedas por captura esperada',
-            'catch.diamondCost': 'Beast usa Diamantes; sem inventar custo em Moedas',
+            'catch.diamondCost': 'Beast usa Diamantes',
+            'catch.diamondsPerCapture': '{count} Diamantes/captura',
+            'catch.diamondsPriceUnknown': 'Custo em Diamantes indisponível',
             'catch.stock': 'Estoque: {count} · duração no ritmo observado: {hours}h',
             'catch.observed': 'Observado: {throws} bolas aceitas, {caught} capturas, {seen} shinies vistos, {shiny} shinies capturados; {fraction}% dos corpos derrotados receberam bola',
             'catch.observedBall': 'Bola selecionada: {throws} aceitas · {caught} capturas confirmadas (amostras pequenas oscilam)',
@@ -12400,8 +12404,8 @@
             chosen && chosen.ball.id===5 ?
                 captureLine(tr('catch.diamondCost'),
                     chosen.diamondsPerCapture!==null?
-                        rate(chosen.diamondsPerCapture)+' Diamonds/capture':
-                        'Diamonds price unknown'):'',
+                        tr('catch.diamondsPerCapture',{count:rate(chosen.diamondsPerCapture)}):
+                        tr('catch.diamondsPriceUnknown')):'',
             chosen && chosen.ball.stock!==null ?
                 captureLine(tr('catch.stock',{count:chosen.ball.stock,
                     hours:chosen.stockHours===null?'—':
