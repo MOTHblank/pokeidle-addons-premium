@@ -10952,6 +10952,152 @@
                 .mha-arcade-heading select { padding: 5px; }
             }
 
+
+            /* UX audit: contrast, focus and controls sized for real use. */
+            #${DRAWER_ID} {
+                font-size: 12px !important;
+                line-height: 1.4 !important;
+            }
+            .mha-filter-toolbar {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 10px;
+                padding: 6px 12px;
+                border-bottom: 1px solid rgba(255,255,255,.09);
+                background: rgba(255,255,255,.025);
+            }
+            .mha-filter-toolbar button {
+                min-height: 34px;
+                min-width: 112px;
+                border: 1px solid rgba(255,255,255,.18);
+                border-radius: 6px;
+                padding: 5px 12px;
+                color: #d7e7ff;
+                background: #25212b;
+                cursor: pointer;
+                font: 600 11px/1.25 system-ui,sans-serif;
+            }
+            .mha-filter-glance {
+                min-width: 0;
+                color: #bab0b7;
+                font-size: 11px;
+            }
+            .mha-filters[hidden] { display: none !important; }
+            .mha-field { font-size: 10px; }
+            .mha-filters input, .mha-filters select,
+            .mha-sort-control button, .mha-filter-actions button {
+                height: 34px;
+                font-size: 11px;
+            }
+            .mha-weakness-option {
+                min-height: 30px;
+                font-size: 10px;
+            }
+            .mha-weakness-mode,
+            .mha-weakness-mode button { font-size: 10px; }
+            .mha-xp-note, .mha-xp-heading span,
+            .mha-hunt-sub, .mha-meta .mha-status {
+                font-size: 10px;
+                line-height: 1.45;
+            }
+            .mha-xp-heading strong, .mha-hunt-title {
+                font-size: 12px;
+            }
+            .mha-xp-heading span {
+                white-space: normal;
+                text-overflow: clip;
+            }
+            .mha-xp-summary {
+                min-height: 0;
+                max-height: min(55dvh, 550px);
+                overflow-y: auto;
+                overflow-x: hidden;
+                scrollbar-gutter: stable;
+            }
+            .mha-xp-primary-main strong {
+                font-size: 11px;
+            }
+            .mha-xp-primary-main span, .mha-best-name,
+            .mha-xp-value { font-size: 10px; }
+            .mha-xp-summary [data-mha-more][open] {
+                max-height: min(44dvh, 480px);
+                overflow-y: auto;
+                overflow-x: hidden;
+            }
+            .mha-xp-toggle, .mha-xp-summary button,
+            .mha-xp-summary select { min-height: 30px; }
+            .mha-outland-quick {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 7px;
+                padding: 8px;
+                margin: 6px 0;
+                border: 1px solid rgba(121,180,240,.26);
+                border-radius: 7px;
+                background: rgba(121,180,240,.07);
+            }
+            .mha-outland-quick .mha-outland-title {
+                color: #e4eeff;
+                font-size: 11px;
+            }
+            .mha-outland-selector {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                color: #c4bdc6;
+                font-size: 10px;
+            }
+            .mha-outland-selector select { max-width: 170px; }
+            .mha-outland-active { color: #b0e0bc; font-size: 10px; }
+            .mha-outland-reason {
+                color: #c4b6c0;
+                font-size: 10px;
+                flex-basis: 100%;
+            }
+            .mha-outland-quick button {
+                padding: 5px 10px;
+                border: 1px solid rgba(121,180,240,.5);
+                border-radius: 6px;
+                color: #e1eeff;
+                background: #25364e;
+                cursor: pointer;
+                font: 600 11px/1.3 system-ui,sans-serif;
+            }
+            .mha-outland-quick button:disabled {
+                opacity: .48;
+                cursor: not-allowed;
+            }
+            .mha-empty p { margin: 0 0 8px; }
+            .mha-empty button {
+                padding: 8px 14px;
+                border: 1px solid rgba(121,180,240,.38);
+                border-radius: 6px;
+                color: #e3ecff;
+                background: #25364e;
+                cursor: pointer;
+                font: inherit;
+            }
+            #${DRAWER_ID} :is(button,select,input,summary):focus-visible {
+                outline: 2px solid #91c3ff;
+                outline-offset: 2px;
+            }
+            @media (max-width: 620px) {
+                .mha-filter-toolbar { padding: 6px 8px; }
+                .mha-filters {
+                    max-height: min(50dvh, 440px);
+                    overflow-y: auto;
+                    scrollbar-gutter: stable;
+                }
+                .mha-xp-summary {
+                    max-height: min(50dvh, 460px);
+                }
+                .mha-outland-quick { align-items: stretch; }
+                .mha-outland-quick button { flex: 1 1 140px; }
+                .mha-outland-selector { flex: 1 1 170px; }
+            }
+
             @media (max-width: 900px) {
                 .mha-body {
                     grid-template-columns: 1fr;
@@ -12937,22 +13083,33 @@
         const activateTier=Boolean(tierInfo && state.outlandTierSeen &&
             nativeTier!==null && nativeTier!==selectedTier &&
             !state.pendingOutlandTier && socketReady());
-        // Main-row shortcut: don't require disabling Atlas or opening
-        // the advanced details just to change the native Outland tier.
-        // Selecting a tier is only a preview until the user presses Switch.
-        const quickOutlandHtml=previewHunt?'<div class="mha-xp-note mha-outland-quick">'+
-            '<strong>'+escapeHtml(tr('outland.quickLabel'))+'</strong> · '+
-            '<select data-mha-quick-outland aria-label="'+
-                escapeHtml(tr('outland.quickLabel'))+'">'+previewOptions+
-            '</select> · '+escapeHtml(nativeTier!==null?
+        // Quick access uses the same server-confirmed native command as
+        // the advanced panel; a preview alone never changes the game tier.
+        const quickTierReason=!tierInfo?
+            tr('rare.locked',{level:tierGate}):
+            state.pendingOutlandTier?tr('rare.pending'):
+            !socketReady()?tr('outland.quickDisconnected'):
+            !state.outlandTierSeen||nativeTier===null?
+                tr('outland.quickWaiting'):
+            nativeTier===selectedTier?tr('outland.quickAlready'):
+                tr('outland.quickPreview');
+        const quickOutlandHtml=previewHunt?'<div class="mha-outland-quick">'+
+            '<strong class="mha-outland-title">'+
+                escapeHtml(tr('outland.quickLabel'))+'</strong>'+
+            '<label class="mha-outland-selector">'+
+                escapeHtml(tr('rare.preview'))+
+                ' <select data-mha-quick-outland aria-label="'+
+                    escapeHtml(tr('outland.quickLabel'))+'">'+previewOptions+
+                '</select></label>'+
+            '<span class="mha-outland-active">'+escapeHtml(nativeTier!==null?
                 tr('outland.quickActive',{tier:nativeTier}):
-                tr('outland.quickUnknown'))+
-            (!tierInfo?' · '+escapeHtml(tr('rare.locked',{level:tierGate})):'')+
-            (activateTier?' · <button type="button" data-mha-quick-tier-apply>'+
-                escapeHtml(tr('outland.quickAction'))+'</button>':
-                (state.pendingOutlandTier?' · '+escapeHtml(tr('rare.pending')):
-                 tierInfo&&nativeTier===selectedTier?' · '+escapeHtml(tr('outland.quickAlready')):
-                 ' · '+escapeHtml(tr('rare.noCommand'))))+
+                tr('outland.quickUnknown'))+'</span>'+
+            '<button type="button" data-mha-quick-tier-apply '+
+                (activateTier?'':'disabled ')+
+                'title="'+escapeHtml(quickTierReason)+'">'+
+                escapeHtml(tr('outland.quickAction'))+'</button>'+
+            '<span class="mha-outland-reason" role="status">'+
+                escapeHtml(quickTierReason)+'</span>'+
             '</div>':'';
         const rareHtml=[
             '<div class="mha-xp-list-title">'+escapeHtml(tr('rare.heading'))+'</div>',
