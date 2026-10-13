@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/huntatlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.10
+// @version      1.9.11
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.10');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.11');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -518,6 +518,14 @@
             'econ.unlinked': 'Net unavailable: {count} throw event(s) could not be reconciled to a unique corpse',
             'econ.stock': 'Stock {count} · runway {hours}h at observed use rate',
             'econ.unknown': '— (insufficient evidence)',
+            'filter.panelTitle': 'Search and filters',
+            'filter.showPanel': 'Show filters',
+            'filter.hidePanel': 'Hide filters',
+            'filter.emptyReset': 'Clear filters and show Pokémon',
+            'outland.quickPreview': 'Selecting a tier only previews it; use Switch to apply.',
+            'outland.quickDisconnected': 'Game connection unavailable. Reconnect to change the tier.',
+            'outland.quickWaiting': 'Waiting for the game to report the active tier.',
+            'outland.quickTimedOut': 'The game did not confirm the change. Check the active tier and retry.',
             'outland.quickLabel': 'Outland tier (quick change)',
             'outland.quickActive': 'Active: {tier}',
             'outland.quickUnknown': 'Current tier not reported by game',
@@ -859,6 +867,14 @@
             'econ.unlinked': 'Líquido indisponível: {count} evento(s) de bola sem associação confiável a um corpo',
             'econ.stock': 'Estoque {count} · duração {hours}h no ritmo observado',
             'econ.unknown': '— (evidência insuficiente)',
+            'filter.panelTitle': 'Busca e filtros',
+            'filter.showPanel': 'Mostrar filtros',
+            'filter.hidePanel': 'Ocultar filtros',
+            'filter.emptyReset': 'Limpar filtros e mostrar Pokémon',
+            'outland.quickPreview': 'Escolher o tier apenas mostra a prévia; use Mudar para aplicar.',
+            'outland.quickDisconnected': 'Sem conexão com o jogo. Reconecte para mudar o tier.',
+            'outland.quickWaiting': 'Aguardando o jogo informar o tier ativo.',
+            'outland.quickTimedOut': 'O jogo não confirmou a troca. Confira o tier ativo e tente novamente.',
             'outland.quickLabel': 'Tier Outland (troca rápida)',
             'outland.quickActive': 'Ativo: {tier}',
             'outland.quickUnknown': 'Jogo não informou o tier atual',
@@ -1129,6 +1145,7 @@
         farmingSnapshot: {},
         outlandTierSeen: false,
         pendingOutlandTier: null,
+        outlandTierLastOutcome: null,
         outlandCatalogTiers: null,
         xpBonusState: {},
         itemCatalogStatus: 'idle',
@@ -1216,6 +1233,8 @@
         nativeMapTitle: null,
         lastLocale: null,
         resultLimit: 120,
+        filtersExpanded: null,
+        searchRenderTimer: null,
         xpDetailsOpen: false,
         diagnosticsEnabled: false,
         openHuntDetails:new Set(),
@@ -1477,31 +1496,30 @@
         }
     }
 
+    // Count only search restrictions, not optional models or open panels.
+    const SEARCH_FILTER_KEYS=Object.freeze([
+        'search','region','minLevel','maxLevel','type',
+        'weakness','weaknessMatchAll','availability','captured'
+    ]);
+    function resetSearchFilters() {
+        if(state.searchRenderTimer!==null){
+            clearTimeout(state.searchRenderTimer);
+            state.searchRenderTimer=null;
+        }
+        const defaults=defaultFilters();
+        for(const key of SEARCH_FILTER_KEYS)
+            state.filters[key]=key==='weakness'?[]:defaults[key];
+        state.resultLimit=120;
+        saveFilters();
+    }
     function activeFilterCount() {
-        const defaults =
-            defaultFilters();
-
-        return Object.keys(
-            defaults
-        ).filter(
-            key => {
-                if (key === 'sort' || key === 'sortDirection') {
-                    return false;
-                }
-
-                if (key === 'weakness') {
-                    return Array.isArray(state.filters.weakness) &&
-                        state.filters.weakness.length > 0;
-                }
-
-                if (key === 'weaknessMatchAll') {
-                    return Boolean(state.filters.weaknessMatchAll);
-                }
-
-                return String(state.filters[key] ?? '') !==
-                    String(defaults[key] ?? '');
-            }
-        ).length;
+        const defaults=defaultFilters();
+        return SEARCH_FILTER_KEYS.filter(key=>{
+            if(key==='weakness')return state.filters.weakness?.length>0;
+            if(key==='weaknessMatchAll')
+                return state.filters.weaknessMatchAll===true;
+            return String(state.filters[key]??'')!==String(defaults[key]??'');
+        }).length;
     }
 
     function saveFilters() {
@@ -4491,8 +4509,12 @@
             Object.hasOwn(gameState,'outland_tier')) {
             state.outlandTierSeen=true;
             if(state.pendingOutlandTier &&
-                state.farmingSnapshot.outlandTier === state.pendingOutlandTier.tier)
+                state.farmingSnapshot.outlandTier === state.pendingOutlandTier.tier){
+                state.outlandTierLastOutcome={
+                    tier:state.pendingOutlandTier.tier,status:'confirmed'
+                };
                 state.pendingOutlandTier=null;
+            }
         }
         const incomingXpBonuses = xpBonusSnapshot(gameState);
         if (incomingXpBonuses) Object.assign(state.xpBonusState, incomingXpBonuses);
@@ -4902,6 +4924,7 @@
             state.farmingSnapshot = {};
             state.outlandTierSeen = false;
             state.pendingOutlandTier = null;
+            state.outlandTierLastOutcome = null;
             state.outlandCatalogTiers = null;
             state.xpBonusState = {};
             state.captureChanceEvidence = {seen:0,min:null,max:null};
@@ -6578,10 +6601,14 @@
         try{
             state.activeSocket.send(JSON.stringify({t:'outland.tier',tier:requested}));
             const sentAt=Date.now();
+            state.outlandTierLastOutcome=null;
             state.pendingOutlandTier={tier:requested,sentAt};
             setTimeout(()=>{
                 if(state.pendingOutlandTier?.sentAt===sentAt){
                     state.pendingOutlandTier=null;
+                    state.outlandTierLastOutcome={
+                        tier:requested,status:'timeout'
+                    };
                     queueRender();
                 }
             },6000);
@@ -10937,6 +10964,152 @@
                 .mha-arcade-heading select { padding: 5px; }
             }
 
+
+            /* UX audit: contrast, focus and controls sized for real use. */
+            #${DRAWER_ID} {
+                font-size: 12px !important;
+                line-height: 1.4 !important;
+            }
+            .mha-filter-toolbar {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 10px;
+                padding: 6px 12px;
+                border-bottom: 1px solid rgba(255,255,255,.09);
+                background: rgba(255,255,255,.025);
+            }
+            .mha-filter-toolbar button {
+                min-height: 34px;
+                min-width: 112px;
+                border: 1px solid rgba(255,255,255,.18);
+                border-radius: 6px;
+                padding: 5px 12px;
+                color: #d7e7ff;
+                background: #25212b;
+                cursor: pointer;
+                font: 600 11px/1.25 system-ui,sans-serif;
+            }
+            .mha-filter-glance {
+                min-width: 0;
+                color: #bab0b7;
+                font-size: 11px;
+            }
+            .mha-filters[hidden] { display: none !important; }
+            .mha-field { font-size: 10px; }
+            .mha-filters input, .mha-filters select,
+            .mha-sort-control button, .mha-filter-actions button {
+                height: 34px;
+                font-size: 11px;
+            }
+            .mha-weakness-option {
+                min-height: 30px;
+                font-size: 10px;
+            }
+            .mha-weakness-mode,
+            .mha-weakness-mode button { font-size: 10px; }
+            .mha-xp-note, .mha-xp-heading span,
+            .mha-hunt-sub, .mha-meta .mha-status {
+                font-size: 10px;
+                line-height: 1.45;
+            }
+            .mha-xp-heading strong, .mha-hunt-title {
+                font-size: 12px;
+            }
+            .mha-xp-heading span {
+                white-space: normal;
+                text-overflow: clip;
+            }
+            .mha-xp-summary {
+                min-height: 0;
+                max-height: min(55dvh, 550px);
+                overflow-y: auto;
+                overflow-x: hidden;
+                scrollbar-gutter: stable;
+            }
+            .mha-xp-primary-main strong {
+                font-size: 11px;
+            }
+            .mha-xp-primary-main span, .mha-best-name,
+            .mha-xp-value { font-size: 10px; }
+            .mha-xp-summary [data-mha-more][open] {
+                max-height: min(44dvh, 480px);
+                overflow-y: auto;
+                overflow-x: hidden;
+            }
+            .mha-xp-toggle, .mha-xp-summary button,
+            .mha-xp-summary select { min-height: 30px; }
+            .mha-outland-quick {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 7px;
+                padding: 8px;
+                margin: 6px 0;
+                border: 1px solid rgba(121,180,240,.26);
+                border-radius: 7px;
+                background: rgba(121,180,240,.07);
+            }
+            .mha-outland-quick .mha-outland-title {
+                color: #e4eeff;
+                font-size: 11px;
+            }
+            .mha-outland-selector {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                color: #c4bdc6;
+                font-size: 10px;
+            }
+            .mha-outland-selector select { max-width: 170px; }
+            .mha-outland-active { color: #b0e0bc; font-size: 10px; }
+            .mha-outland-reason {
+                color: #c4b6c0;
+                font-size: 10px;
+                flex-basis: 100%;
+            }
+            .mha-outland-quick button {
+                padding: 5px 10px;
+                border: 1px solid rgba(121,180,240,.5);
+                border-radius: 6px;
+                color: #e1eeff;
+                background: #25364e;
+                cursor: pointer;
+                font: 600 11px/1.3 system-ui,sans-serif;
+            }
+            .mha-outland-quick button:disabled {
+                opacity: .48;
+                cursor: not-allowed;
+            }
+            .mha-empty p { margin: 0 0 8px; }
+            .mha-empty button {
+                padding: 8px 14px;
+                border: 1px solid rgba(121,180,240,.38);
+                border-radius: 6px;
+                color: #e3ecff;
+                background: #25364e;
+                cursor: pointer;
+                font: inherit;
+            }
+            #${DRAWER_ID} :is(button,select,input,summary):focus-visible {
+                outline: 2px solid #91c3ff;
+                outline-offset: 2px;
+            }
+            @media (max-width: 620px) {
+                .mha-filter-toolbar { padding: 6px 8px; }
+                .mha-filters {
+                    max-height: min(50dvh, 440px);
+                    overflow-y: auto;
+                    scrollbar-gutter: stable;
+                }
+                .mha-xp-summary {
+                    max-height: min(50dvh, 460px);
+                }
+                .mha-outland-quick { align-items: stretch; }
+                .mha-outland-quick button { flex: 1 1 140px; }
+                .mha-outland-selector { flex: 1 1 170px; }
+            }
+
             @media (max-width: 900px) {
                 .mha-body {
                     grid-template-columns: 1fr;
@@ -11456,8 +11629,17 @@
         drawer.hidden =
             true;
 
+        if(state.filtersExpanded===null)
+            state.filtersExpanded=window.innerWidth>620;
         drawer.innerHTML = `
-            <div class="mha-filters">
+            <div class="mha-filter-toolbar">
+                <button type="button" data-mha-filter-toggle
+                    aria-controls="mha-filter-grid"
+                    aria-expanded="${state.filtersExpanded?'true':'false'}"></button>
+                <span class="mha-filter-glance" data-mha-filter-glance></span>
+            </div>
+            <div class="mha-filters" id="mha-filter-grid"
+                ${state.filtersExpanded?'':'hidden'}>
                 <label class="mha-field mha-search">
                     <span>${tr('filter.search')}</span>
                     <input data-mha-filter="search" type="search" placeholder="${escapeHtml(tr('filter.searchPlaceholder'))}">
@@ -11601,6 +11783,10 @@
         modalBody.appendChild(
             drawer
         );
+        q('[data-mha-filter-toggle]',drawer)?.addEventListener('click',()=>{
+            state.filtersExpanded=!state.filtersExpanded;
+            renderFilterControls(drawer);
+        });
         q('[data-mha-arcade-toggle]', drawer)?.addEventListener('click', () => {
             if (arcade.open) arcadeClose();
             else arcade.open = true;
@@ -11632,21 +11818,8 @@
         ).addEventListener(
             'click',
             () => {
-                const sort =
-                    state.filters.sort;
-
-                const sortDirection =
-                    state.filters
-                        .sortDirection;
-
-                state.filters = {
-                    ...defaultFilters(),
-                    sort,
-                    sortDirection
-                };
-                state.resultLimit =
-                    120;
-                saveFilters();
+                // Keep the sort, Outland preview, ball and scenarios.
+                resetSearchFilters();
                 renderDrawer();
 
                 q(
@@ -11668,6 +11841,8 @@
                     if (
                         !isMapModalOpen() ||
                         event.key !== '/' ||
+                        event.altKey || event.ctrlKey || event.metaKey ||
+                        document.activeElement?.isContentEditable ||
                         [
                             'INPUT',
                             'SELECT',
@@ -11818,6 +11993,21 @@
                     }
 
                     state.resultLimit = 120;
+                    if(['search','minLevel','maxLevel'].includes(key)){
+                        // Type without a full 120-card rebuild per keystroke.
+                        if(state.searchRenderTimer!==null)
+                            clearTimeout(state.searchRenderTimer);
+                        state.searchRenderTimer=setTimeout(()=>{
+                            state.searchRenderTimer=null;
+                            saveFilters();
+                            renderDrawer();
+                        },160);
+                        return;
+                    }
+                    if(state.searchRenderTimer!==null){
+                        clearTimeout(state.searchRenderTimer);
+                        state.searchRenderTimer=null;
+                    }
                     saveFilters();
                     renderDrawer();
                 }
@@ -11975,11 +12165,19 @@
                 })
                 .join('');
 
-        if (weaknessOptions && weaknessOptions.innerHTML !== weaknessHtml) {
-            weaknessOptions.innerHTML = weaknessHtml;
-        }
-
         if (weaknessOptions) {
+            // Retain button nodes across selection changes so keyboard focus
+            // is not destroyed by the next refresh.
+            if(weaknessOptions.children.length!==STANDARD_TYPES.length)
+                weaknessOptions.innerHTML=weaknessHtml;
+            for(const button of qa('[data-mha-weakness-option]',weaknessOptions)){
+                const type=button.dataset.mhaWeaknessOption;
+                const selected=selectedWeaknessSet.has(type);
+                button.classList.toggle('active',selected);
+                button.setAttribute('aria-pressed',String(selected));
+                const label=typeLabel(type);
+                if(button.textContent!==label)button.textContent=label;
+            }
             weaknessOptions.title =
                 weaknessSelected.length
                     ? tr('filter.weaknessSelected').replace('{count}', String(weaknessSelected.length))
@@ -12078,10 +12276,17 @@
                 drawer
             );
 
-        if (clearButton) {
-            clearButton.disabled =
-                activeCount === 0;
+        if (clearButton) clearButton.disabled = activeCount === 0;
+        const toggle=q('[data-mha-filter-toggle]',drawer);
+        if(toggle){
+            toggle.textContent=tr('filter.panelTitle')+' · '+
+                tr(state.filtersExpanded?'filter.hidePanel':'filter.showPanel');
+            toggle.setAttribute('aria-expanded',String(state.filtersExpanded));
         }
+        const grid=q('#mha-filter-grid',drawer);
+        if(grid)grid.hidden=!state.filtersExpanded;
+        const glance=q('[data-mha-filter-glance]',drawer);
+        if(glance)glance.textContent=filterState?.textContent??'';
     }
 
 
@@ -12892,22 +13097,36 @@
         const activateTier=Boolean(tierInfo && state.outlandTierSeen &&
             nativeTier!==null && nativeTier!==selectedTier &&
             !state.pendingOutlandTier && socketReady());
-        // Main-row shortcut: don't require disabling Atlas or opening
-        // the advanced details just to change the native Outland tier.
-        // Selecting a tier is only a preview until the user presses Switch.
-        const quickOutlandHtml=previewHunt?'<div class="mha-xp-note mha-outland-quick">'+
-            '<strong>'+escapeHtml(tr('outland.quickLabel'))+'</strong> · '+
-            '<select data-mha-quick-outland aria-label="'+
-                escapeHtml(tr('outland.quickLabel'))+'">'+previewOptions+
-            '</select> · '+escapeHtml(nativeTier!==null?
+        // Quick access uses the same server-confirmed native command as
+        // the advanced panel; a preview alone never changes the game tier.
+        const quickTierReason=!tierInfo?
+            tr('rare.locked',{level:tierGate}):
+            state.pendingOutlandTier?tr('rare.pending'):
+            !socketReady()?tr('outland.quickDisconnected'):
+            !state.outlandTierSeen||nativeTier===null?
+                tr('outland.quickWaiting'):
+            nativeTier===selectedTier?tr('outland.quickAlready'):
+            state.outlandTierLastOutcome?.status==='timeout'&&
+                state.outlandTierLastOutcome.tier===selectedTier?
+                    tr('outland.quickTimedOut'):
+                tr('outland.quickPreview');
+        const quickOutlandHtml=previewHunt?'<div class="mha-outland-quick">'+
+            '<strong class="mha-outland-title">'+
+                escapeHtml(tr('outland.quickLabel'))+'</strong>'+
+            '<label class="mha-outland-selector">'+
+                escapeHtml(tr('rare.preview'))+
+                ' <select data-mha-quick-outland aria-label="'+
+                    escapeHtml(tr('outland.quickLabel'))+'">'+previewOptions+
+                '</select></label>'+
+            '<span class="mha-outland-active">'+escapeHtml(nativeTier!==null?
                 tr('outland.quickActive',{tier:nativeTier}):
-                tr('outland.quickUnknown'))+
-            (!tierInfo?' · '+escapeHtml(tr('rare.locked',{level:tierGate})):'')+
-            (activateTier?' · <button type="button" data-mha-quick-tier-apply>'+
-                escapeHtml(tr('outland.quickAction'))+'</button>':
-                (state.pendingOutlandTier?' · '+escapeHtml(tr('rare.pending')):
-                 tierInfo&&nativeTier===selectedTier?' · '+escapeHtml(tr('outland.quickAlready')):
-                 ' · '+escapeHtml(tr('rare.noCommand'))))+
+                tr('outland.quickUnknown'))+'</span>'+
+            '<button type="button" data-mha-quick-tier-apply '+
+                (activateTier?'':'disabled ')+
+                'title="'+escapeHtml(quickTierReason)+'">'+
+                escapeHtml(tr('outland.quickAction'))+'</button>'+
+            '<span class="mha-outland-reason" role="status">'+
+                escapeHtml(quickTierReason)+'</span>'+
             '</div>':'';
         const rareHtml=[
             '<div class="mha-xp-list-title">'+escapeHtml(tr('rare.heading'))+'</div>',
@@ -13207,7 +13426,9 @@
                     )}</button>
                 ` : ''}
 
-                <button type="button" class="mha-xp-toggle" data-mha-xp-toggle>
+                <button type="button" class="mha-xp-toggle"
+                    data-mha-xp-toggle aria-controls="mha-best-results"
+                    aria-expanded="${state.xpDetailsOpen?'true':'false'}">
                     ${tr(
                         state.xpDetailsOpen
                             ? 'xp.hideTopFive'
@@ -13216,7 +13437,8 @@
                 </button>
             </div>
 
-            <div class="mha-xp-details" ${state.xpDetailsOpen ? '' : 'hidden'}>
+            <div class="mha-xp-details" id="mha-best-results"
+                ${state.xpDetailsOpen ? '' : 'hidden'}>
                 <div class="mha-xp-list-title">
                     ${escapeHtml(
                         tr(
@@ -13302,6 +13524,10 @@
         // DOM when the rendered content changed. Preserving existing nodes
         // prevents needless repaint/focus churn and avoids re-binding handlers.
         if (host.innerHTML === html) return;
+        const active=document.activeElement;
+        const focusAttr=host.contains(active)?
+            active.getAttributeNames().find(name=>name.startsWith('data-mha-')):null;
+        const focusValue=focusAttr?active.getAttribute(focusAttr):null;
         host.innerHTML = html;
 
         q('[data-mha-reference]',host)?.addEventListener('toggle',event=>{
@@ -13437,6 +13663,12 @@
                 }
             );
         }
+        if(focusAttr){
+            const match=qa('['+focusAttr+']',host).find(node=>
+                node.getAttribute(focusAttr)===focusValue);
+            // Server updates should not steal keyboard focus.
+            match?.focus({preventScroll:true});
+        }
     }
 
     function renderDrawer() {
@@ -13535,14 +13767,18 @@
                           : ''
                   )
                 : `
-                    <div class="mha-empty">
-                        ${escapeHtml(
+                    <div class="mha-empty" role="status">
+                        <p>${escapeHtml(
                             tr(
                                 state.hunts.length
                                     ? 'results.noMatch'
                                     : 'results.waiting'
                             )
-                        )}
+                        )}</p>
+                        ${state.hunts.length && activeFilterCount() ?
+                            '<button type="button" data-mha-empty-reset>'+
+                                escapeHtml(tr('filter.emptyReset'))+
+                            '</button>':''}
                     </div>
                 `;
 
@@ -13553,6 +13789,10 @@
             body.innerHTML =
                 html;
 
+            q('[data-mha-empty-reset]',body)?.addEventListener('click',()=>{
+                resetSearchFilters();
+                renderDrawer();
+            });
             for(const detail of qa('[data-mha-hunt-detail]',body)){
                 detail.addEventListener('toggle',()=>{
                     const id=detail.dataset.mhaHuntDetail;
@@ -13660,6 +13900,7 @@
         ) {
             status.textContent =
                 statusText;
+            status.title = statusText;
         }
 
         const count =
@@ -14092,7 +14333,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.10 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.11 experimental loaded'
         );
     }
 

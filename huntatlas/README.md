@@ -1,6 +1,6 @@
 # PokéIdle Hunt Atlas
 
-> **Versão experimental 1.9.10.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
+> **Versão experimental 1.9.11.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
 >
 > Não há mapa visual novo. O Atlas continua sendo uma lista pesquisável; o índice `map-markers.json` só adiciona contexto textual de localização para hunts com slug correspondente. O índice `moves-index.json` oferece golpes possíveis por espécie/nível, não uma lista de golpes equipados. Agora o Atlas compara os golpes dos índices com o catálogo mais recente de Pokémon e mostra divergências. Quando o jogo fornece nomes de golpes, o modelo usa **amostras por execução**, sem contar várias vítimas de um ataque em área como vários golpes. Quando o nome não chega, mantém o modelo por tipo. XP/h **medido** continua acima de qualquer projeção. Os índices são opcionais e podem estar desatualizados.
 >
@@ -48,6 +48,14 @@ No painel **Planejador de capturas e shinies**, a escolha Ultra/Beast e a simula
 **Dados medidos** vêm de `morte`, `bola` e `capturado` correlacionados: ao menos seis abates e 60 segundos, com denominador de tempo corrido, separando tentativas aceitas, capturas confirmadas e shiny visto/capturado. Para outras hunts, as projeções indicam claramente um **teto condicional se uma bola for aceita por corpo**, não que o Auto Catch alcance esse ritmo. Quando um Pokémon não fornece raridade econômica confiável, a chance fica indisponível; não usamos preço de venda MKT/RMT. A chance é o **modelo da wiki, ainda não confirmado com a fórmula do servidor**. Na Outland, a elegibilidade para shiny continua não verificada, portanto não é inventada. Arena Mística usa tabela própria e ticket por tentativa.
 
 Veja [contrato técnico, cenários de teste e limitações](../docs/HUNTATLAS_MILESTONE_E.md). O addon não compra bolas automaticamente nem altera o Auto Catch+.
+
+### Revisão de UI/UX (v1.9.11)
+
+A interface agora prioriza navegação e leitura em sessões longas. Os filtros podem ser recolhidos; em telas de até 620 px começam recolhidos para preservar espaço à lista. O campo de pesquisa e o intervalo de níveis agrupam digitação por 160 ms antes de atualizar os resultados, sem novas leituras periódicas do jogo. **Limpar filtros** passa a limpar somente busca, região, níveis, tipos, fraquezas, disponibilidade e coleção: mantém tier Outland, bola escolhida, ordenação e os cenários opcionais. Sem resultados, há ação direta para limpar os filtros. Alternar fraquezas e atualizar o resumo preserva foco do teclado; tamanho de fontes e controles, contraste e rolagem nos painéis foram ajustados para desktop e mobile.
+
+O atalho de Outland permanece no resumo principal e agora diferencia **tier ativo**, **prévia**, **bloqueio por nível**, **sem conexão**, **aguardando estado**, **pedido pendente** e **troca não confirmada em seis segundos**. O botão de alteração continua visível mas desativado quando não é seguro enviar o comando. Nenhum pedido é considerado sucesso antes de um estado real do jogo mostrar o tier. Painéis de detalhes longos têm rolagem própria para não bloquear a lista.
+
+Veja [a revisão técnica e roteiro de QA](../docs/HUNTATLAS_UI_UX_AUDIT.md) e o teste `tests/ui-ux-audit.test.cjs`. A validação visual e de servidor deve ser feita no Firefox pelo usuário.
 
 ### Troca rápida de tier Outland (v1.9.10)
 
