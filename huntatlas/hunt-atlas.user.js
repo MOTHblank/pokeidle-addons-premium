@@ -443,6 +443,7 @@
             'rare.preview': 'Compare Outland tier',
             'rare.active': 'Active in-game: Outland {tier}',
             'rare.activeUnknown': 'Active in-game tier: not available from game state',
+            'rare.fallback': 'Reported tier {reported} reduced to allowed tier {effective} for current trainer level',
             'rare.select': 'Use this tier in game',
             'rare.pending': 'Change requested; waiting for the game to confirm',
             'rare.locked': 'Locked: trainer level {level} required',
@@ -697,6 +698,7 @@
             'rare.preview': 'Comparar Outland',
             'rare.active': 'Ativa no jogo: Outland {tier}',
             'rare.activeUnknown': 'Tier ativo no jogo: ainda não informado pelo estado',
+            'rare.fallback': 'Tier informado {reported} ajustado ao tier permitido {effective} para o nível atual',
             'rare.select': 'Usar este tier no jogo',
             'rare.pending': 'Troca solicitada; aguardando confirmação do jogo',
             'rare.locked': 'Bloqueado: requer nível de treinador {level}',
@@ -5854,7 +5856,9 @@
         const model=rareForHunt(hunt,tier,state.playerLevel,rate);
         const actualHere=isHuntHere(hunt?.slug);
         const tierActive=state.outlandTierSeen &&
-            state.farmingSnapshot.outlandTier===tier;
+            state.farmingSnapshot.outlandTier!==null &&
+            outlandNativeTier(state.farmingSnapshot.outlandTier,
+                state.playerLevel)===tier;
         return {...model,killsH:rate,
             rateSource:xp?.observed?'observed-wall-clock':
                 xp?.source??'unknown',
@@ -12024,8 +12028,10 @@
 
 
         const selectedTier=state.filters.outlandPreviewTier;
-        const nativeTier=state.outlandTierSeen
+        const reportedTier=state.outlandTierSeen
             ? state.farmingSnapshot.outlandTier : null;
+        const nativeTier=reportedTier===null ? null :
+            outlandNativeTier(reportedTier,state.playerLevel);
         const tierInfo=farmingTier(selectedTier,state.playerLevel);
         const tierGate=FARM_OUTLAND_TIERS[selectedTier-1][0];
         const previewHunt=rareOutlandHunt();
@@ -12079,6 +12085,10 @@
                 tr('rare.activeUnknown'))+' · '+escapeHtml(tr('rare.previewOnly'))+'</div>',
             !tierInfo ? '<div class="mha-xp-note">'+escapeHtml(
                 tr('rare.locked',{level:tierGate}))+'</div>' : '',
+            reportedTier!==null && nativeTier!==reportedTier ?
+                '<div class="mha-xp-note">'+escapeHtml(tr('rare.fallback',{
+                    reported:reportedTier,effective:nativeTier
+                }))+'</div>' : '',
             '<div class="mha-xp-note">'+
                 (activateTier ? '<button type="button" data-mha-activate-tier>'+
                     escapeHtml(tr('rare.select'))+'</button>' :
