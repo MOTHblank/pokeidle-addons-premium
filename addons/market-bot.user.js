@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.6.4
+// @version      0.6.5
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -14,7 +14,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.4');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.5');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -2823,7 +2823,7 @@
 
     function tryBuy(candidate, manual, requestedQuantity = null, fixedRule = false, snatchRelease = false) {
         // Rule eligibility is revalidated against the latest saved settings.
-        if (config.purchasesPaused || unverifiedOrdersExist() ||
+        if (config.purchasesPaused ||
             !(freshQuote(candidate, !!manual) || snatchRelease && snatchReleaseQuote(candidate))) {
             diagnosticOutcome('quote-rejected');
             if (manual) addLog('Stale or unverified quote · refresh listing');
@@ -3212,7 +3212,7 @@
             return Number.isSafeInteger(id) && id > 0 &&
                 Number.isFinite(price) && price > 0 && price <= rule.buyMax &&
                 Number.isSafeInteger(Number(offer.qtd)) && Number(offer.qtd) > 0 &&
-                !isOwnListing(offer) &&
+                !isOwnListing(offer) && !unresolvedListing(id) &&
                 !(retentionUntil(offer) > serverNow()) &&
                 Number(state.attemptedListings.get(id) || 0) <= Date.now();
         }).sort((a, b) => Number(a.preco) - Number(b.preco) || Number(a.id) - Number(b.id));
@@ -3292,7 +3292,8 @@
                 typeof listing.ficha.shiny !== 'boolean' ||
                 !Number.isSafeInteger(Number(listing.ficha.potencia)) ||
                 Number(listing.ficha.potencia) < 1 || Number(listing.ficha.potencia) > 5 ||
-                isOwnListing(listing) || retentionUntil(listing) > serverNow() ||
+                isOwnListing(listing) || unresolvedListing(id) ||
+                retentionUntil(listing) > serverNow() ||
                 Number(state.attemptedListings.get(id) || 0) > Date.now()) continue;
             if (!best || unitPrice < best.price || (unitPrice === best.price && id < best.listingId)) {
                 best = {
@@ -3315,8 +3316,9 @@
             return;
         }
         if (!state.socket || state.socket.readyState !== 1) return;
-        if (q('#modal .cm-folha') || communityMarketIsOpen() ||
-            state.pendingBuy || config.purchasesPaused || unverifiedOrdersExist()) return;
+        // A hidden native-market sheet may remain mounted in #modal. Its
+        // mere DOM presence must not disable all background automation.
+        if (communityMarketIsOpen() || state.pendingBuy || config.purchasesPaused) return;
         const now = Date.now();
         if (now - Number(state.automationLastRunAt || 0) < 1000) return;
         state.automationLastRunAt = now;
@@ -3638,7 +3640,7 @@
         }
         if (!state.orderJournal?.accountKey || !config.enabled || config.purchasesPaused ||
             !state.gameSocket || state.gameSocket.readyState !== 1 ||
-            state.pendingBuy || unverifiedOrdersExist() || gameIsLoading()) {
+            state.pendingBuy || gameIsLoading()) {
             snatchSchedule(10000); return;
         }
         const server = serverNow();
@@ -3817,7 +3819,7 @@
     function snatchDisplayStatus(target, observation) {
         if (!config.enabled) return {tone:'muted', text:tr('Moth Watch is disabled')};
         if (config.purchasesPaused) return {tone:'muted', text:tr('Purchases are paused')};
-        if (unverifiedOrdersExist()) return {tone:'warning', text:tr('Blocked by an unverified purchase')};
+        if (unresolvedListing(target.id)) return {tone:'warning', text:tr('Blocked by an unverified purchase')};
         if (!state.gameSocket || state.gameSocket.readyState !== 1)
             return {tone:'warning', text:tr('Waiting for game connection')};
         if (state.pendingBuy?.listingId === target.id)
@@ -5025,7 +5027,7 @@
                 status = 'Unverified listing identity';
             else if (isOwnListing(listing)) status = 'Your own listing';
             else if (retentionUntil(listing) > serverNow()) status = 'Listing still held';
-            else if (!state.orderJournal || unverifiedOrdersExist()) status = 'Awaiting reconciliation';
+            else if (!state.orderJournal || unresolvedListing(Number(listing.id))) status = 'Awaiting reconciliation';
             else if (remainingBudget(currency, rule.id).spend < price) status = 'Budget blocked';
             else if (balanceFor(currency) - reserveFor(currency) < price)
                 status = 'Insufficient spendable balance';
@@ -5149,7 +5151,7 @@
         const attemptedUntil = Number(state.attemptedListings.get(candidate.listingId) || 0);
         const recentlyAttempted = attemptedUntil > Date.now();
         const canBuy = !state.pendingBuy && !config.purchasesPaused &&
-            !unverifiedOrdersExist() && !recentlyAttempted && !retainedSeconds &&
+            !unresolvedListing(candidate.listingId) && !recentlyAttempted && !retainedSeconds &&
             purchaseQuantity(candidate) > 0;
         const total = candidate.kind === 'item' || candidate.kind === 'diamond' ? candidate.price * candidate.qty : candidate.price;
         const pokemonIvs = candidate.kind === 'pokemon' ? pokemonIVs(candidate.ficha) : null;
@@ -5174,7 +5176,7 @@
         const quantityLabel = candidate.kind === 'diamond' ? tr('diamonds') : tr('units');
         const availableLabel = retainedSeconds ? tr('retained · {seconds}s', { seconds: retainedSeconds }) : tr('available');
         const buyLabel = config.purchasesPaused ? tr('Purchases paused') :
-            unverifiedOrdersExist() ? tr('Unknown purchase outcome') :
+            unresolvedListing(candidate.listingId) ? tr('Unknown purchase outcome') :
             state.pendingBuy?.candidateKey === candidate.key ? tr('Buying…') :
             retainedSeconds ? tr('Wait') : recentlyAttempted ? tr('Tried recently') : tr('Buy');
         return '<div class="moth-mw-row">' +
@@ -5431,7 +5433,7 @@
             '</p><p class="moth-mw-rule-hint">' + escapeHtml(tr('Session exposure: {gold} Coins · {orb} Gems', { gold: num(sessCoins), orb: num(sessGems) })) +
             ' · ' + escapeHtml(tr('Daily exposure: {gold} Coins · {orb} Gems', { gold: num(dayCoins), orb: num(dayGems) })) +
             '</p>' + (unknown ? '<p class="moth-mw-budget-warning">' + escapeHtml(tr('Unverified orders: {count}', { count: num(unknown) })) +
-            ' · ' + escapeHtml(tr('A purchase may remain unverified after timeout or restart. Never retry that listing until authoritative reconciliation.')) + '</p>' : '') +
+            ' · ' + escapeHtml(tr('The affected listings remain blocked until authoritative reconciliation; other rules continue monitoring.')) + '</p>' : '') +
             '</section>';
     }
 
@@ -5558,7 +5560,7 @@
         if (!config.enabled) return tr('Moth Watch disabled');
         if (!config.fixedRulesEnabled) return tr('Enable rule-based buying above');
         if (config.purchasesPaused) return tr('Purchases paused');
-        if (unverifiedOrdersExist()) return tr('Unknown purchase outcome');
+        // Unknown orders quarantine the affected listing only.
         if (state.pendingBuy) return tr('Waiting for acknowledgement');
         if (remainingBudget(rule.currency, rule.id).spend < 1) return tr('Budget blocked');
         if (!state.socket || state.socket.readyState !== 1 || gameIsLoading()) return tr('Waiting for game connection');
@@ -5663,7 +5665,7 @@
         if (!config.enabled) return tr('Moth Watch disabled');
         if (!config.fixedRulesEnabled) return tr('Enable rule-based buying above');
         if (config.purchasesPaused) return tr('Purchases paused');
-        if (unverifiedOrdersExist()) return tr('Unknown purchase outcome');
+        // Unknown orders quarantine the affected listing only.
         if (state.pendingBuy) return tr('Waiting for acknowledgement');
         if (remainingBudget(rule.currency, rule.id).spend < 1) return tr('Budget blocked');
         if (!state.socket || state.socket.readyState !== 1 || gameIsLoading()) return tr('Waiting for game connection');
@@ -6752,7 +6754,7 @@
                 seenAt: Number(candidate.seenAt || 0),
                 purchaseQuantity: purchaseQuantity(candidate),
                 canBuy: !state.pendingBuy && !config.purchasesPaused &&
-                    !unverifiedOrdersExist() &&
+                    !unresolvedListing(candidate.listingId) &&
                     !(candidate.retainedUntil && candidate.retainedUntil > serverNow()) &&
                     purchaseQuantity(candidate) > 0,
                 referenceSource: String(candidate.referenceSource || ''),
@@ -6931,7 +6933,7 @@
         }
 
         ensureUi();
-        console.info('[Moth Watch] v0.1.51 loaded');
+        console.info('[Moth Watch] v0.6.5 loaded');
     }
 
     bootstrap();
