@@ -1154,7 +1154,7 @@
         nativeMapTitle: null,
         lastLocale: null,
         resultLimit: 120,
-        xpDetailsOpen: true,
+        xpDetailsOpen: false,
         diagnosticsEnabled: false,
         lastDrawerRenderAt: 0,
         drawerRenderTimer: null,
@@ -12318,16 +12318,17 @@
                 results
             );
 
-        const usable =
-            ranked.filter(
-                row =>
-                    Number(
-                        row.xp?.value ||
-                        0
-                    ) > 0
-            );
-
-        const best = usable[0] || null;
+        const objective=HA_RANK_METRICS.includes(state.filters.sort)?
+            state.filters.sort:'xp';
+        const objectiveLabel=tr('sort.'+objective);
+        // Zero is a measured fact for capture or net, while null means
+        // unknown/unavailable. Never mistake a missing observation for zero.
+        const usable=ranked.filter(row=>haMetricNumber(row.score)!==null);
+        const best=usable[0]||null;
+        const metricText=row=>objective==='ballEfficiency'?
+            tr('rank.efficiency',{value:formatRate(row.score)}):
+            tr('rank.value',{value:formatRate(row.score),
+                source:row.source||tr('rank.unknown')});
         const xpSourceLabel = estimate => estimate?.observed
             ? tr('xp.sourceMeasured')
             : estimate?.source === 'immune combat model'
@@ -12583,17 +12584,12 @@
                                         : null
                                 ].filter(Boolean).join(' · '))}">${escapeHtml(
                                     tr(
-                                        row.xp.observed
-                                            ? 'xp.measuredShort'
-                                            : 'xp.modelShort',
-                                        {
-                                            value:
-                                                formatRate(
-                                                    row.xp.value
-                                                )
+                                        'rank.value',{
+                                            value:formatRate(row.score),
+                                            source:row.source||tr('rank.unknown')
                                         }
                                     )
-                                )}${row.xp.incomplete ? ' · ' + escapeHtml(tr('xp.incompleteShort', {percentage: row.xp.coverage})) : ''} · ${escapeHtml(rangeLabel(row.xp))}</span>
+                                )}${row.target?' · '+escapeHtml(row.target):''}${objective==='rare'?' · '+escapeHtml(tr('rank.rarePreview',{tier:state.filters.outlandPreviewTier})):''}${objective==='xp'&&row.xp.incomplete?' · '+escapeHtml(tr('xp.incompleteShort',{percentage:row.xp.coverage})):''}</span>
                                 <button
                                     type="button"
                                     class="mha-go ${here ? 'current' : ''}"
@@ -12847,18 +12843,12 @@
             <div class="mha-xp-heading">
                 <strong>${escapeHtml(
                     tr(
-                        'xp.sectionTitle'
+                        'rank.heading',{metric:objectiveLabel}
                     )
                 )}</strong>
                 <span>${escapeHtml(
                     tr(
-                        'xp.sectionSubtitle',
-                        {
-                            lead:
-                                lead?.nome ||
-                                lead?.name ||
-                                'Pokémon'
-                        }
+                        'rank.keyInfo'
                     )
                 )}</span>
             </div>
@@ -12868,11 +12858,10 @@
                     <strong>${best
                         ? escapeHtml(
                             tr(
-                                best.xp.observed ? 'xp.best' : 'xp.uncertainLeader',
+                                'rank.best',
                                 {
-                                    hunt:
-                                        best.hunt.nome ||
-                                        best.hunt.slug
+                                    hunt:best.hunt.nome||best.hunt.slug,
+                                    metric:objectiveLabel
                                 }
                             )
                         ) +
@@ -12891,23 +12880,21 @@
                           )
                         : escapeHtml(
                             tr(
-                                'xp.noEstimate'
+                                'rank.noEvidence'
                             )
                         )}</strong>
                     <span>${best
                         ? escapeHtml(
                             tr(
-                                best.xp.observed
-                                    ? 'xp.measuredTrainer'
-                                    : 'xp.modeledTrainer',
-                                {
-                                    value:
-                                        formatRate(
-                                            best.xp.value
-                                        )
+                                'rank.value',{
+                                    value:formatRate(best.score),
+                                    source:best.source||tr('rank.unknown')
                                 }
                             )
-                        ) + (best.xp.incomplete ? ' · ' + escapeHtml(tr('xp.incompleteShort', {percentage: best.xp.coverage})) : '')
+                        ) + (best.target ? ' · '+escapeHtml(best.target):'')+
+                            (objective==='xp'&&best.xp.incomplete?
+                                ' · '+escapeHtml(tr('xp.incompleteShort',{
+                                    percentage:best.xp.coverage})): '')
                         : ''}</span>
                 </div>
 
@@ -12937,7 +12924,7 @@
                 <div class="mha-xp-list-title">
                     ${escapeHtml(
                         tr(
-                            'xp.topFiveTitle'
+                            'rank.topFive',{metric:objectiveLabel}
                         )
                     )}
                 </div>
