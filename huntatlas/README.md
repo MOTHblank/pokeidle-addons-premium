@@ -1,6 +1,6 @@
 # PokéIdle Hunt Atlas
 
-> **Versão experimental 1.9.14.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
+> **Versão experimental 1.9.15.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
 >
 > Não há mapa visual novo. O Atlas continua sendo uma lista pesquisável; o índice `map-markers.json` só adiciona contexto textual de localização para hunts com slug correspondente. O índice `moves-index.json` oferece golpes possíveis por espécie/nível, não uma lista de golpes equipados. Agora o Atlas compara os golpes dos índices com o catálogo mais recente de Pokémon e mostra divergências. Quando o jogo fornece nomes de golpes, o modelo usa **amostras por execução**, sem contar várias vítimas de um ataque em área como vários golpes. Quando o nome não chega, mantém o modelo por tipo. XP/h **medido** continua acima de qualquer projeção. Os índices são opcionais e podem estar desatualizados.
 >
@@ -48,6 +48,16 @@ No painel **Planejador de capturas e shinies**, a escolha Ultra/Beast e a simula
 **Dados medidos** vêm de `morte`, `bola` e `capturado` correlacionados: ao menos seis abates e 60 segundos, com denominador de tempo corrido, separando tentativas aceitas, capturas confirmadas e shiny visto/capturado. Para outras hunts, as projeções indicam claramente um **teto condicional se uma bola for aceita por corpo**, não que o Auto Catch alcance esse ritmo. Quando um Pokémon não fornece raridade econômica confiável, a chance fica indisponível; não usamos preço de venda MKT/RMT. A chance é o **modelo da wiki, ainda não confirmado com a fórmula do servidor**. Na Outland, a elegibilidade para shiny continua não verificada, portanto não é inventada. Arena Mística usa tabela própria e ticket por tentativa.
 
 Veja [contrato técnico, cenários de teste e limitações](../docs/HUNTATLAS_MILESTONE_E.md). O addon não compra bolas automaticamente nem altera o Auto Catch+.
+
+### Correções de precisão e desempenho (v1.9.15)
+
+A normalização dos eventos passou a descartar retransmissões quando o servidor fornece um identificador explícito, mas **não** colapsa usos iguais de poções/revives sem identificação. Eventos explícitos de desaparecimento fecham o corpo; arremessos sem ID de bola continuam registrados, mas o custo fica desconhecido. Leituras parciais de inventário não apagam os demais itens.
+
+As estimativas de XP não tratam o nível nominal da hunt como prova do nível do inimigo para detectar bônus. Fora da hunt atual, ataques sem cadência medida usam um tempo conservador; erros posteriores de previsão podem **aumentar**, nunca diminuir, a faixa de incerteza. O loot vendido a NPC respeita elegibilidade explícita e pode utilizar a mistura observada após pelo menos 30 abates inteiramente atribuídos. Essa mistura é calculada apenas com dados recentes; a média estática é memorizada por catálogo para evitar trabalho repetido.
+
+No planejador de captura, uma bola com 30+ arremessos aceitos apresenta sua frequência observada de sucesso (não confundir com fórmula de captura do servidor). Estoque zerado é indicado. Se a arena ativa for identificada como `arena_mistica`, a seção mostra a tabela especial de cinco bolas e o estoque conhecido de MysticTickets, sem misturar com odds das hunts comuns.
+
+O modelo continua deliberadamente conservador onde faltam dados do servidor, sem novos sockets, scanners de mercado ou compras. Consulte o [registro de avanço do roadmap](../docs/HUNTATLAS_ROADMAP.md#follow-through-after-milestones-af-2026-10-13-experimental-v1915) e os testes `receipt-identity.test.cjs` e `roadmap-followthrough.test.cjs`. Os testes são determinísticos; a validação no jogo continua sob responsabilidade do operador.
 
 ### Top 5 direto, sem clique (v1.9.14)
 
