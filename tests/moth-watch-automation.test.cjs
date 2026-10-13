@@ -912,6 +912,192 @@ test('Milestone C: optional session telemetry avoids duplicate NPC sales', () =>
 test('Milestone C: independent economy UI cannot start selling automation', () => {
     assert.match(script,/data-moth-view="economy"/);
     assert.match(script,/Read-only estimates and user-entered holdings/);
-    assert.match(script,/@version\s+0\.5\.0/);
+    assert.match(script,/@version\s+0\.6\.0/);
     assert.doesNotMatch(script,/market\.criar|autoSellRules|sendItemSale/);
+});
+
+
+function milestoneDSafetyHarness(overrides={}) {
+    const config={
+        maxCoinsPerSession:0,maxCoinsPerDay:0,maxGemsPerSession:0,maxGemsPerDay:0,
+        maxPurchasesPerSession:0,maxQuantityPerSession:0,
+        anyItemRules:[],pokemonBuyRules:[],...overrides
+    };
+    const confirmations=[];
+    const browser={confirm(message){confirmations.push(message);return false;}};
+    const src=section('    function broadRuleUnbounded(', '    function fixedRuleStatus(');
+    const fn=new Function('config','window','sanitizeAnyItemRules',
+        'sanitizePokemonBuyRules','tr','num',
+        src+'\nreturn {broadRuleUnbounded,enabledUnboundedBroadRules,confirmUnboundedRule,'+
+        'confirmUnboundedMaster,confirmRemovingLastBroadCap,ruleRiskSummary};')(
+        config,browser,value=>value,value=>value,(key,params={})=>
+            key.replace(/\{(\w+)\}/g,(_,name)=>String(params[name]??'')),String);
+    return {config,confirmations,...fn};
+}
+
+test('Milestone D: unbounded broad buying requires confirmation only on activation', () => {
+    const h=milestoneDSafetyHarness();
+    const broad={kind:'any',currency:'gold',buyMax:10000,buyEnabled:true};
+    assert.equal(h.broadRuleUnbounded(broad),true);
+    assert.equal(h.confirmUnboundedRule(broad),false);
+    assert.equal(h.confirmations.length,1);
+    assert.match(h.confirmations[0],/no cumulative spending/i);
+    assert.equal(h.config.maxCoinsPerSession,0,'confirmation must not set or mutate limits');
+    assert.equal(h.broadRuleUnbounded({...broad,buyEnabled:false}),false);
+    assert.equal(h.confirmUnboundedRule({...broad,buyEnabled:false}),true);
+    assert.equal(h.confirmations.length,1);
+    const c=milestoneDSafetyHarness({maxCoinsPerDay:90000});
+    assert.equal(c.broadRuleUnbounded(broad),false);
+    assert.equal(c.confirmUnboundedRule(broad),true);
+    const r=milestoneDSafetyHarness();
+    assert.equal(r.broadRuleUnbounded({...broad,maxPurchasesSession:2}),false);
+    assert.equal(r.broadRuleUnbounded({...broad,maxSpendDay:50000}),false);
+});
+
+test('Milestone D: master activation warns about multiple unbounded categories', () => {
+    const pokemon={kind:'p5',currency:'orb',buyMax:5,buyEnabled:true};
+    const any={currency:'gold',buyMax:10000,buyEnabled:true};
+    const h=milestoneDSafetyHarness({pokemonBuyRules:[pokemon],
+        anyItemRules:[any]});
+    assert.equal(h.enabledUnboundedBroadRules().length,2);
+    assert.equal(h.confirmUnboundedMaster(),false);
+    assert.match(h.confirmations[0],/2 broad buying rules/);
+    const c=milestoneDSafetyHarness({pokemonBuyRules:[pokemon],
+        anyItemRules:[{...any,buyEnabled:false}],maxGemsPerSession:100});
+    assert.equal(c.enabledUnboundedBroadRules().length,0);
+    assert.equal(c.confirmUnboundedMaster(),true);
+    assert.equal(c.confirmations.length,0);
+    assert.match(h.ruleRiskSummary(pokemon,'pokemon'),/per Pokémon/);
+    assert.match(h.ruleRiskSummary(any,'any'),/detail offers/);
+    assert.match(script,/confirmUnboundedMaster\(\)/);
+    assert.match(script,/confirmUnboundedRule\(\{\.\.\.rule, buyEnabled: true\}\)/);
+});
+
+function milestoneDDiagnosticsHarness() {
+    const state={diagnostics:null,candidates:new Map(),itemOfferDetails:new Map(),
+        detailQueue:[],pendingBuy:null,orderJournal:{orders:[]}};
+    const src=section('    // BEGIN MOTHWATCH DIAGNOSTICS GENERATED\n',
+        '    // END MOTHWATCH DIAGNOSTICS GENERATED');
+    const api=new Function('state',src+
+        '\nreturn {diagnosticReset,diagnosticProtocol,diagnosticOutcome,'+
+        'diagnosticOutbound,diagnosticReport};')(state);
+    return {state,...api};
+}
+
+test('Milestone D: diagnostics source is synchronized with standalone userscript', () => {
+    const source=fs.readFileSync(path.join(__dirname,'..','src','mothwatch',
+        'diagnostics-section.js'),'utf8').trimEnd();
+    const embedded=section('    // BEGIN MOTHWATCH DIAGNOSTICS GENERATED\n',
+        '    // END MOTHWATCH DIAGNOSTICS GENERATED')
+        .replace(/^    \/\/ BEGIN MOTHWATCH DIAGNOSTICS GENERATED\n/, '').trimEnd();
+    assert.equal(embedded,source,'module must exactly match generated userscript section');
+    const tool=fs.readFileSync(path.join(__dirname,'..','tools','build-mothwatch.cjs'),'utf8');
+    assert.match(tool,/--check/);
+    assert.match(script,/@version\s+0\.6\.0/);
+    assert.doesNotMatch(script,/^\s*\/\/\s*@(?:downloadURL|updateURL)/m,
+        'private repo must not advertise inaccessible raw auto-update endpoints');
+});
+
+test('Milestone D: diagnostics remain opt-in, bounded and cannot export packet values', () => {
+    const h=milestoneDDiagnosticsHarness(), secret='SECRET_PLAYER_AND_CREDENTIALS_XXXX';
+    const packet={t:'market',aba:'item',moeda:'orb',pagina:1,
+        nick:secret,senha:secret,vendedor:secret,listingId:88887777,
+        linhas:[{nome:secret,vendedor:secret,id:999999,token:secret}],
+        unknownDynamicKey:secret};
+    h.diagnosticReset(false);
+    h.diagnosticProtocol(packet);
+    assert.equal(h.state.diagnostics.count,0,'disabled by default');
+    h.diagnosticReset(true);
+    for(let i=0;i<1000;i++)h.diagnosticProtocol(packet);
+    h.diagnosticOutcome('confirmed');
+    h.diagnosticOutcome('unknown');
+    h.diagnosticOutcome('malicious:'+secret);
+    h.diagnosticOutbound({t:'market.item',preco:12345,vendedor:secret});
+    const report=h.diagnosticReport();
+    const text=JSON.stringify(report);
+    assert.equal(report.inboundPackets,1000);
+    assert.equal(report.recentShapes.length,64,'bounded allocation even after long sessions');
+    assert.equal(report.inboundFamilies['market:item'],1000);
+    assert.equal(report.outboundKinds['market.item'],1);
+    assert.equal(report.purchaseOutcomes.unknown,1);
+    assert.equal(report.purchaseOutcomes.confirmed,1);
+    for(const leakage of [secret,'88887777','999999','12345','unknownDynamicKey'])
+        assert.equal(text.includes(leakage),false,'report leaked '+leakage);
+    assert.ok(report.recentShapes.every(row=>row.keys.every(key=>
+        ['t','aba','tipo','moeda','pagina','itemId','linhas','resumo','medias',
+         'mediaDiamante','temMais','estado','mercado','catalogo','ev','chave',
+         'listingId','anuncioId','vendaId','servidorAgora'].includes(key))));
+    h.diagnosticReset(false);
+    assert.equal(h.state.diagnostics.samples.length,0);
+});
+
+test('Milestone D: redacted replay keeps currency and empty-page distinction', () => {
+    const h=milestoneDDiagnosticsHarness();
+    h.diagnosticReset(true);
+    const replay=[
+        {t:'market',aba:'vitrine',tipo:'pokemon',moeda:'gold',pagina:0,linhas:[]},
+        {t:'market',aba:'vitrine',tipo:'pokemon',moeda:'orb',pagina:0,linhas:[]},
+        {t:'market',aba:'vitrine',linhas:[]},
+        {t:'erro',chave:'limited-secret-should-not-export',anuncioId:123456},
+        {t:'batalha',ev:[{k:'marketComprado',listingId:333}]}
+    ];
+    for(const pkt of replay)h.diagnosticProtocol(pkt);
+    const report=h.diagnosticReport();
+    assert.equal(report.inboundFamilies['market:vitrine'],3);
+    assert.equal(report.inboundFamilies.erro,1);
+    assert.equal(report.inboundFamilies.batalha,1);
+    assert.equal(report.recentShapes[0].keys.includes('moeda'),true);
+    assert.equal(report.recentShapes[2].keys.includes('moeda'),false);
+    assert.equal(JSON.stringify(report).includes('limited-secret'),false);
+    assert.equal(JSON.stringify(report).includes('333'),false);
+    assert.equal(report.recentShapes[0].empty,true);
+});
+
+
+test('Milestone D: removing the final broad-rule cap is explicitly protected', () => {
+    const capped=milestoneDSafetyHarness({
+        maxCoinsPerSession:3000,
+        anyItemRules:[{currency:'gold',buyMax:500,buyEnabled:true}]
+    });
+    assert.equal(capped.enabledUnboundedBroadRules().length,0);
+    capped.config.maxCoinsPerSession=0;
+    assert.equal(capped.enabledUnboundedBroadRules().length,1);
+    assert.equal(capped.confirmRemovingLastBroadCap(),false);
+    assert.match(capped.confirmations[0],/last cumulative protection/);
+    assert.match(script,/!previouslyUnbounded\s*&&\s*broadRuleUnbounded\(rule\)/);
+    assert.match(script,/oldUnboundedCount\s*=\s*enabledUnboundedBroadRules\(\)\.length/);
+    assert.match(script,/config\[key\]\s*=\s*oldValue/);
+});
+
+test('Milestone D: disabled rule statuses take precedence over exhausted budget', () => {
+    const cfg={enabled:true,fixedRulesEnabled:true,purchasesPaused:false};
+    const shared=['config','unverifiedOrdersExist','remainingBudget','state','gameIsLoading',
+        'balanceFor','reserveFor','fixedRuleCandidate','purchaseQuantity','tr'];
+    const source=section('    function fixedRuleStatus(', '    function ruleNumber(');
+    const fn=new Function(...shared,source+'\nreturn fixedRuleStatus;')(
+        cfg,()=>{throw Error('should not inspect journal for inactive rule')},
+        ()=>{throw Error('should not inspect budget for inactive rule')},
+        {},()=>false,()=>0,()=>0,()=>null,()=>0,x=>x);
+    assert.equal(fn({currency:'gold',buyMax:10,buyEnabled:false}),'Rule paused');
+    cfg.fixedRulesEnabled=false;
+    assert.equal(fn({currency:'gold',buyMax:10,buyEnabled:true}),'Enable rule-based buying above');
+});
+
+
+test('Milestone D: stale rule quotes are never described as currently eligible', () => {
+    const state={socket:{readyState:1},pendingBuy:null,
+        itemOfferDetails:new Map([['106:gold',{updatedAt:Date.now()}]])};
+    const cfg={enabled:true,fixedRulesEnabled:true,purchasesPaused:false};
+    const src=section('    function fixedRuleStatus(', '    function ruleNumber(');
+    const fn=new Function('config','state','unverifiedOrdersExist','remainingBudget',
+        'gameIsLoading','balanceFor','reserveFor','fixedRuleCandidate',
+        'purchaseQuantity','freshQuote','tr',
+        src+'\nreturn fixedRuleStatus;');
+    const make=fresh=>fn(cfg,state,()=>false,()=>({spend:Infinity}),
+        ()=>false,()=>10000,()=>0,()=>({listingId:1,seenAt:Date.now()-45000}),
+        ()=>1,()=>fresh,x=>x);
+    const rule={id:'test',itemId:106,currency:'gold',buyEnabled:true,buyMax:50};
+    assert.equal(make(false)(rule),'Checking listings…');
+    assert.equal(make(true)(rule),'Eligible listing available');
+    assert.match(script,/candidate \&\& freshQuote\(candidate, false\)/);
 });

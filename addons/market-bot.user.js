@@ -1,12 +1,11 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.5.0
+// @version      0.6.0
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
-// @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/market-bot.user.js
-// @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/market-bot.user.js
+// Private repository: authenticated manual updates only; no unauthenticated raw update URLs.
 // @run-at       document-start
 // ==/UserScript==
 
@@ -15,7 +14,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.5.0');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.0');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -177,6 +176,7 @@
             orbSuspicious: 0
         },
         releaseTimers: new Map(),
+        diagnostics: null,
         lastControllerResult: null
     };
 
@@ -214,6 +214,30 @@
         "Underpriced listings and market sniper settings": "Ofertas abaixo do preço e configurações de compra no mercado",
         "Scan now": "Escanear agora",
         "Moth Watch views": "Seções do Moth Watch",
+        "Warning: this broad rule has no cumulative spending or purchase-count limit. If enabled, it may repeatedly spend the available {currency}. Continue?": "Atenção: esta regra abrangente não tem limite acumulado de gastos ou compras. Se ativada, pode gastar repetidamente o saldo em {currency}. Continuar?",
+        "Warning: enabling the master switch activates {count} broad buying rules without cumulative caps. Available balances may be spent repeatedly. Continue?": "Atenção: ativar a chave geral habilitará {count} regras abrangentes sem limites acumulados. Os saldos poderão ser gastos repetidamente. Continuar?",
+        "Activation cancelled; no settings changed.": "Ativação cancelada; nenhuma configuração alterada.",
+        "Warning: this change removes the last cumulative protection from an active broad-buying rule. Repeated orders may exhaust your balance. Continue?": "Atenção: esta alteração elimina o último limite acumulado de uma regra de compra abrangente ativa. Compras repetidas podem esgotar o saldo. Continuar?",
+        "Maximum {amount} {currency} {unit}. {pages} {risk}": "Máximo de {amount} {currency} {unit}. {pages} {risk}",
+        "per Pokémon": "por Pokémon",
+        "per unit": "por unidade",
+        "Up to three cheapest-price pages per currency when buying; not exhaustive.": "Até três páginas de menor preço por moeda para compras; não cobre todas as ofertas.",
+        "Market summary shortlists item types; detail offers are refreshed at a bounded rate.": "O resumo do mercado seleciona tipos de item; ofertas detalhadas são renovadas com cadência limitada.",
+        "Only offers of this item in the chosen currency.": "Somente ofertas deste item na moeda escolhida.",
+        "No cumulative cap: repeated purchases may exhaust available currency.": "Sem limite acumulado: compras repetidas podem esgotar o saldo.",
+        "Some cumulative spend/count limit is configured.": "Existe algum limite acumulado de gasto/quantidade configurado.",
+        "Purchase rules inspect up to three cheapest-price pages per currency, not the full market. Shiny requires Gems.": "Regras de compra consultam até três páginas de menor preço por moeda, não o mercado inteiro. Shiny exige gemas.",
+        "Buy matching Pokémon at or below the absolute listing price per Pokémon; grade and value predictions never authorize buying.": "Compre Pokémon compatíveis abaixo do teto absoluto por exemplar; nota e estimativas de valor nunca autorizam compras.",
+        "Redacted diagnostics (opt-in)": "Diagnóstico sem dados pessoais (opcional)",
+        "Disabled by default. When on, keeps only 64 schema/count samples in memory. Never records packet values, seller names, listing IDs, credentials or private settings.": "Desligado por padrão. Quando ativo, mantém somente 64 amostras de formato/contagem na memória. Não registra valores de pacotes, nomes de vendedores, IDs de anúncios, credenciais nem configurações privadas.",
+        "Copy sanitized report": "Copiar relatório anonimizado",
+        "Reset counters": "Zerar contadores",
+        "Start diagnostics": "Iniciar diagnóstico",
+        "Stop diagnostics": "Parar diagnóstico",
+        "Diagnostic packets: {count} · recent shapes: {samples} · collection: {status}": "Pacotes de diagnóstico: {count} · formatos recentes: {samples} · coleta: {status}",
+        "Sanitized report copied.": "Relatório anonimizado copiado.",
+        "Could not copy diagnostic report.": "Não foi possível copiar o relatório de diagnóstico.",
+
         "Economy & holdings": "Economia e patrimônio",
         "RMT sale eligibility: {status}": "Apto para RMT: {status}",
         "NPC resale: {status}": "Revenda NPC: {status}",
@@ -666,6 +690,7 @@
     }
 
 
+    // BEGIN MOTHWATCH RULES GENERATED
     function sanitizeRuleCaps(rule) {
         const number = key => {
             const n = Number(rule?.[key]);
@@ -739,6 +764,9 @@
 
     // Account-profile-local journal; unknown orders are retained after reload.
     // Never infer success from a send(), an inventory delta, or a timeout.
+    // END MOTHWATCH RULES GENERATED
+
+    // BEGIN MOTHWATCH ORDERS GENERATED
     function orderAccountKey() {
         // Storage keys never include the actual nickname.
         const name = normalize(state.nick || '');
@@ -943,6 +971,7 @@
                 Number.isSafeInteger(Number(candidate.ficha.potencia)) &&
                 Number(candidate.ficha.potencia) >= 1 && Number(candidate.ficha.potencia) <= 5);
     }
+    // END MOTHWATCH ORDERS GENERATED
 
     function loadConfig() {
         let saved = {};
@@ -1013,6 +1042,7 @@
         } catch {}
     }
 
+    // BEGIN MOTHWATCH TRANSPORT GENERATED
     function backgroundDelayMs() {
         const now = Date.now();
         return Math.max(
@@ -1036,7 +1066,9 @@
 
     function sendBackground(payload) {
         if (backgroundDelayMs() > 0) return false;
-        return send(payload);
+        const sent = send(payload);
+        if (sent) diagnosticOutbound(payload);
+        return sent;
     }
 
     function isRateLimitError(message) {
@@ -1061,12 +1093,14 @@
         state.itemStatus = 'rate-limit backoff';
         state.pokemonStatus = 'rate-limit backoff';
         addLog('Server rate limit · background scans paused for 15s');
+        diagnosticOutcome('rate-limit');
         queueRender();
     }
 
     function serverNow() {
         return Date.now() - Number(state.serverClockOffset || 0);
     }
+    // END MOTHWATCH TRANSPORT GENERATED
 
     function mergePlayer(snapshot, full) {
         if (!snapshot || typeof snapshot !== 'object') return;
@@ -1909,6 +1943,7 @@
         queueRender();
     }
 
+    // BEGIN MOTHWATCH PRICING GENERATED
     function levelBand(level) {
         const n = Number(level || 0);
         if (n < 100) return 'lt100';
@@ -2271,6 +2306,7 @@
         }
         return null;
     }
+    // END MOTHWATCH PRICING GENERATED
 
     function requestHistoryPage() {
         const fetch = state.historyFetch;
@@ -2714,6 +2750,7 @@
         // Rule eligibility is revalidated against the latest saved settings.
         if (config.purchasesPaused || unverifiedOrdersExist() ||
             !freshQuote(candidate, !!manual)) {
+            diagnosticOutcome('quote-rejected');
             if (manual) addLog('Stale or unverified quote · refresh listing');
             return false;
         }
@@ -2759,6 +2796,7 @@
             day: orderDay(now), status: 'prepared'
         };
         if (!reserveOrder(order)) return false;
+        diagnosticOutcome('prepared');
         state.pendingBuy = {
             order,
             listingId: candidate.listingId,
@@ -2790,6 +2828,7 @@
         }
 
         order.status = 'submitted';
+        diagnosticOutcome('submitted');
         saveOrderJournal();
         state.lastPurchaseOutcome = 'awaiting acknowledgement';
         addLog(
@@ -2964,6 +3003,7 @@
         const status = reason === 'server-confirmed' ? 'confirmed' :
             reason === 'refused' ? 'refused' : 'unknown';
         settleOrder(pending.order, status);
+        diagnosticOutcome(status);
         if (status === 'confirmed') state.candidates.delete(pending.candidateKey);
         requestItemSummary(activeAnyItemRules().length > 0);
         setTimeout(startPokemonScan, 250);
@@ -3289,8 +3329,103 @@
         return null;
     }
 
+    // BEGIN MOTHWATCH DIAGNOSTICS GENERATED
+    // Source module: src/mothwatch/diagnostics-section.js
+    // Disabled by default. No raw market data, IDs, seller names or credentials.
+    const DIAG_FAMILIES = new Set(['welcome', 'estado', 'market:vitrine',
+        'market:itens', 'market:item', 'market:historicoGlobal',
+        'market:other', 'batalha', 'erro', 'other']);
+    const DIAG_SAFE_KEYS = ['t', 'aba', 'tipo', 'moeda', 'pagina', 'itemId',
+        'linhas', 'resumo', 'medias', 'mediaDiamante', 'temMais', 'estado',
+        'mercado', 'catalogo', 'ev', 'chave', 'listingId', 'anuncioId',
+        'vendaId', 'servidorAgora'];
+    const DIAG_MAX_EVENTS = 64;
+
+    function diagnosticReset(enabled = false) {
+        state.diagnostics = {
+            enabled: !!enabled, since: Date.now(), lastAt: 0, count: 0,
+            families: {}, samples: [], outcomes: {},
+            outbound: {}, largestGapMs: 0
+        };
+        return state.diagnostics;
+    }
+
+    function diagnosticProtocol(message) {
+        const stats = state.diagnostics;
+        if (!stats?.enabled || !message || typeof message !== 'object') return;
+        const rawFamily = message.t === 'market' ?
+            'market:' + (['vitrine', 'itens', 'item', 'historicoGlobal'].includes(message.aba)
+                ? message.aba : 'other') :
+            ['welcome', 'estado', 'batalha', 'erro'].includes(message.t) ? message.t : 'other';
+        const family = DIAG_FAMILIES.has(rawFamily) ? rawFamily : 'other';
+        const now = Date.now();
+        if (stats.lastAt) stats.largestGapMs = Math.max(stats.largestGapMs, now - stats.lastAt);
+        stats.lastAt = now;
+        stats.count++;
+        stats.families[family] = (stats.families[family] || 0) + 1;
+        // Key names from a fixed allowlist, never untrusted keys or packet values.
+        const keys = DIAG_SAFE_KEYS.filter(k => Object.prototype.hasOwnProperty.call(message, k));
+        const lines = Array.isArray(message.linhas) ? message.linhas.length : null;
+        const sample = {
+            atSeconds: Math.floor((now - stats.since) / 1000),
+            family, keys, lineCount: lines,
+            empty: lines === 0
+        };
+        if (stats.samples.length >= DIAG_MAX_EVENTS) stats.samples.shift();
+        stats.samples.push(sample);
+    }
+
+    function diagnosticOutcome(label) {
+        const stats = state.diagnostics;
+        if (!stats?.enabled || !['prepared', 'submitted', 'confirmed',
+            'refused', 'unknown', 'quote-rejected', 'background-sent',
+            'rate-limit'].includes(label)) return;
+        stats.outcomes[label] = (stats.outcomes[label] || 0) + 1;
+    }
+
+    function diagnosticOutbound(payload) {
+        const stats = state.diagnostics;
+        if (!stats?.enabled || !payload || typeof payload !== 'object') return;
+        const kind = ['market.listar', 'market.item', 'market.itens',
+            'market.historicoGlobal'].includes(payload.t) ? payload.t : 'other';
+        stats.outbound[kind] = (stats.outbound[kind] || 0) + 1;
+    }
+
+    function diagnosticReport() {
+        const stats = state.diagnostics || diagnosticReset(false);
+        return {
+            format: 'mothwatch-redacted-v1',
+            generatedAt: new Date().toISOString(),
+            addonVersion: '0.6.0',
+            enabled: !!stats.enabled,
+            sessionSeconds: Math.max(0, Math.floor((Date.now() - stats.since) / 1000)),
+            inboundPackets: stats.count,
+            inboundFamilies: {...stats.families},
+            outboundKinds: {...stats.outbound},
+            purchaseOutcomes: {...stats.outcomes},
+            largestInboundGapSeconds: Math.round(stats.largestGapMs / 1000),
+            recentShapes: stats.samples.slice(-DIAG_MAX_EVENTS).map(row => ({
+                atSeconds: row.atSeconds, family: row.family,
+                keys: row.keys.slice(), lineCount: row.lineCount, empty: row.empty
+            })),
+            operationalCounts: {
+                candidates: state.candidates?.size || 0,
+                itemDetailsCached: state.itemOfferDetails?.size || 0,
+                itemRequestsQueued: state.detailQueue?.length || 0,
+                pendingOrders: state.pendingBuy ? 1 : 0,
+                unknownOrderCount: (state.orderJournal?.orders || []).filter(o => o.status === 'unknown').length
+            },
+            warnings: [
+                'Keys and counts only; never includes packet values, player identities, listing IDs or rule prices.',
+                'Runtime resource use and real purchase outcomes require owner-led verification.'
+            ]
+        };
+    }
+    // END MOTHWATCH DIAGNOSTICS GENERATED
+
     function handleProtocolObject(message, sourceSocket = null) {
         if (!message || typeof message !== 'object') return;
+        diagnosticProtocol(message);
         state.protocolMessages++;
 
         /*
@@ -3872,6 +4007,7 @@
 
     // v0.5 economic calculations are *strictly informational*. No function here
     // sends a socket packet or grants purchasing / selling authorization.
+    // BEGIN MOTHWATCH ECONOMY GENERATED
     function itemProvenance(itemId) {
         const id = Number(itemId);
         const item = Number.isSafeInteger(id) && id > 0 ? state.catalog.get(id) : null;
@@ -4177,6 +4313,7 @@
         state.economyUiCache = { stamp, at: Date.now(), html };
         return html;
     }
+    // END MOTHWATCH ECONOMY GENERATED
 
     function renderItemInventory() {
         const entries = Object.entries(state.itemSummary || {})
@@ -4740,21 +4877,81 @@
         ).join('');
     }
 
+    // Checking/confirming a newly activated broad rule changes no legacy
+    // authorization; persisted options remain exactly as configured.
+    // BEGIN MOTHWATCH RULE_SAFETY GENERATED
+    function broadRuleUnbounded(rule) {
+        if (!rule?.buyEnabled || !(Number(rule.buyMax) > 0) ||
+            !['gold', 'orb'].includes(rule.currency)) return false;
+        const currencyCaps = rule.currency === 'orb'
+            ? [config.maxGemsPerSession, config.maxGemsPerDay]
+            : [config.maxCoinsPerSession, config.maxCoinsPerDay];
+        return ![...currencyCaps, config.maxPurchasesPerSession, config.maxQuantityPerSession,
+            rule.maxSpendSession, rule.maxSpendDay,
+            rule.maxPurchasesSession, rule.maxQuantitySession]
+            .some(limit => Number.isFinite(Number(limit)) && Number(limit) > 0);
+    }
+
+    function enabledUnboundedBroadRules() {
+        return [
+            ...sanitizeAnyItemRules(config.anyItemRules),
+            ...sanitizePokemonBuyRules(config.pokemonBuyRules)
+        ].filter(broadRuleUnbounded);
+    }
+
+    function confirmUnboundedRule(rule) {
+        if (!broadRuleUnbounded(rule)) return true;
+        return window.confirm(tr('Warning: this broad rule has no cumulative spending or purchase-count limit. If enabled, it may repeatedly spend the available {currency}. Continue?', {
+            currency: tr(rule.currency === 'orb' ? 'Gems' : 'Coins')
+        }));
+    }
+
+    function confirmUnboundedMaster() {
+        const rules = enabledUnboundedBroadRules();
+        if (!rules.length) return true;
+        return window.confirm(tr('Warning: enabling the master switch activates {count} broad buying rules without cumulative caps. Available balances may be spent repeatedly. Continue?', {
+            count: rules.length
+        }));
+    }
+
+    function confirmRemovingLastBroadCap() {
+        return window.confirm(tr('Warning: this change removes the last cumulative protection from an active broad-buying rule. Repeated orders may exhaust your balance. Continue?'));
+    }
+
+    function ruleRiskSummary(rule, type) {
+        const priceType = type === 'pokemon' ? 'per Pokémon' : 'per unit';
+        const pages = type === 'pokemon'
+            ? 'Up to three cheapest-price pages per currency when buying; not exhaustive.'
+            : type === 'any'
+                ? 'Market summary shortlists item types; detail offers are refreshed at a bounded rate.'
+                : 'Only offers of this item in the chosen currency.';
+        const cap = broadRuleUnbounded(rule)
+            ? 'No cumulative cap: repeated purchases may exhaust available currency.'
+            : 'Some cumulative spend/count limit is configured.';
+        return tr('Maximum {amount} {currency} {unit}. {pages} {risk}', {
+            amount: num(rule.buyMax), currency: tr(rule.currency === 'orb' ? 'Gems' : 'Coins'),
+            unit: tr(priceType), pages: tr(pages), risk: tr(cap)
+        });
+    }
+    // END MOTHWATCH RULE_SAFETY GENERATED
+
     function fixedRuleStatus(rule) {
+        if (!rule.buyEnabled || !(rule.buyMax > 0)) return tr('Rule paused');
+        if (!config.enabled) return tr('Moth Watch disabled');
+        if (!config.fixedRulesEnabled) return tr('Enable rule-based buying above');
         if (config.purchasesPaused) return tr('Purchases paused');
         if (unverifiedOrdersExist()) return tr('Unknown purchase outcome');
         if (state.pendingBuy) return tr('Waiting for acknowledgement');
         if (remainingBudget(rule.currency, rule.id).spend < 1) return tr('Budget blocked');
-        if (!rule.buyEnabled || !(rule.buyMax > 0)) return tr('Rule paused');
-        if (!config.enabled) return tr('Moth Watch disabled');
-        if (!config.fixedRulesEnabled) return tr('Enable rule-based buying above');
         if (!state.socket || state.socket.readyState !== 1 || gameIsLoading()) return tr('Waiting for game connection');
         const spendable = Math.max(0, balanceFor(rule.currency) - reserveFor(rule.currency));
         if (spendable < 1) return tr('Insufficient spendable balance');
         const detail = state.itemOfferDetails.get(String(rule.itemId) + ':' + rule.currency);
         if (!detail || Date.now() - Number(detail.updatedAt || 0) > 45000) return tr('Checking listings…');
         const candidate = fixedRuleCandidate(rule);
-        if (candidate && purchaseQuantity(candidate) > 0) return tr('Eligible listing available');
+        if (candidate && freshQuote(candidate, false) && purchaseQuantity(candidate) > 0)
+            return tr('Eligible listing available');
+        if (candidate && !freshQuote(candidate, false)) return tr('Checking listings…');
         if (candidate) return tr('Insufficient spendable balance');
         return tr('Monitoring · no eligible listing');
     }
@@ -4844,21 +5041,23 @@
 
 
     function categoryRuleStatus(rule, type) {
+        if (!rule.buyEnabled || !(rule.buyMax > 0)) return tr('Rule paused');
+        if (!config.enabled) return tr('Moth Watch disabled');
+        if (!config.fixedRulesEnabled) return tr('Enable rule-based buying above');
         if (config.purchasesPaused) return tr('Purchases paused');
         if (unverifiedOrdersExist()) return tr('Unknown purchase outcome');
         if (state.pendingBuy) return tr('Waiting for acknowledgement');
         if (remainingBudget(rule.currency, rule.id).spend < 1) return tr('Budget blocked');
-        if (!rule.buyEnabled || !(rule.buyMax > 0)) return tr('Rule paused');
-        if (!config.enabled) return tr('Moth Watch disabled');
-        if (!config.fixedRulesEnabled) return tr('Enable rule-based buying above');
         if (!state.socket || state.socket.readyState !== 1 || gameIsLoading()) return tr('Waiting for game connection');
         if (balanceFor(rule.currency) - reserveFor(rule.currency) < 1) return tr('Insufficient spendable balance');
         if (type === 'any') {
             const candidate = anyItemRuleCandidate(rule, anyItemRuleTargets([rule]));
-            return tr(candidate && purchaseQuantity(candidate) > 0 ? 'Eligible listing available' : 'Checking listings…');
+            return tr(candidate && freshQuote(candidate, false) && purchaseQuantity(candidate) > 0
+                ? 'Eligible listing available' : 'Checking listings…');
         }
         const candidate = pokemonRuleCandidate(rule);
-        return tr(candidate && purchaseQuantity(candidate) > 0 ? 'Eligible listing available' : 'Monitoring · no eligible listing');
+        return tr(candidate && freshQuote(candidate, false) && purchaseQuantity(candidate) > 0
+            ? 'Eligible listing available' : candidate ? 'Checking listings…' : 'Monitoring · no eligible listing');
     }
 
     function categoryRulesHtml(type) {
@@ -4879,6 +5078,7 @@
                 ruleNumber('Buy at or below', 'data-moth-' + type + '-field="buyMax" data-rule-id="' + id + '"', rule.buyMax) +
                 ruleCurrency('data-moth-' + type + '-field="currency" data-rule-id="' + id + '"', rule.currency) +
                 ruleCapsHtml(type, rule) +
+                '<p class="moth-mw-rule-hint">' + escapeHtml(ruleRiskSummary(rule, type)) + '</p>' +
                 '</section></div><div class="moth-mw-rule-card-foot"><span>' +
                 escapeHtml(tr(pokemon ? 'Price per Pokémon' : 'Price per unit')) +
                 '</span><button type="button" class="moth-mw-btn danger" data-moth-remove-' + type + '="' + id + '">' +
@@ -4886,7 +5086,7 @@
         }).join('');
         const label = pokemon ? 'Pokémon purchase rules' : 'Any item rules';
         const help = pokemon
-            ? 'These rules scan the first market page per currency. Shiny requires Gems.'
+            ? 'Purchase rules inspect up to three cheapest-price pages per currency, not the full market. Shiny requires Gems.'
             : 'Any-item rules inspect current offers selectively; large catalogs can take time.';
         const controls = pokemon ? '<label class="moth-mw-rule-field"><span>' +
             escapeHtml(tr('Pokémon category')) + '</span><select id="moth-pokemon-kind">' +
@@ -4902,7 +5102,7 @@
             ruleNumber('Buy at or below', 'id="moth-' + type + '-buy"', 0) +
             '</div><p class="moth-mw-rule-hint">' +
             escapeHtml(tr(pokemon
-                ? 'Buy matching Pokémon at or below the listed price; no valuation reference required.'
+                ? 'Buy matching Pokémon at or below the absolute listing price per Pokémon; grade and value predictions never authorize buying.'
                 : 'Buy any item at or below this price per unit.')) +
             '</p><button type="button" class="moth-mw-btn primary" id="moth-add-' + type + '-rule">' +
             escapeHtml(tr(pokemon ? 'Add Pokémon rule' : 'Add any-item rule')) +
@@ -5056,7 +5256,17 @@
                     '<div class="moth-mw-reference-tools" id="moth-mw-reference-tools"></div>' +
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Recent activity')) + '</h4><span>' +
                     escapeHtml(tr('Purchase attempts, confirmations, and errors.')) + '</span></div>' +
-                    '<div class="moth-mw-log" id="moth-mw-activity-log"></div>';
+                    '<div class="moth-mw-log" id="moth-mw-activity-log"></div>' +
+                    '<section class="moth-mw-automation-block"><h4>' + escapeHtml(tr('Redacted diagnostics (opt-in)')) + '</h4>' +
+                    '<p class="moth-mw-rule-hint">' +
+                    escapeHtml(tr('Disabled by default. When on, keeps only 64 schema/count samples in memory. Never records packet values, seller names, listing IDs, credentials or private settings.')) +
+                    '</p><div class="moth-mw-rule-add-actions">' +
+                    '<button type="button" class="moth-mw-btn" id="moth-mw-diagnostics-toggle"></button>' +
+                    '<button type="button" class="moth-mw-btn" id="moth-mw-diagnostics-copy">' +
+                    escapeHtml(tr('Copy sanitized report')) + '</button>' +
+                    '<button type="button" class="moth-mw-btn" id="moth-mw-diagnostics-reset">' +
+                    escapeHtml(tr('Reset counters')) + '</button></div>' +
+                    '<p id="moth-mw-diagnostics-summary" class="moth-mw-rule-hint"></p></section>';
             }
             if (state.watchView === 'automation') content.dataset.settingsSignature = settingsSignature;
         }
@@ -5110,6 +5320,15 @@
                 '<div>' + new Date(row.at).toLocaleTimeString(currentLocale()) + ' · ' + escapeHtml(translateLog(row.text)) + '</div>').join('') :
                 '<div>' + escapeHtml(tr('No purchase attempts recorded this session.')) + '</div>';
             if (log && log.innerHTML !== logHtml) log.innerHTML = logHtml;
+            const diagButton = q('#moth-mw-diagnostics-toggle', content);
+            if (diagButton) diagButton.textContent = tr(state.diagnostics?.enabled
+                ? 'Stop diagnostics' : 'Start diagnostics');
+            const diagText = q('#moth-mw-diagnostics-summary', content);
+            if (diagText) diagText.textContent = tr('Diagnostic packets: {count} · recent shapes: {samples} · collection: {status}', {
+                count: num(state.diagnostics?.count || 0),
+                samples: num(state.diagnostics?.samples?.length || 0),
+                status: tr(state.diagnostics?.enabled ? 'ON' : 'OFF')
+            });
         }
     }
 
@@ -5172,6 +5391,20 @@
                 state.economyNotice = tr('Seller fee estimate updated.');
                 renderWatch(true); return;
             }
+            if (target.closest('#moth-mw-diagnostics-toggle')) {
+                diagnosticReset(!state.diagnostics?.enabled);
+                renderWatch(); return;
+            }
+            if (target.closest('#moth-mw-diagnostics-reset')) {
+                diagnosticReset(!!state.diagnostics?.enabled);
+                renderWatch(); return;
+            }
+            if (target.closest('#moth-mw-diagnostics-copy')) {
+                void copyText(JSON.stringify(diagnosticReport(), null, 2)).then(ok => {
+                    setAutomationNotice(tr(ok ? 'Sanitized report copied.' : 'Could not copy diagnostic report.'), ok ? 'ok' : 'warn');
+                });
+                return;
+            }
             if (target.closest('#moth-mw-scan')) { runScan(true); return; }
             if (target.closest('#moth-mw-refresh-baseline')) {
                 state.forceBaselineNext = true;
@@ -5210,6 +5443,9 @@
                 }
                 const rule = {id: newAutomationRuleId(type), currency, buyMax, buyEnabled: true};
                 if (pokemon) rule.kind = kind;
+                if (config.fixedRulesEnabled && !confirmUnboundedRule(rule)) {
+                    setAutomationNotice(tr('Activation cancelled; no settings changed.'), 'warn'); return;
+                }
                 rules.push(rule);
                 config[key] = rules; saveConfig();
                 setAutomationNotice(tr(config.fixedRulesEnabled ? 'Rule added: {name}.' :
@@ -5328,6 +5564,7 @@
                 const sanitize = type === 'any' ? sanitizeAnyItemRules : sanitizePokemonBuyRules;
                 const rules = sanitize(config[key]), rule = rules.find(r => r.id === target.dataset.ruleId);
                 if (!rule) return;
+                const previouslyUnbounded = broadRuleUnbounded(rule);
                 const field = target.getAttribute(attr);
                 if (['maxSpendSession', 'maxSpendDay', 'maxPurchasesSession', 'maxQuantitySession'].includes(field)) {
                     const cap = Number(target.value);
@@ -5340,7 +5577,14 @@
                         renderWatch(true); return;
                     }
                     rule.buyMax = max;
-                } else if (field === 'buyEnabled') rule.buyEnabled = target.checked;
+                } else if (field === 'buyEnabled') {
+                    if (target.checked && !rule.buyEnabled &&
+                        config.fixedRulesEnabled && !confirmUnboundedRule({...rule, buyEnabled: true})) {
+                        setAutomationNotice(tr('Activation cancelled; no settings changed.'), 'warn');
+                        renderWatch(true); return;
+                    }
+                    rule.buyEnabled = target.checked;
+                }
                 else if (field === 'currency') {
                     const currency = target.value === 'orb' ? 'orb' : 'gold';
                     if (type === 'pokemon' && rule.kind === 'shiny' && currency !== 'orb') {
@@ -5354,6 +5598,11 @@
                     }
                     rule.currency = currency;
                 } else return;
+                if (config.fixedRulesEnabled && !previouslyUnbounded &&
+                    broadRuleUnbounded(rule) && !confirmRemovingLastBroadCap()) {
+                    setAutomationNotice(tr('Activation cancelled; no settings changed.'), 'warn');
+                    renderWatch(true); return;
+                }
                 config[key] = rules; saveConfig(); renderWatch(true); return;
             }
             if (target.matches('#moth-pokemon-kind')) {
@@ -5389,7 +5638,23 @@
             if (target.matches('[data-moth-cfg]')) {
                 const key = target.dataset.mothCfg;
                 if (!(key in DEFAULTS)) return;
-                config[key] = target.type === 'checkbox' ? target.checked : normalizedConfigValue(key, target.value);
+                const nextValue = target.type === 'checkbox' ? target.checked :
+                    normalizedConfigValue(key, target.value);
+                if (key === 'fixedRulesEnabled' && nextValue && !config.fixedRulesEnabled &&
+                    !confirmUnboundedMaster()) {
+                    setAutomationNotice(tr('Activation cancelled; no settings changed.'), 'warn');
+                    renderWatch(true); return;
+                }
+                const oldUnboundedCount = enabledUnboundedBroadRules().length;
+                const oldValue = config[key];
+                config[key] = nextValue;
+                if (config.fixedRulesEnabled && !oldUnboundedCount &&
+                    enabledUnboundedBroadRules().length > 0 &&
+                    key !== 'fixedRulesEnabled' && !confirmRemovingLastBroadCap()) {
+                    config[key] = oldValue;
+                    setAutomationNotice(tr('Activation cancelled; no settings changed.'), 'warn');
+                    renderWatch(true); return;
+                }
                 if (target.matches('input[type="range"]')) {
                     const output = q('[data-moth-cfg-value="' + key + '"]', panel);
                     if (output) output.textContent = config[key] + '%';
@@ -5824,6 +6089,7 @@
     };
 
     function bootstrap() {
+        diagnosticReset(false);
         try {
             document.documentElement?.setAttribute(
                 'data-moth-watch-ready',
