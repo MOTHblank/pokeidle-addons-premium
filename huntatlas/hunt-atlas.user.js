@@ -437,6 +437,7 @@
             'catch.diamondCost': 'Beast requires Diamonds; no Coin cost assumed',
             'catch.stock': 'Stock: {count} · coverage at observed throw rate: {hours}h',
             'catch.observed': 'Observed: {throws} accepted throws, {caught} captures, {seen} shiny seen, {shiny} shiny caught; {fraction}% of killed corpses thrown at',
+            'catch.observedBall': 'Selected ball: {throws} accepted · {caught} confirmed captures (small samples are noisy)',
             'catch.limit': 'Cross-hunt estimate is an upper bound IF every killed body gets one accepted throw. Current-hunt observed throws replace that assumption only after a usable sample. No free retries after failed throws.',
             'catch.source': 'Wiki-conditional model, unverified server capture formula or active boosts · model coverage {coverage}% · {source}',
             'catch.shiny': 'Shiny is rolled per eligible accepted throw (1/24,000 base; 1/12,000 with applicable Lure), NOT per kill. Caught shiny needs both rolls to succeed. No guarantee or saleable specimen implied.',
@@ -722,6 +723,7 @@
             'catch.diamondCost': 'Beast usa Diamantes; sem inventar custo em Moedas',
             'catch.stock': 'Estoque: {count} · duração no ritmo observado: {hours}h',
             'catch.observed': 'Observado: {throws} bolas aceitas, {caught} capturas, {seen} shinies vistos, {shiny} shinies capturados; {fraction}% dos corpos derrotados receberam bola',
+            'catch.observedBall': 'Bola selecionada: {throws} aceitas · {caught} capturas confirmadas (amostras pequenas oscilam)',
             'catch.limit': 'Outras hunts: previsão é TETO condicional a arremessar uma bola aceita em todo corpo derrotado. Na hunt atual, o ritmo observado substitui essa hipótese apenas após amostra suficiente. Sem repetição grátis após falha.',
             'catch.source': 'Modelo condicional da wiki, fórmula real/bônus ativos não verificados · cobertura {coverage}% · {source}',
             'catch.shiny': 'O shiny é sorteado por arremesso aceito elegível (1/24.000 normal; 1/12.000 com Lure aplicável), NÃO por abate. Capturar shiny exige sucesso em ambos os sorteios. Sem garantia de drop ou Pokémon vendável.',
@@ -3008,6 +3010,7 @@
                 return false;
             }
             corpse.thrown = true;
+            corpse.ballId=receipt.itemId;
             ledger.totals.acceptedThrows++;
             if (receipt.shinySeen) ledger.totals.shinySeen++;
         } else if (kind === 'capturado') {
@@ -3191,7 +3194,7 @@
         if(!row||row.bucket!==bucket){
             row={at,bucket,kills:0,throws:0,captures:0,shinySeen:0,
                 shinyCaught:0,shinySeenKnown:0,shinyCaughtKnown:0,
-                byBall:{},bySpecies:{}};
+                byBall:{},byBallCaught:{},bySpecies:{}};
             rows.push(row);
         }
         const kind=receipt.kind;
@@ -3206,6 +3209,10 @@
         }
         if(kind==='capturado'){
             row.captures++;
+            if(Number.isInteger(receipt.confirmedBallId) &&
+                receipt.confirmedBallId>=1&&receipt.confirmedBallId<=5)
+                row.byBallCaught[receipt.confirmedBallId]=
+                    (row.byBallCaught[receipt.confirmedBallId]||0)+1;
             if(receipt.shinyCaught!==null)row.shinyCaughtKnown++;
             if(receipt.shinyCaught===true)row.shinyCaught++;
         }
@@ -3226,10 +3233,12 @@
         if(!window||!(now>start)||now-window.lastAt>120000)return null;
         const rows=window.rows.filter(row=>row.at>=start-30000&&row.at<=now);
         const sum=key=>rows.reduce((n,row)=>n+row[key],0);
-        const byBall={},bySpecies={};
+        const byBall={},byBallCaught={},bySpecies={};
         for(const row of rows){
             for(const [id,count] of Object.entries(row.byBall))
                 byBall[id]=(byBall[id]||0)+count;
+            for(const [id,count] of Object.entries(row.byBallCaught))
+                byBallCaught[id]=(byBallCaught[id]||0)+count;
             for(const [id,counts] of Object.entries(row.bySpecies)){
                 const target=bySpecies[id]??{kills:0,throws:0,captures:0};
                 for(const key of ['kills','throws','captures'])
@@ -3249,7 +3258,8 @@
             throwsH:throws/hours,capturesH:sum('captures')/hours,
             windowMs:now-start,
             targetableFraction:throws/kills,
-            byBall,bySpecies,source:'observed-server/accepted-correlated'};
+            byBall,byBallCaught,bySpecies,
+            source:'observed-server/accepted-correlated'};
     }
     function captureHuntChance(hunt,rarities,efficiency,mix=null) {
         if(!Array.isArray(hunt?.especies)||!hunt.especies.length)
@@ -6165,7 +6175,10 @@
         const record=performanceRecord(state.currentHuntSlug,true);
         if(!record)return;
         const species=state.farmingLedger.slots.get(receipt.slot)?.speciesId;
-        record.captureWindow=captureAppend(record.captureWindow,receipt,at,species);
+        const tracked=receipt.kind==='capturado'?
+            {...receipt,confirmedBallId:state.farmingLedger.slots.get(
+                receipt.slot)?.ballId??null}:receipt;
+        record.captureWindow=captureAppend(record.captureWindow,tracked,at,species);
         if(receipt.kind==='bola' && receipt.chanceRaw!==null){
             const evidence=state.captureChanceEvidence;
             evidence.seen++;
@@ -12647,6 +12660,11 @@
                     hours:chosen.stockHours===null?'—':
                         rate(chosen.stockHours)}),
                     chosen.observed?'observed usage':'usage unknown'):'',
+            observedCapture?.byBall?.[activeCaptureId] ?
+                captureLine(tr('catch.observedBall',{
+                    throws:observedCapture.byBall[activeCaptureId],
+                    caught:observedCapture.byBallCaught[activeCaptureId]??0
+                }),tr('econ.observed')):'',
             observedCapture ?
                 captureLine(tr('catch.observed',{
                     throws:observedCapture.throws,
