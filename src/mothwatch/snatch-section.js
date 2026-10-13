@@ -165,6 +165,7 @@
 
     function snatchMark(kind, currency, id, itemId = 0) {
         const key = snatchKey(kind,currency,id);
+        if (!state.orderJournal?.accountKey || !config.enabled) return false;
         if (state.snatchManual.has(key)) {
             state.snatchManual.delete(key);
             snatchSave(); snatchSchedule(); queueRender(); return true;
@@ -297,7 +298,7 @@
             if ((state.snatchManual.has(snatchKey(entry.candidate.kind,
                     entry.candidate.currency,entry.candidate.listingId)) ||
                 activeRuleById(entry.ruleId)) &&
-                entry.releaseAt > 0 && entry.releaseAt-now < 1500 &&
+                entry.releaseAt > 0 && entry.releaseAt-now < 3200 &&
                 entry.releaseAt-now > -10000 &&
                 (!state.pendingBuy || state.pendingBuy.listingId === entry.candidate.listingId)) return true;
         }
