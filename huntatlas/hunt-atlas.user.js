@@ -407,8 +407,6 @@
             'xp.sectionTitle': 'XP/hour recommendations',
             'xp.sectionSubtitle': 'Best hunt for {lead} within the current filters.',
             'xp.best': 'Best: {hunt}',
-            'xp.showTopFive': 'Show top 5',
-            'xp.hideTopFive': 'Hide top 5',
             'xp.topFiveTitle': 'Top 5 hunts by trainer XP/hour',
             'xp.measuredTrainer': 'measured {value} trainer XP/h',
             'xp.modeledTrainer': 'modeled {value} trainer XP/h',
@@ -453,9 +451,7 @@
             'catch.shinyMean': 'Mean wait for shiny caught: {hours} · ≈{throws} accepted attempts/shiny caught',
             'sort.npcLoot': 'NPC loot EV/hour (not cash)',
             'sort.rare': 'Selected rare item rate',
-            'rank.heading': 'Hunt recommendations by {metric}',
             'rank.topFive': 'Top 5 by {metric}',
-            'rank.best': 'Best for {metric}: {hunt}',
             'rank.noEvidence': 'No comparable estimate for this metric under the current filters.',
             'rank.rareLabel': 'Rare item for comparison',
             'rank.value': '{value} · {source}',
@@ -727,8 +723,6 @@
             'xp.sectionTitle': 'Recomendações de XP/hora',
             'xp.sectionSubtitle': 'Melhor hunt para {lead} dentro dos filtros atuais.',
             'xp.best': 'Melhor: {hunt}',
-            'xp.showTopFive': 'Ver top 5',
-            'xp.hideTopFive': 'Ocultar top 5',
             'xp.topFiveTitle': 'Top 5 hunts por XP de treinador/hora',
             'xp.measuredTrainer': 'medido {value} XP de treinador/h',
             'xp.modeledTrainer': 'modelado {value} XP de treinador/h',
@@ -773,9 +767,7 @@
             'catch.shinyMean': 'Espera média por shiny capturado: {hours} · ≈{throws} bolas aceitas/shiny capturado',
             'sort.npcLoot': 'EV de loot NPC/h (não é dinheiro recebido)',
             'sort.rare': 'Frequência do item raro escolhido',
-            'rank.heading': 'Melhores hunts por {metric}',
             'rank.topFive': 'Top 5 por {metric}',
-            'rank.best': 'Melhor para {metric}: {hunt}',
             'rank.noEvidence': 'Nenhuma previsão comparável nesta métrica com os filtros atuais.',
             'rank.rareLabel': 'Item raro para comparar',
             'rank.value': '{value} · {source}',
@@ -1177,7 +1169,6 @@
         resultLimit: 120,
         filtersExpanded: null,
         searchRenderTimer: null,
-        xpDetailsOpen: false,
         diagnosticsEnabled: false,
         openHuntDetails:new Set(),
         lastDrawerRenderAt: 0,
@@ -9870,49 +9861,15 @@
                 white-space: nowrap;
             }
 
-            .mha-xp-primary {
-                display: grid;
-                grid-template-columns: minmax(0,1fr) auto auto;
-                gap: 6px;
-                align-items: center;
-            }
-
-            .mha-xp-primary-main {
-                min-width: 0;
-            }
-
-            .mha-xp-primary-main strong {
-                display: block;
-                overflow: hidden;
-                color: #e8e1e4;
-                font-size: 10px;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-            }
-
-            .mha-xp-primary-main span,
             .mha-xp-note {
                 color: #9e9398;
                 font-size: 8px;
-            }
-
-            .mha-xp-toggle {
-                border: 0;
-                background: transparent;
-                color: #a9d2ff;
-                cursor: pointer;
-                font: inherit;
-                font-size: 9px;
             }
 
             .mha-xp-details {
                 margin-top: 6px;
                 padding-top: 6px;
                 border-top: 1px solid rgba(255,255,255,.07);
-            }
-
-            .mha-xp-details[hidden] {
-                display: none;
             }
 
             .mha-xp-list-title {
@@ -10309,11 +10266,7 @@
                 overflow-x: hidden;
                 scrollbar-gutter: stable;
             }
-            .mha-xp-primary-main strong {
-                font-size: 11px;
-            }
-            .mha-xp-primary-main span, .mha-best-name,
-            .mha-xp-value { font-size: 10px; }
+            .mha-best-name, .mha-xp-value { font-size: 10px; }
             /* Keep the Top 5 action visible even with long source strings. */
             .mha-best-row { min-width: 0; }
             .mha-best-row .mha-xp-value {
@@ -10324,11 +10277,6 @@
             }
             .mha-best-row .mha-best-name {
                 min-width: 0;
-                overflow-wrap: anywhere;
-            }
-            .mha-xp-primary-main span {
-                display: block;
-                white-space: normal;
                 overflow-wrap: anywhere;
             }
             .mha-xp-summary [data-mha-more] .mha-xp-note {
@@ -10367,7 +10315,7 @@
                 overflow-y: auto;
                 overflow-x: hidden;
             }
-            .mha-xp-toggle, .mha-xp-summary button,
+            .mha-xp-summary button,
             .mha-xp-summary select { min-height: 30px; }
             .mha-outland-quick {
                 display: flex;
@@ -10466,16 +10414,6 @@
 
                 .mha-body {
                     padding: 7px;
-                }
-
-                .mha-xp-primary {
-                    grid-template-columns: minmax(0,1fr) auto;
-                }
-
-                .mha-xp-toggle {
-                    grid-column: 1 / -1;
-                    justify-self: start;
-                    padding: 0;
                 }
 
                 #mha-native-credit {
@@ -12174,7 +12112,7 @@
                             );
 
                         return `
-                            <div class="mha-best-row">
+                            <div class="mha-best-row" role="listitem">
                                 <span class="mha-best-rank">${index + 1}</span>
                                 <span class="mha-best-name">${escapeHtml(row.hunt.nome || row.hunt.slug)} · ${escapeHtml(
                                     tr(
@@ -12234,13 +12172,6 @@
                     }
                 )
                 .join('');
-
-        const bestHere =
-            best?.hunt?.slug
-                ? isHuntHere(
-                    best.hunt.slug
-                )
-                : false;
 
         const economicHunt = current || best?.hunt || null;
         const economic = economicHunt ? huntEconomyEstimate(economicHunt,
@@ -12610,7 +12541,7 @@
             <div class="mha-xp-heading">
                 <strong>${escapeHtml(
                     tr(
-                        'rank.heading',{metric:objectiveLabel}
+                        'rank.topFive',{metric:objectiveLabel}
                     )
                 )}</strong>
                 <span>${escapeHtml(
@@ -12623,89 +12554,19 @@
             ${rareChoiceHtml}
             ${quickOutlandHtml}
             ${ballSortHtml}
-            <div class="mha-xp-primary">
-                <div class="mha-xp-primary-main">
-                    <strong>${best
-                        ? escapeHtml(
-                            tr(
-                                'rank.best',
-                                {
-                                    hunt:best.hunt.nome||best.hunt.slug,
-                                    metric:objectiveLabel
-                                }
-                            )
-                        ) +
-                          ' · ' +
-                          escapeHtml(
-                              tr(
-                                  'hunt.level',
-                                  {
-                                      level:
-                                          Number(
-                                              best.hunt.nivel ||
-                                              0
-                                          )
-                                  }
-                              )
-                          )
-                        : escapeHtml(
-                            tr(
-                                'rank.noEvidence'
-                            )
-                        )}</strong>
-                    <span>${best
-                        ? escapeHtml(
-                            tr(
-                                'rank.value',{
-                                    value:formatObjectiveValue(best.score,objective,currentLocale()==='pt-BR'),
-                                    source:best.source||tr('rank.unknown')
-                                }
-                            )
-                        ) + (best.target ? ' · '+escapeHtml(best.target):'')+
-                            (objective==='xp'&&best.xp.incomplete?
-                                ' · '+escapeHtml(tr('xp.incompleteShort',{
-                                    percentage:best.xp.coverage})): '')
-                        : ''}</span>
-                </div>
+            <section class="mha-xp-details" id="mha-best-results"
+                aria-label="${escapeHtml(tr('rank.topFive',{metric:objectiveLabel}))}">
 
-                ${best ? `
-                    <button
-                        type="button"
-                        class="mha-go ${bestHere ? 'current' : ''}"
-                        data-mha-best-go="${escapeHtml(best.hunt.slug)}"
-                        ${bestHere ? 'disabled' : ''}
-                    >${tr(
-                        bestHere
-                            ? 'hunt.here'
-                            : 'hunt.go'
-                    )}</button>
-                ` : ''}
-
-                <button type="button" class="mha-xp-toggle"
-                    data-mha-xp-toggle aria-controls="mha-best-results"
-                    aria-expanded="${state.xpDetailsOpen?'true':'false'}">
-                    ${tr(
-                        state.xpDetailsOpen
-                            ? 'xp.hideTopFive'
-                            : 'xp.showTopFive'
-                    )}
-                </button>
-            </div>
-
-            <div class="mha-xp-details" id="mha-best-results"
-                ${state.xpDetailsOpen ? '' : 'hidden'}>
-                <div class="mha-xp-list-title">
-                    ${escapeHtml(
-                        tr(
-                            'rank.topFive',{metric:objectiveLabel}
-                        )
-                    )}
-                </div>
-
-                <div class="mha-best-list">
+                <div class="mha-best-list" role="list">
                     ${bestRows}
                 </div>
+                ${bestRows ? '' :
+                    '<div class="mha-xp-note" role="status">'+
+                    escapeHtml(tr('rank.noEvidence'))+'</div>'}
 
+            </section>
+            <details data-mha-more ${state.filters.detailOpen?'open':''}>
+                <summary>${escapeHtml(tr('rank.details'))}</summary>
                 <div class="mha-xp-note">
                     ${escapeHtml(leadText)}
                     · ${escapeHtml(calibrationText)}
@@ -12745,9 +12606,6 @@
                         )
                     )}
                 </div>
-            </div>
-            <details data-mha-more ${state.filters.detailOpen?'open':''}>
-                <summary>${escapeHtml(tr('rank.details'))}</summary>
                 ${captureHtml}
                 ${economyHtml}
                 ${rareHtml}
@@ -12872,25 +12730,6 @@
             requestOutlandTier(state.filters.outlandPreviewTier);
             renderXpSummary(drawer,results);
         });
-
-        const detailsToggle =
-            q(
-                '[data-mha-xp-toggle]',
-                host
-            );
-
-        detailsToggle?.addEventListener(
-            'click',
-            () => {
-                state.xpDetailsOpen =
-                    !state.xpDetailsOpen;
-
-                renderXpSummary(
-                    drawer,
-                    results
-                );
-            }
-        );
 
         for (
             const button of
