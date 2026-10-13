@@ -305,6 +305,7 @@
     function processItemListingPayload(itemId, currency, lines) {
         const detailKey = String(itemId) + ':' + currency;
         const offers = Array.isArray(lines) ? lines.slice(0, 120) : [];
+        snatchConfirmItemListingSet(itemId,currency,offers);
         const explicitlyLoaded = state.loadedItemKeys.has(detailKey);
         const selected = state.selectedItemFocus?.key === detailKey;
         const neededForRecommendation = state.sellRecommendationKey === detailKey;
