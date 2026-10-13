@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/huntatlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.3
+// @version      1.9.4
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.3');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.4');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -418,6 +418,8 @@
             'xp.recommendationNote': '{lead} · recommendations respect the current Atlas filters.',
             'xp.currentMeasured': ' · current measured {value} trainer XP/h',
             'xp.currentModeled': ' · current modeled {value} trainer XP/h',
+            'xp.warmingSession': 'warming up: sustained observations still insufficient',
+            'xp.sessionEvidence': '{samples} kills / {minutes} min, wall-clock',
             'xp.modelNote': ' · exact upstream XP curve; real combat samples take priority over experimental move-index estimates.',
             'xp.possibleMoves': '{count} level-eligible indexed moves (not confirmed equipped)',
             'xp.knownMoves': '{count} named moves confirmed by battle events',
@@ -618,6 +620,8 @@
             'xp.recommendationNote': '{lead} · recomendações respeitam os filtros atuais do Atlas.',
             'xp.currentMeasured': ' · atual medido {value} XP de treinador/h',
             'xp.currentModeled': ' · atual modelado {value} XP de treinador/h',
+            'xp.warmingSession': 'aquecendo: ainda faltam medições sustentadas',
+            'xp.sessionEvidence': '{samples} abates / {minutes} min, tempo corrido',
             'xp.modelNote': ' · curva oficial de XP; amostras reais de combate têm prioridade sobre estimativas experimentais do índice de golpes.',
             'xp.possibleMoves': '{count} golpes possíveis neste nível (não confirmados como equipados)',
             'xp.knownMoves': '{count} golpes identificados nos eventos de combate',
@@ -841,6 +845,10 @@
         loadMarketCache();
 
     const state = {
+        rateGeneration: 1,
+        farmingSessionToken: Math.random().toString(36).slice(2),
+        farmingLedger: makeFarmingLedger(),
+        farmingSnapshot: {},
         hunts: [],
         playerLevel: 0,
         currentHuntSlug: null,
@@ -1545,6 +1553,12 @@
         );
     }
 
+    function farmingSnapshotScope() {
+        return [state.farmingSnapshot.outlandTier ?? '?',
+            state.farmingSnapshot.catalogRevision ?? '?',
+            state.farmingSnapshot.boostSignature ?? '?'].join('|');
+    }
+
     function performanceKey(
         huntSlug,
         pokemon =
@@ -1563,9 +1577,11 @@
         }
 
         return (
-            huntSlug +
-            '|' +
-            signature
+            huntSlug + '|' + signature + '|session:' +
+            state.farmingSessionToken + ':' + state.rateGeneration +
+            '|tier:' + (state.farmingSnapshot.outlandTier ?? '?') +
+            '|catalog:' + (state.farmingSnapshot.catalogRevision ?? '?') +
+            '|boost:' + (state.farmingSnapshot.boostSignature ?? '?')
         );
     }
 
@@ -1574,7 +1590,11 @@
         pokemon
     ) {
         return {
-            version: 4,
+            version: 5,
+            rateGeneration: state.rateGeneration,
+            sessionToken: state.farmingSessionToken,
+            snapshotScope: farmingSnapshotScope(),
+            rateWindow: null,
             huntSlug,
             signature:
                 leadSignature(
@@ -1856,36 +1876,8 @@
     /*
      * Exact upstream XP curve from shared/sell-value.mjs.
      */
-    function xpDoNivel(
-        level
-    ) {
-        const n =
-            Math.max(
-                1,
-                Number(level) ||
-                1
-            );
-
-        if (n <= 150) {
-            return (
-                Math.floor(
-                    6 *
-                        n *
-                        n /
-                        10
-                ) +
-                8
-            );
-        }
-
-        return Math.round(
-            13500 *
-                Math.pow(
-                    n /
-                        150,
-                    1.25
-                )
-        );
+    function xpDoNivel(level) {
+        return farmingXpForLevel(level);
     }
 
     function goldValueAtLevel(
@@ -2149,6 +2141,8 @@
                 event?.maxHp ??
                 event?.hp
             );
+
+        farmingSpawn(state.farmingLedger, slot);
 
         state.combatTargets.set(
             slot,
@@ -2550,15 +2544,326 @@
         }
     }
 
+
+    // HA MILESTONE A PURE BEGIN. Local, bounded and dependency-free farming math.
+    const FARM_OUTLAND_TIERS = Object.freeze([
+        [150, 1], [500, 1.25], [1000, 1.5], [2000, 2],
+        [4000, 3], [8000, 4], [16000, 6], [25000, 8]
+    ]);
+    const FARM_SHINY_LEVELS = Object.freeze([
+        5000, 5400, 5900, 6400, 6950, 8000, 8600,
+        10000, 11250, 12750, 14350, 16000, 20000, 21200,
+        25000, 27050, 29450, 32000, 34650, 43100,
+        50000, 58900, 64000, 69300, 86150, 100000,
+        114800, 123350, 132200, 160300
+    ]);
+    const FARM_RATE_WINDOW_MS = 15 * 60 * 1000;
+    const FARM_STALE_MS = 2 * 60 * 1000;
+    const FARM_MIN_WINDOW_MS = 60 * 1000;
+    const FARM_MIN_KILLS = 6;
+
+    function farmingXpForLevel(level) {
+        const n = Math.max(1, Number(level) || 1);
+        return n <= 150
+            ? Math.floor(0.6 * n * n) + 8
+            : Math.round(13500 * Math.pow(n / 150, 1.25));
+    }
+
+    function farmingGoldForLevel(level) {
+        const n = Math.min(25000, Math.max(1, Number(level) || 1));
+        const exponent = Math.log(6000 / 36) / Math.log(5000);
+        return Math.round(36 * Math.pow(n, exponent));
+    }
+
+    function farmingLootChance(encoded) {
+        const n = Number(encoded);
+        return Number.isFinite(n) && n >= 0 && n <= 100000
+            ? n / 100000 : null;
+    }
+
+    function farmingTier(tier, playerLevel) {
+        const n = Number(tier), level = Number(playerLevel);
+        if (!Number.isInteger(n) || n < 1 || n > 8 ||
+            !Number.isFinite(level) || level < FARM_OUTLAND_TIERS[n - 1][0]) {
+            return null;
+        }
+        return {tier: n, requiredLevel: FARM_OUTLAND_TIERS[n - 1][0],
+            rareMultiplier: FARM_OUTLAND_TIERS[n - 1][1]};
+    }
+
+    function farmingShinyEggChance(level, outland = false) {
+        if (outland || !Number.isFinite(Number(level))) return 0;
+        const n = Number(level);
+        const steps = FARM_SHINY_LEVELS.filter(value => n >= value).length;
+        // Integer decimal steps prevent cumulative binary rounding drift.
+        return steps ? (375 + (steps - 1) * 15) / 10000000 : 0;
+    }
+
+    function farmingChanceAtLeastOne(probability, rolls) {
+        const p = Number(probability), n = Number(rolls);
+        if (!(p >= 0 && p <= 1) || !(n >= 0 && Number.isFinite(n))) return null;
+        if (n === 0 || p === 0) return 0;
+        if (p === 1) return 1;
+        return -Math.expm1(n * Math.log1p(-p));
+    }
+
+    function farmingConfidence(sampleCount, elapsedMs, stale) {
+        if (stale) return 'stale';
+        if (sampleCount < FARM_MIN_KILLS || elapsedMs < FARM_MIN_WINDOW_MS)
+            return 'warming';
+        return sampleCount >= 30 && elapsedMs >= 5 * 60000 ? 'high' : 'medium';
+    }
+
+    const farmingFinite = value =>
+        (value !== null && value !== undefined && value !== '' &&
+        Number.isFinite(Number(value)) && Number(value) >= 0)
+            ? Number(value) : null;
+
+    function normalizeFarmingEvent(event) {
+        if (!event || typeof event !== 'object' || Array.isArray(event) ||
+            typeof event.k !== 'string') return null;
+        const kind = event.k;
+        const supported = ['morte', 'bola', 'capturado', 'cura', 'revive',
+            'bossMorto', 'compra'];
+        if (!supported.includes(kind)) return null;
+        if (kind === 'morte' && event.quem !== 'selvagem') return null;
+        const rawSlot = event.slot ?? event.s;
+        const slot = (typeof rawSlot === 'string' || typeof rawSlot === 'number') &&
+            String(rawSlot).length <= 32 && String(rawSlot).length > 0
+                ? String(rawSlot) : null;
+        const itemId = farmingFinite(event.itemId ?? event.ballId);
+        const trainerXp = farmingFinite(event.xpTreinador);
+        const pokemonXp = farmingFinite(event.xpPokemon);
+        const killCoins = farmingFinite(event.ouro);
+        const autoSaleCoins = farmingFinite(event.ouroVendaAuto);
+        // Only supported receipt fields are retained. No names, tokens or raw packets.
+        const drops = [];
+        if (Array.isArray(event.drops)) {
+            for (const drop of event.drops.slice(0, 32)) {
+                const id = farmingFinite(drop?.itemId ?? drop?.id);
+                const quantity = farmingFinite(drop?.qtd ?? drop?.quantity ?? 1);
+                if (id !== null && quantity !== null && quantity > 0)
+                    drops.push({itemId: id, quantity});
+            }
+        }
+        return {
+            kind, slot,
+            itemId: itemId === null ? null : Math.trunc(itemId),
+            trainerXp: kind === 'morte' ? trainerXp : null,
+            pokemonXp: kind === 'morte' ? pokemonXp : null,
+            killCoins: kind === 'morte' ? killCoins : null,
+            autoSaleCoins: kind === 'morte' ? autoSaleCoins : null,
+            drops: kind === 'morte' || kind === 'bossMorto' ? drops : [],
+            shinySeen: kind === 'bola' ? event.shiny === true : null,
+            shinyCaught: kind === 'capturado'
+                ? event.pokemon?.shiny === true : null,
+            // bola is a server-emitted accepted use, not a click/tick.
+            evidence: 'observed-server/event'
+        };
+    }
+
+    function normalizeFarmingSnapshot(snapshot) {
+        if (!snapshot || typeof snapshot !== 'object') return null;
+        const tierRaw = snapshot.tierOutland ?? snapshot.outlandTier;
+        const tierPresent = Object.hasOwn(snapshot, 'tierOutland') ||
+            Object.hasOwn(snapshot, 'outlandTier');
+        const revision = snapshot.catalogRevision ?? snapshot.catalogoVersao;
+        const boosts = snapshot.bonuses;
+        const boostSignature = boosts && typeof boosts === 'object'
+            ? Object.entries(boosts).filter(([key, value]) =>
+                /^[a-zA-Z_]{1,30}$/.test(key) && farmingFinite(value) !== null
+            ).sort(([a], [b]) => a.localeCompare(b))
+                .slice(0, 24).map(([key, value]) => key + ':' + value).join('|')
+            : undefined;
+        return {
+            ...(tierPresent ? {
+                outlandTier: Number.isInteger(Number(tierRaw)) &&
+                    Number(tierRaw) >= 1 && Number(tierRaw) <= 8
+                        ? Number(tierRaw) : null
+            } : {}),
+            ...(revision !== undefined ? {
+                catalogRevision: String(revision).slice(0, 40)
+            } : {}),
+            ...(boostSignature !== undefined ? {boostSignature} : {}),
+            inventoryPresent: Object.hasOwn(snapshot, 'balls') ||
+                Object.hasOwn(snapshot, 'items'),
+            coinsPresent: Object.hasOwn(snapshot, 'gold')
+        };
+    }
+
+    function farmingEventEvidence(event) {
+        const normalized = normalizeFarmingEvent(event);
+        const kind = typeof event?.k === 'string' ? event.k : 'invalid';
+        const fields = ['slot', 's', 'quem', 'xpTreinador', 'xpPokemon',
+            'ouro', 'ouroVendaAuto', 'drops', 'ballId', 'chance',
+            'sucesso', 'shiny', 'pokemon', 'itemId'].filter(key =>
+            Object.prototype.hasOwnProperty.call(event || {}, key));
+        return {kind, fields, recognized: Boolean(normalized),
+            missingSlot: Boolean(normalized && !normalized.slot),
+            source: 'observed-server/event', schema: 1};
+    }
+
+    function recordFarmingEvidence(ledger, event) {
+        if (!ledger) return;
+        const detail = farmingEventEvidence(event);
+        const kind = detail.kind;
+        if (!['morte', 'bola', 'capturado', 'cura', 'revive',
+            'bossMorto', 'compra'].includes(kind)) return;
+        let row = ledger.fieldPresence.get(kind);
+        if (!row) {
+            row = {seen: 0, malformed: 0, noSlot: 0, keys: {}};
+            ledger.fieldPresence.set(kind, row);
+        }
+        row.seen++;
+        if (!detail.recognized) row.malformed++;
+        if (detail.missingSlot) row.noSlot++;
+        for (const key of detail.fields) row.keys[key] = (row.keys[key] || 0) + 1;
+    }
+
+    function makeFarmingLedger() {
+        return {schema: 1, slots: new Map(), totals: {
+            kills: 0, trainerXp: 0, pokemonXp: 0,
+            killCoins: 0, autoSaleCoins: 0, acceptedThrows: 0,
+            captures: 0, shinySeen: 0, shinyCaught: 0,
+            potions: 0, revives: 0, bossDeaths: 0
+        }, items: new Map(), diagnostics: {malformed: 0, duplicates: 0,
+            noSlot: 0, unlinked: 0}, fieldPresence: new Map()};
+    }
+
+    function farmingSpawn(ledger, slot) {
+        if (!ledger || slot === null) return;
+        const old = ledger.slots.get(slot);
+        if (!old || old.dead) {
+            ledger.slots.delete(slot);
+            ledger.slots.set(slot, {dead: false, thrown: false, captured: false});
+        }
+        if (ledger.slots.size > 64)
+            ledger.slots.delete(ledger.slots.keys().next().value);
+    }
+
+    function acceptFarmingEvent(ledger, receipt) {
+        if (!ledger || !receipt) {
+            if (ledger) ledger.diagnostics.malformed++;
+            return false;
+        }
+        const kind = receipt.kind;
+        const slot = receipt.slot;
+        let corpse = slot !== null ? ledger.slots.get(slot) : null;
+        if (['morte', 'bola', 'capturado'].includes(kind) && !slot) {
+            ledger.diagnostics.noSlot++;
+            return false; // Cannot safely deduplicate or correlate a body.
+        }
+        if (kind === 'morte') {
+            if (!corpse) {
+                farmingSpawn(ledger, slot); // Late initial spawn is unknown.
+                corpse = ledger.slots.get(slot);
+            }
+            if (corpse.dead) {
+                ledger.diagnostics.duplicates++;
+                return false;
+            }
+            corpse.dead = true;
+            ledger.totals.kills++;
+            for (const [field, name] of [
+                ['trainerXp', 'trainerXp'], ['pokemonXp', 'pokemonXp'],
+                ['killCoins', 'killCoins'], ['autoSaleCoins', 'autoSaleCoins']
+            ]) ledger.totals[name] += receipt[field] ?? 0;
+        } else if (kind === 'bola') {
+            if (!corpse?.dead || corpse.thrown) {
+                ledger.diagnostics.unlinked++;
+                return false;
+            }
+            corpse.thrown = true;
+            ledger.totals.acceptedThrows++;
+            if (receipt.shinySeen) ledger.totals.shinySeen++;
+        } else if (kind === 'capturado') {
+            if (!corpse?.thrown || corpse.captured) {
+                ledger.diagnostics.unlinked++;
+                return false;
+            }
+            corpse.captured = true;
+            ledger.totals.captures++;
+            if (receipt.shinyCaught) ledger.totals.shinyCaught++;
+        } else if (kind === 'cura' || kind === 'revive') {
+            if (receipt.itemId === null) {
+                ledger.diagnostics.malformed++;
+                return false;
+            }
+            ledger.totals[kind === 'cura' ? 'potions' : 'revives']++;
+            // No per-event protocol ID: identical consecutive uses stay separate.
+        } else if (kind === 'bossMorto') {
+            ledger.totals.bossDeaths++;
+        } else if (kind === 'compra') {
+            return true; // Purchases are NOT the cost of a consumed item twice.
+        } else return false;
+        for (const {itemId, quantity} of receipt.drops) {
+            if (!ledger.items.has(itemId) && ledger.items.size >= 64) continue;
+            ledger.items.set(itemId, (ledger.items.get(itemId) || 0) + quantity);
+        }
+        return true;
+    }
+
+    // Thirty-second buckets keep multi-hour sessions small, even at extreme K/h.
+    // The entire window is counted; dropping individual fast kills would
+    // underestimate the rate when the ring buffer fills.
+    function appendFarmingKill(window, sample) {
+        const at = Number(sample?.at);
+        if (!Number.isFinite(at)) return window;
+        const reset = !window || !Number.isFinite(window.lastAt) ||
+            at < window.lastAt || at - window.lastAt > FARM_STALE_MS;
+        const bucket = Math.floor(at / 30000);
+        const rows = reset ? [] : window.rows.filter(row =>
+            row.at >= at - FARM_RATE_WINDOW_MS - 30000);
+        let row = rows[rows.length - 1];
+        if (!row || row.bucket !== bucket) {
+            row = {bucket, at, kills: 0, productiveMs: 0,
+                trainerXp: 0, pokemonXp: 0, gold: 0};
+            rows.push(row);
+        }
+        row.kills++;
+        row.trainerXp += sample.trainerXp ?? 0;
+        row.pokemonXp += sample.pokemonXp ?? 0;
+        row.gold += sample.gold ?? 0;
+        if (!reset) {
+            const gap = at - window.lastAt;
+            if (gap >= 0 && gap <= 60000) row.productiveMs += gap;
+        }
+        if (rows.length > 33) rows.splice(0, rows.length - 33);
+        return {startedAt: reset ? at : Math.max(window.startedAt,
+            at - FARM_RATE_WINDOW_MS), lastAt: at, rows};
+    }
+
+    function farmingObservedRates(window, now) {
+        if (!window || !Array.isArray(window.rows) ||
+            !Number.isFinite(now) || now < window.lastAt) return null;
+        const stale = now - window.lastAt > FARM_STALE_MS;
+        const start = Math.max(window.startedAt, now - FARM_RATE_WINDOW_MS);
+        const rows = window.rows.filter(row =>
+            row.at >= start - 30000 && row.at <= now);
+        const samples = rows.reduce((total, row) => total + row.kills, 0);
+        const elapsedMs = now - start; // wall-clock: includes restock/idle.
+        if (farmingConfidence(samples, elapsedMs, stale) === 'warming' ||
+            stale || !samples) return null;
+        const killsH = samples * 3600000 / elapsedMs;
+        const sum = field => rows.reduce((total, row) => total + row[field], 0);
+        const productiveMs = sum('productiveMs');
+        return {killsH, killMs: 3600000 / killsH,
+            trainerXpH: sum('trainerXp') * 3600000 / elapsedMs,
+            pokemonXpH: sum('pokemonXp') * 3600000 / elapsedMs,
+            goldH: sum('gold') * 3600000 / elapsedMs,
+            productiveKillsH: productiveMs >= FARM_MIN_WINDOW_MS
+                ? samples * 3600000 / productiveMs : null,
+            productiveMs, windowMs: elapsedMs, samples,
+            denominator: 'wall', confidence:
+                farmingConfidence(samples, elapsedMs, false)};
+    }
+    // HA MILESTONE A PURE END.
+
     function recordDeathEvent(
         event
     ) {
-        if (
-            event?.quem !==
-                'selvagem'
-        ) {
-            return;
-        }
+        const receipt = normalizeFarmingEvent(event);
+        if (!receipt || !acceptFarmingEvent(state.farmingLedger, receipt)) return;
 
         const record =
             performanceRecord(
@@ -2608,59 +2913,26 @@
             ) +
             1;
 
-        const trainerXp =
-            Math.max(
-                0,
-                Number(
-                    event?.xpTreinador ??
-                    event?.xp
-                ) ||
-                0
-            );
-
-        const pokemonXp =
-            Math.max(
-                0,
-                Number(
-                    event?.xpPokemon ??
-                    event?.xp
-                ) ||
-                0
-            );
-
-        record.trainerXp =
-            Number(
-                record.trainerXp ||
-                0
-            ) +
-            trainerXp;
-
-        record.pokemonXp =
-            Number(
-                record.pokemonXp ||
-                0
-            ) +
-            pokemonXp;
-
-        record.gold =
-            Number(
-                record.gold ||
-                0
-            ) +
-            Math.max(
-                0,
-                Number(
-                    event?.ouro
-                ) ||
-                0
-            ) +
-            Math.max(
-                0,
-                Number(
-                    event?.ouroVendaAuto
-                ) ||
-                0
-            );
+        // Distinct server receipts. Generic event.xp is not both streams.
+        const trainerXp = receipt.trainerXp ?? 0;
+        const pokemonXp = receipt.pokemonXp ?? 0;
+        const gold = (receipt.killCoins ?? 0) +
+            (receipt.autoSaleCoins ?? 0);
+        record.trainerXp = Number(record.trainerXp || 0) + trainerXp;
+        record.pokemonXp = Number(record.pokemonXp || 0) + pokemonXp;
+        record.gold = Number(record.gold || 0) + gold;
+        record.goldKill = Number(record.goldKill || 0) +
+            (receipt.killCoins ?? 0);
+        record.goldAutoSale = Number(record.goldAutoSale || 0) +
+            (receipt.autoSaleCoins ?? 0);
+        if (record.rateGeneration !== state.rateGeneration ||
+            record.sessionToken !== state.farmingSessionToken) {
+            record.rateWindow = null;
+            record.rateGeneration = state.rateGeneration;
+            record.sessionToken = state.farmingSessionToken;
+        }
+        record.rateWindow = appendFarmingKill(record.rateWindow,
+            {at: now, trainerXp, pokemonXp, gold});
 
         const hunt =
             currentHunt();
@@ -2734,16 +3006,26 @@
         if (
             !Array.isArray(
                 events
-            ) ||
-            !isHuntHere()
+            )
         ) {
             return;
         }
 
+        const hunting = isHuntHere();
         for (
             const event of
             events
         ) {
+            recordFarmingEvidence(state.farmingLedger, event);
+            if (!hunting) {
+                // Boss and supplies are session events, never normal hunt
+                // kills/captures (Mystic and other scenes have different rules).
+                if (['bossMorto', 'cura', 'revive', 'compra'].includes(event?.k)) {
+                    const receipt = normalizeFarmingEvent(event);
+                    if (receipt) acceptFarmingEvent(state.farmingLedger, receipt);
+                }
+                continue;
+            }
             if (
                 event?.k ===
                     'spawn'
@@ -2765,6 +3047,9 @@
                 recordDeathEvent(
                     event
                 );
+            } else {
+                const receipt = normalizeFarmingEvent(event);
+                if (receipt) acceptFarmingEvent(state.farmingLedger, receipt);
             }
         }
     }
@@ -3018,12 +3303,25 @@
          * In the delta protocol, a missing key means "unchanged" while an
          * explicit null means "clear it".
          */
+        const beforeFarmingScope = farmingSnapshotScope();
+        const farmSnapshot = normalizeFarmingSnapshot(gameState);
+        if (farmSnapshot) Object.assign(state.farmingSnapshot, farmSnapshot);
+        if (beforeFarmingScope !== farmingSnapshotScope()) {
+            state.farmingLedger = makeFarmingLedger();
+            state.combatRevision++;
+            state.combatProfileCache = null;
+            state.estimateCache.clear();
+        }
         if (
             Object.prototype.hasOwnProperty.call(
                 gameState,
                 'huntSlug'
             )
         ) {
+            if (state.currentHuntSlug !== gameState.huntSlug) {
+                state.rateGeneration++;
+                state.farmingLedger = makeFarmingLedger();
+            }
             state.currentHuntSlug =
                 typeof gameState.huntSlug ===
                     'string'
@@ -3287,6 +3585,10 @@
             return false;
         }
 
+        if (state.currentHuntSlug !== huntEvent.slug) {
+            state.rateGeneration++;
+            state.farmingLedger = makeFarmingLedger();
+        }
         state.currentHuntSlug =
             huntEvent.slug;
 
@@ -3404,6 +3706,13 @@
             message?.t ===
                 'welcome'
         ) {
+            // Treat reconnect/account replacement as a new evidence session.
+            state.rateGeneration++;
+            state.farmingLedger = makeFarmingLedger();
+            state.farmingSnapshot = {};
+            state.combatTargets.clear();
+            state.lastLeadPokemon = null;
+            state.activePokemonId = null;
             if (
                 message.tabelaTipos &&
                 typeof message.tabelaTipos ===
@@ -4033,6 +4342,11 @@
                 ) {
                     state.activeSocket =
                         null;
+                    state.rateGeneration++;
+                    state.farmingLedger = makeFarmingLedger();
+                    state.farmingSnapshot = {};
+                    state.combatTargets.clear();
+                    state.lastLeadPokemon = null;
 
                     if (
                         state.marketFetch ||
@@ -4054,6 +4368,7 @@
         socket.addEventListener(
             'message',
             event => {
+                if (state.activeSocket !== socket) return;
                 if (
                     typeof Blob !==
                         'undefined' &&
@@ -5558,7 +5873,10 @@
         ].filter(
             record =>
                 record?.version ===
-                    2 &&
+                    5 &&
+                record.rateGeneration === state.rateGeneration &&
+                record.sessionToken === state.farmingSessionToken &&
+                record.snapshotScope === farmingSnapshotScope() &&
                 record.signature ===
                     signature
         );
@@ -5633,7 +5951,10 @@
                 .filter(
                     record =>
                         record?.version ===
-                            2 &&
+                            5 &&
+                        record.rateGeneration === state.rateGeneration &&
+                        record.sessionToken === state.farmingSessionToken &&
+                        record.snapshotScope === farmingSnapshotScope() &&
                         record.loadoutSignature ===
                             loadout &&
                         record.signature !==
@@ -5692,70 +6013,11 @@
             warmStart: true
         };
     }
-    function observedRates(
-        record
-    ) {
-        if (
-            !record ||
-            Number(
-                record.kills ||
-                0
-            ) <
-                2
-        ) {
-            return null;
-        }
-
-        const killMs =
-            average(
-                record.killIntervals
-            );
-
-        if (
-            !killMs ||
-            killMs <= 0
-        ) {
-            return null;
-        }
-
-        const kills =
-            Math.max(
-                1,
-                Number(
-                    record.kills
-                ) ||
-                1
-            );
-
-        const killsH =
-            3600000 /
-            killMs;
-
-        return {
-            killMs,
-            killsH,
-            trainerXpH:
-                Number(
-                    record.trainerXp ||
-                    0
-                ) /
-                kills *
-                killsH,
-            pokemonXpH:
-                Number(
-                    record.pokemonXp ||
-                    0
-                ) /
-                kills *
-                killsH,
-            goldH:
-                Number(
-                    record.gold ||
-                    0
-                ) /
-                kills *
-                killsH
-        };
+    function observedRates(record, now = Date.now()) {
+        if (!record || record.rateGeneration !== state.rateGeneration ||
+            record.sessionToken !== state.farmingSessionToken ||
+            record.snapshotScope !== farmingSnapshotScope()) return null;
+        return farmingObservedRates(record.rateWindow, now);
     }
 
     function combatProfile() {
@@ -6517,15 +6779,10 @@
                     true,
                 source:
                     'measured',
-                confidence: 'high',
-                samples:
-                    Math.max(
-                        0,
-                        Number(
-                            record.kills ||
-                            0
-                        )
-                    )
+                confidence: observed.confidence,
+                samples: observed.samples,
+                windowMs: observed.windowMs,
+                denominator: observed.denominator
             };
         }
 
@@ -6668,6 +6925,8 @@
                 pokemonXpPerKill *
                 killsH,
             goldValue: null,
+            warmingUp: Boolean(record && record.rateWindow?.rows?.length &&
+                record.rateGeneration === state.rateGeneration),
             killsH,
             killMs,
             observed:
@@ -10985,6 +11244,11 @@
                         total: currentXp.totalPoints,
                         percentage: currentXp.coverage
                     })) : ''}
+                    ${currentXp?.warmingUp ? ' · ' + escapeHtml(tr('xp.warmingSession')) : ''}
+                    ${currentXp?.observed ? ' · ' + escapeHtml(tr('xp.sessionEvidence', {
+                        samples: currentXp.samples,
+                        minutes: Math.max(1, Math.round(currentXp.windowMs / 60000))
+                    })) : ''}
                     ${currentXp?.value
                         ? escapeHtml(
                             tr(
@@ -11559,7 +11823,7 @@
             const here = currentHunt();
             const xp = here ? huntXpEstimate(here) : null;
             return {
-                version: '1.9.2',
+                version: '1.9.4',
                 indexes: {
                     locations: state.locationIndexStatus,
                     markerCount: state.locationsBySlug.size,
@@ -11586,6 +11850,18 @@
                             neutralDamage: Math.round(row.neutralDamage || 0)
                         }))
                 },
+                farmingEvidence: {
+                    schema: state.farmingLedger.schema,
+                    // Only allowlisted field names and counters; no event bodies.
+                    events: Object.fromEntries(state.farmingLedger.fieldPresence),
+                    counts: {...state.farmingLedger.totals},
+                    diagnostics: {...state.farmingLedger.diagnostics},
+                    tier: state.farmingSnapshot.outlandTier ?? null,
+                    tierSource: state.farmingSnapshot.outlandTier === undefined
+                        ? 'unknown' : 'observed-client',
+                    catalogRevision: state.farmingSnapshot.catalogRevision ?? null,
+                    bonusSemantics: 'unverified'
+                },
                 prediction: {
                     hunt: here?.slug || null,
                     source: xp?.source || 'none',
@@ -11593,6 +11869,10 @@
                     trainerXpH: Math.round(xp?.value || 0),
                     killsH: Math.round(xp?.killsH || 0),
                     measured: Boolean(xp?.observed),
+                    warmingUp: Boolean(xp?.warmingUp),
+                    samples: xp?.samples ?? 0,
+                    windowMs: xp?.windowMs ?? null,
+                    denominator: xp?.observed ? 'wall' : null,
                     coverage: xp?.coverage ?? null,
                     incomplete: Boolean(xp?.incomplete),
                     coveredPoints: xp?.coveredPoints ?? null,
@@ -11639,7 +11919,7 @@
         );
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.0 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.4 experimental loaded'
         );
     }
 

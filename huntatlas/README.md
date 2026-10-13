@@ -1,12 +1,18 @@
 # PokéIdle Hunt Atlas
 
-> **Versão experimental 1.9.3.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
+> **Versão experimental 1.9.4.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
 >
 > Não há mapa visual novo. O Atlas continua sendo uma lista pesquisável; o índice `map-markers.json` só adiciona contexto textual de localização para hunts com slug correspondente. O índice `moves-index.json` oferece golpes possíveis por espécie/nível, não uma lista de golpes equipados. Agora o Atlas compara os golpes dos índices com o catálogo mais recente de Pokémon e mostra divergências. Quando o jogo fornece nomes de golpes, o modelo usa **amostras por execução**, sem contar várias vítimas de um ataque em área como vários golpes. Quando o nome não chega, mantém o modelo por tipo. XP/h **medido** continua acima de qualquer projeção. Os índices são opcionais e podem estar desatualizados.
 >
 **Precisão na 1.9.1:** o Atlas agora calcula a cobertura do modelo por **pontos de aparição** de cada hunt. Se o HP ou dano de qualquer inimigo não puder ser estimado, a projeção personalizada não será calculada só com os inimigos conhecidos: será usada a estimativa-base com aviso **⚠ modelo cobre X%**. Imunidades conhecidas continuam impedindo previsões de abate, e XP/h medido tem prioridade. O agrupamento de ataques em área usa identificadores de execução quando existirem; sem eles, só une golpes com o mesmo nome/tipo em alvos distintos dentro de 350 ms. Golpes sem nome e sem ID ficam separados para evitar unir ataques diferentes.
 
 **Testes de regressão:** `node --test tests/accuracy.test.cjs` (Node.js recente; não é necessário abrir o jogo). Os testes verificam cobertura, HP/dano ausentes, imunidade, AoE atrasado, golpes consecutivos e eventos sem nome. A confirmação do protocolo real ainda depende dos diagnósticos capturados em jogo.
+
+### Medições de farming (v1.9.4 · Marco A)
+
+Os **XP/h medidos** agora exigem pelo menos **6 abates selvagens e 60 segundos** de amostragem da sessão atual. O denominador é **tempo corrido**, incluindo ondas e pausas breves; após 2 minutos sem abate a medição fica desatualizada e volta a aquecer no próximo abate. Trocar hunt, recarregar/reconectar ou mudar Pokémon/equipamento/estado relevante impede reutilizar uma medição incompatível. O cálculo conserva separados XP do treinador, XP do Pokémon, ouro por morte e ouro de venda automática. Eventos `bola`, `capturado`, `cura`, `revive` e boss são interpretados separadamente em um contador local, sem presumir que cada clique é uma bola aceita.
+
+O painel indica **aquecendo** enquanto o modelo ainda não reúne dados suficientes. Em `window.__mothHuntAtlasExperimentV1.snapshot().farmingEvidence`, podem ser consultadas apenas contagens e nomes de campos previamente permitidos, **sem** pacotes completos ou tokens. O protocolo ainda apresenta algumas ambiguidades; veja [a matriz técnica e os limites](../docs/HUNTATLAS_MILESTONE_A_PROTOCOL.md). Os cálculos puros de chances, Outland e Ovo Shiny são preparação para versões futuras; **não** foi adicionado um seletor de Outland nem previsão de captura nesta entrega.
 
 ### 🎮 Correio Maluco — minigame experimental (1.9.3)
 
@@ -91,6 +97,12 @@ O idioma do Hunt Atlas acompanha o idioma selecionado no PokéIdle. Atualmente h
 **Accuracy in 1.9.1:** Hunt model coverage is now **spawn-point weighted**. If any enemy lacks HP or damage information, the personalized prediction no longer averages only known enemies: it uses an explicitly marked baseline estimate (**⚠ model covers X%**). Known immunity still prevents a kill prediction, and measured XP/hour retains priority. Area attacks use execution-specific cast IDs when supplied; without IDs, only same-name/type hits on distinct targets within 350 ms are grouped. Unnamed attacks without cast IDs remain separate to avoid merging unrelated attacks.
 
 **Regression tests:** `node --test tests/accuracy.test.cjs` (recent Node.js, game not required). Tests cover missing HP/damage, spawn weights, immunity, delayed AoE, consecutive casts, and unnamed events. Final protocol verification still needs player battle snapshots.
+
+### Farming measurements (v1.9.4 · Milestone A)
+
+**Measured** XP/h now requires **6 wild kills and 60 seconds** within the current session. The denominator is **wall-clock time**, including waves and temporary downtime; after 2 minutes without a kill the reading is stale, and the next kill begins warming up again. Switching hunts, reconnecting/reloading or changing the relevant lead/loadout/context prevents incompatible reuse. Trainer XP, Pokémon XP, kill Coins and already-realized auto-NPC-sale Coins are recorded separately. `bola`, `capturado`, `cura`, `revive` and boss events have distinct local ledgers rather than counting automation clicks as accepted throws.
+
+The UI shows a **warming up** label until enough sustained evidence exists. `window.__mothHuntAtlasExperimentV1.snapshot().farmingEvidence` exposes only allowlisted field-name counts and totals, **never** raw packets or tokens. Live protocol ambiguity remains; see the [technical matrix and limitations](../docs/HUNTATLAS_MILESTONE_A_PROTOCOL.md). The deterministic Outland, Shiny Egg and probability helpers lay groundwork for later releases; this does **not** add an Outland tier picker or capture-rate predictor.
 
 ### 🎮 Parcel Panic — experimental mini-game (1.9.3)
 
