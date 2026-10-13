@@ -518,7 +518,6 @@
             'filter.showPanel': 'Show filters',
             'filter.hidePanel': 'Hide filters',
             'filter.emptyReset': 'Clear filters and show Pokémon',
-            'outland.quickPreview': 'Selecting a tier only previews it; use Switch to apply.',
             'outland.quickDisconnected': 'Game connection unavailable. Reconnect to change the tier.',
             'outland.quickWaiting': 'Waiting for the game to report the active tier.',
             'outland.quickTimedOut': 'The game did not confirm the change. Check the active tier and retry.',
@@ -531,8 +530,6 @@
             'rare.outland': 'Outland rare drops',
             'rare.egg': 'Shiny Egg Fragment',
             'rare.preview': 'Compare Outland tier',
-            'rare.active': 'Active in-game: Outland {tier}',
-            'rare.activeUnknown': 'Active in-game tier: not available from game state',
             'rare.fallback': 'Reported tier {reported} reduced to allowed tier {effective} for current trainer level',
             'rare.select': 'Use this tier in game',
             'rare.pending': 'Change requested; waiting for the game to confirm',
@@ -840,7 +837,6 @@
             'filter.showPanel': 'Mostrar filtros',
             'filter.hidePanel': 'Ocultar filtros',
             'filter.emptyReset': 'Limpar filtros e mostrar Pokémon',
-            'outland.quickPreview': 'Escolher o tier apenas mostra a prévia; use Mudar para aplicar.',
             'outland.quickDisconnected': 'Sem conexão com o jogo. Reconecte para mudar o tier.',
             'outland.quickWaiting': 'Aguardando o jogo informar o tier ativo.',
             'outland.quickTimedOut': 'O jogo não confirmou a troca. Confira o tier ativo e tente novamente.',
@@ -853,8 +849,6 @@
             'rare.outland': 'Drops raros da Outland',
             'rare.egg': 'Fragmento de Ovo Shiny',
             'rare.preview': 'Comparar Outland',
-            'rare.active': 'Ativa no jogo: Outland {tier}',
-            'rare.activeUnknown': 'Tier ativo no jogo: ainda não informado pelo estado',
             'rare.fallback': 'Tier informado {reported} ajustado ao tier permitido {effective} para o nível atual',
             'rare.select': 'Usar este tier no jogo',
             'rare.pending': 'Troca solicitada; aguardando confirmação do jogo',
@@ -12334,12 +12328,13 @@
                 '<div class="mha-xp-note">'+escapeHtml(tr('rare.fallback',{
                     reported:reportedTier,effective:nativeTier
                 }))+'</div>' : '',
-            '<div class="mha-xp-note">'+
-                (activateTier ? '<button type="button" data-mha-activate-tier>'+
-                    escapeHtml(tr('rare.select'))+'</button>' :
-                escapeHtml(state.pendingOutlandTier?tr('rare.pending'):
-                    !state.outlandTierSeen?tr('rare.noCommand'):
-                    ''))+'</div>',
+            activateTier ? '<div class="mha-xp-note">'+
+                '<button type="button" data-mha-activate-tier>'+
+                escapeHtml(tr('rare.select'))+'</button></div>' :
+                state.pendingOutlandTier || !state.outlandTierSeen ?
+                    '<div class="mha-xp-note">'+escapeHtml(tr(
+                        state.pendingOutlandTier?'rare.pending':'rare.noCommand'
+                    ))+'</div>' : '',
             '<div class="mha-xp-note"><strong>'+
                 escapeHtml(tr('rare.outland'))+'</strong> · '+
                 escapeHtml(previewHunt?
