@@ -3,7 +3,10 @@
         return Math.max(
             0,
             Number(state.rateLimitedUntil || 0) - now,
-            Number(state.lastBotSendAt || 0) + BACKGROUND_MIN_GAP_MS - now
+            // Snatch sends may run every 400 ms. They must not restart
+            // the background scanner's own cooldown, or rule quotes expire
+            // while the buy socket is busy.
+            Number(state.lastBackgroundSendAt || 0) + BACKGROUND_MIN_GAP_MS - now
         );
     }
 
@@ -23,7 +26,10 @@
         // Reserve the shared WebSocket during the contested unlock window.
         if (snatchCriticalWindow() || backgroundDelayMs() > 0) return false;
         const sent = send(payload);
-        if (sent) diagnosticOutbound(payload);
+        if (sent) {
+            state.lastBackgroundSendAt = Date.now();
+            diagnosticOutbound(payload);
+        }
         return sent;
     }
 

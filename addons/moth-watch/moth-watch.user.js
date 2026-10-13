@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.6.9
+// @version      0.6.10
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -14,7 +14,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.9');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.10');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -179,6 +179,7 @@
         pokemonStatus: 'waiting',
         serverClockOffset: 0,
         lastBotSendAt: 0,
+        lastBackgroundSendAt: 0,
         rateLimitedUntil: 0,
         itemSummaryRetryTimer: null,
         detailPumpTimer: null,
@@ -1130,7 +1131,10 @@
         return Math.max(
             0,
             Number(state.rateLimitedUntil || 0) - now,
-            Number(state.lastBotSendAt || 0) + BACKGROUND_MIN_GAP_MS - now
+            // Snatch sends may run every 400 ms. They must not restart
+            // the background scanner's own cooldown, or rule quotes expire
+            // while the buy socket is busy.
+            Number(state.lastBackgroundSendAt || 0) + BACKGROUND_MIN_GAP_MS - now
         );
     }
 
@@ -1150,7 +1154,10 @@
         // Reserve the shared WebSocket during the contested unlock window.
         if (snatchCriticalWindow() || backgroundDelayMs() > 0) return false;
         const sent = send(payload);
-        if (sent) diagnosticOutbound(payload);
+        if (sent) {
+            state.lastBackgroundSendAt = Date.now();
+            diagnosticOutbound(payload);
+        }
         return sent;
     }
 
@@ -3818,7 +3825,13 @@
                 if (until > server + SNATCH_PREPARE_MS)
                     wait = Math.min(wait,Math.max(50,until-server-SNATCH_PREPARE_MS));
                 else if (until > server) wait = Math.min(wait,until-server);
-                else wait = Math.min(wait,Math.max(35,entry.retryAt-Date.now()));
+                else {
+                    // Match the timer to the actual listing cooldown instead
+                    // of waking every 35 ms for a temporarily blocked offer.
+                    const attempted = Number(state.attemptedListings.get(entry.candidate.listingId) || 0);
+                    wait = Math.min(wait, Math.max(35,
+                        Math.max(entry.retryAt || 0, attempted) - Date.now()));
+                }
             }
         }
         // A single timer for all snatches. No permanently fast interval.
