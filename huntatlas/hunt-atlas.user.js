@@ -3841,17 +3841,20 @@
         for(const [key,count] of counts){
             const [type,idText]=key.split(':');const id=Number(idText);
             const price=(type==='ball'?catalogs.balls:catalogs.items)?.get(id);
-            if(price?.coins===null||price?.coins===undefined){
-                // Diamond-priced supplies are not free Coins; keep currency separate.
-                if(price?.diamonds===null||price?.diamonds===undefined)unknown+=count;
-            }else coins+=price.coins*count;
-            if(price?.diamonds!==null&&price?.diamonds!==undefined)
-                diamonds+=price.diamonds*count;
+            const c=price?.coins,d=price?.diamonds;
+            // A catalog with two positive currency quotes offers alternatives,
+            // not an instruction to pay BOTH for a single consumed item.
+            if (c!==null && c!==undefined && d!==null &&
+                d!==undefined && c>0 && d>0) unknown+=count;
+            else if(c!==null && c!==undefined && !(d>0)) coins+=c*count;
+            else if(d!==null && d!==undefined && !(c>0)) diamonds+=d*count;
+            else unknown+=count;
             items.push({type,id,count,remaining:inventory?.get(key)??null,
                 priceSource:price?.source??'unknown'});
         }
         const hours=(to-from)/3600000;
-        return {coinsH:unknown?null:coins/hours,diamondsH:diamonds/hours,
+        return {coinsH:unknown?null:coins/hours,
+            diamondsH:unknown?null:diamonds/hours,
             unknown,items,source:'replacement-cost-not-spend'};
     }
     function farmFinancialSummary(killsH,modeledKillH,observedKillH,
