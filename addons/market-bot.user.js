@@ -128,6 +128,11 @@
         diamondScanTimer: null,
         itemMarketCaps: new Map(),
         candidates: new Map(),
+        snatchManual: new Map(),
+        snatchObserved: new Map(),
+        snatchNativeOffers: new Map(),
+        snatchRecoverAt: new Map(),
+        snatchWake: null,
         detailQueue: [],
         detailQueued: new Set(),
         detailPending: null,
@@ -5006,6 +5011,9 @@
             '<div class="moth-mw-ref"><div>' + money(Math.round(candidate.average), candidate.currency) + '</div><div class="moth-mw-meta">' + escapeHtml(referenceLabel) + '</div></div>' +
             '<div><div class="moth-mw-discount">−' + pct(discount) + '</div><div class="moth-mw-meta">' + escapeHtml(tr('watch range')) + '</div></div>' +
             '<div class="moth-mw-seller"><b>' + escapeHtml(tr('Seller: {seller}', { seller: candidate.seller })) + '</b><div class="moth-mw-meta">' + escapeHtml(availableLabel) + '</div></div>' +
+            (candidate.kind === 'item' || candidate.kind === 'pokemon'
+                ? snatchButton(candidate.kind,candidate.currency,candidate.listingId,Number(candidate.itemId||0))
+                : '') +
             '<button type="button" class="moth-mw-btn primary" data-moth-buy="' + escapeHtml(candidate.key) + '"' + (canBuy ? '' : ' disabled') + '>' +
             escapeHtml(buyLabel) + '</button></div>';
     }
@@ -5712,6 +5720,11 @@
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Recent activity')) + '</h4><span>' +
                     escapeHtml(tr('Purchase attempts, confirmations, and errors.')) + '</span></div>' +
                     '<div class="moth-mw-log" id="moth-mw-activity-log"></div>' +
+                    '<section class="moth-mw-automation-block"><h4>' +
+                    escapeHtml(tr('Armed snatches')) + '</h4><div id="moth-mw-snatch-list"></div>' +
+                    '<p class="moth-mw-rule-hint">' +
+                    escapeHtml(tr('Targets saved per account. The game tab must remain connected; competing buyers may win.')) +
+                    '</p></section>' +
                     '<section class="moth-mw-automation-block"><h4>' + escapeHtml(tr('Redacted diagnostics (opt-in)')) + '</h4>' +
                     '<p class="moth-mw-rule-hint">' +
                     escapeHtml(tr('Disabled by default. When on, keeps only 64 schema/count samples in memory. Never records packet values, seller names, listing IDs, credentials or private settings.')) +
@@ -5762,6 +5775,11 @@
         } else if (state.watchView === 'automation') {
             refreshAutomationLive(content);
         } else if (state.watchView === 'activity') {
+            const snatchHost = q('#moth-mw-snatch-list', content);
+            if (snatchHost && !snatchHost.contains(document.activeElement)) {
+                const snatchHtml = snatchQueueHtml();
+                if (snatchHost.innerHTML !== snatchHtml) snatchHost.innerHTML = snatchHtml;
+            }
             const refs = q('#moth-mw-reference-tools', content);
             const html = '<div class="moth-mw-reference-info"><b>' + escapeHtml(tr('Item references:')) + '</b> ' +
                 escapeHtml(tr('live server 7-day averages with a saved fallback captured')) + ' ' + escapeHtml(captured) + '. ' +
@@ -5800,6 +5818,19 @@
             event.stopPropagation();
             const target = event.target instanceof Element ? event.target : null;
             if (!target) return;
+            const button = target.closest('[data-moth-snatch]');
+            if (button) {
+                const parts = String(button.dataset.mothSnatch || '').split(':');
+                if (parts.length !== 3) return;
+                const [kind,currency,rawId] = parts;
+                const ok = snatchMark(kind,currency,Number(rawId),
+                    Number(button.dataset.mothSnatchItem || 0));
+                if (ok) addLog('Snatch queue updated · listing #' + rawId);
+                else addLog('Snatch not armed · load the listing again');
+                state.itemInventoryMemo = null;
+                state.pokemonEvidenceMemo = null;
+                renderWatch(true); return;
+            }
             const tab = target.closest('[data-moth-view]');
             if (tab) {
                 const view = tab.dataset.mothView;
