@@ -3485,7 +3485,7 @@
             for (const offer of Array.isArray(message.linhas) ? message.linhas.slice(0,120) : []) {
                 const id=Number(offer?.id),itemId=Number(message.itemId);
                 if (Number.isSafeInteger(id)&&id>0 && Number.isSafeInteger(itemId)&&itemId>0)
-                    state.snatchNativeOffers.set(snatchKey('item',message.moeda,id),offer);
+                    state.snatchNativeOffers.set(snatchKey('item',message.moeda,id),{...offer,itemId});
                 snatchObserve('item',message.moeda,offer,itemId);
             }
         } else if (message.aba === 'vitrine' && Array.isArray(message.linhas)) {
@@ -3681,6 +3681,15 @@
             button.dataset.mothSnatchItem=String(Number(offer.itemId)||0);
             button.textContent=tr(state.snatchManual.has(key)?'Cancel snatch':'Snatch');
             button.style.marginInlineStart='0.4rem';
+            button.addEventListener('click',event=>{
+                event.preventDefault(); event.stopPropagation();
+                const accepted=snatchMark(kind,currency,id,Number(offer.itemId)||0);
+                if (accepted) {
+                    button.textContent=tr(state.snatchManual.has(key)?'Cancel snatch':'Snatch');
+                    button.setAttribute('aria-pressed',state.snatchManual.has(key)?'true':'false');
+                } else addLog('Snatch not armed · load the listing again');
+            });
+            button.setAttribute('aria-pressed',state.snatchManual.has(key)?'true':'false');
             marker.insertAdjacentElement('afterend',button);
         }
     }
@@ -6355,6 +6364,7 @@
         }
 
         if (isCommunity && modalBody) {
+            if (!state.watchOpen) snatchEnhanceNativeMarket();
             const communityTop =
                 q('#modal-corpo .cm-topo');
             const watchHost =
