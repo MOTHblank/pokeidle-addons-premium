@@ -1551,6 +1551,7 @@
         }
     }
 
+    // BEGIN MOTHWATCH ITEM_SCANNER GENERATED
     function queueItemDetail(itemId, currency) {
         const key = String(itemId) + ':' + currency;
         const now = Date.now();
@@ -1942,6 +1943,7 @@
         scanSuspiciousItemSummaries();
         queueRender();
     }
+    // END MOTHWATCH ITEM_SCANNER GENERATED
 
     // BEGIN MOTHWATCH PRICING GENERATED
     function levelBand(level) {
@@ -2308,6 +2310,7 @@
     }
     // END MOTHWATCH PRICING GENERATED
 
+    // BEGIN MOTHWATCH POKEMON_SCANNER GENERATED
     function requestHistoryPage() {
         const fetch = state.historyFetch;
         if (!fetch) return;
@@ -2709,6 +2712,7 @@
         queueRender();
         return true;
     }
+    // END MOTHWATCH POKEMON_SCANNER GENERATED
 
     function balanceFor(currency) {
         return currency === 'orb' ? state.orbs : state.gold;
@@ -2996,6 +3000,7 @@
         };
     }
 
+    // BEGIN MOTHWATCH AUTO_SCANNER GENERATED
     function finishPendingBuy(reason) {
         const pending = state.pendingBuy;
         if (!pending) return;
@@ -3318,6 +3323,7 @@
             if (nowServer - Number(seen.lastSeenAt || 0) > 60 * 60 * 1000) state.firstSeenCache.delete(key);
         }
     }
+    // END MOTHWATCH AUTO_SCANNER GENERATED
 
     function decodeMessage(data) {
         if (typeof data === 'string') {
@@ -3423,6 +3429,7 @@
     }
     // END MOTHWATCH DIAGNOSTICS GENERATED
 
+    // BEGIN MOTHWATCH SOCKET GENERATED
     function handleProtocolObject(message, sourceSocket = null) {
         if (!message || typeof message !== 'object') return;
         diagnosticProtocol(message);
@@ -3679,7 +3686,9 @@
         const socket = state.gameSocket || state.socket;
         if (!socket || socket.readyState !== 1) adoptBridgeSocket();
     }, 1000);
+    // END MOTHWATCH SOCKET GENERATED
 
+    // BEGIN MOTHWATCH UI_STYLE GENERATED
     function injectStyle() {
         if (q('#moth-market-watch-style')) return;
         const style = document.createElement('style');
@@ -3890,6 +3899,7 @@
         ].join('\n');
         (document.head || document.documentElement).appendChild(style);
     }
+    // END MOTHWATCH UI_STYLE GENERATED
 
     function baselineStats() {
         const rows = Object.values(state.baseline.items || {});
@@ -4315,6 +4325,7 @@
     }
     // END MOTHWATCH ECONOMY GENERATED
 
+    // BEGIN MOTHWATCH UI_BROWSER GENERATED
     function renderItemInventory() {
         const entries = Object.entries(state.itemSummary || {})
             .map(([rawId, row]) => ({ itemId: Number(rawId), row: row || {}, name: catalogName(rawId) }))
@@ -4879,6 +4890,8 @@
 
     // Checking/confirming a newly activated broad rule changes no legacy
     // authorization; persisted options remain exactly as configured.
+    // END MOTHWATCH UI_BROWSER GENERATED
+
     // BEGIN MOTHWATCH RULE_SAFETY GENERATED
     function broadRuleUnbounded(rule) {
         if (!rule?.buyEnabled || !(Number(rule.buyMax) > 0) ||
@@ -4935,6 +4948,7 @@
     }
     // END MOTHWATCH RULE_SAFETY GENERATED
 
+    // BEGIN MOTHWATCH UI_RULES GENERATED
     function fixedRuleStatus(rule) {
         if (!rule.buyEnabled || !(rule.buyMax > 0)) return tr('Rule paused');
         if (!config.enabled) return tr('Moth Watch disabled');
@@ -5113,7 +5127,9 @@
                 escapeHtml(tr(pokemon ? 'No Pokémon rules configured.' : 'No any-item rules configured.')) +
                 '</div>') + '</div></section>';
     }
+    // END MOTHWATCH UI_RULES GENERATED
 
+    // BEGIN MOTHWATCH UI_RENDER GENERATED
     function renderWatch(forceViewBuild = false) {
         const panel = q('#moth-market-watch-panel');
         if (!panel || !state.watchOpen) return;
@@ -5331,7 +5347,9 @@
             });
         }
     }
+    // END MOTHWATCH UI_RENDER GENERATED
 
+    // BEGIN MOTHWATCH UI_EVENTS GENERATED
     function bindWatchEvents(panel) {
         if (panel.dataset.mothWatchEvents) return;
         panel.dataset.mothWatchEvents = '1';
@@ -5952,6 +5970,7 @@
 
         return true;
     }
+    // END MOTHWATCH UI_EVENTS GENERATED
 
     function controllerSnapshot() {
         const configView = {
