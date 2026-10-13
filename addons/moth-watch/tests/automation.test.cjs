@@ -1731,7 +1731,7 @@ test('Snatch: bulk request buys all quoted available units then keeps checking r
     h.api.snatchOutcome(789,'confirmed',{qty:75});
     const entry=h.state.snatchObserved.get(h.key);
     assert.equal(entry.confirmedUnits,75);
-    assert.equal(entry.awaitingRefresh,false);
+    assert.equal(!!entry.awaitingRefresh,false);
     entry.retryAt=0;h.state.attemptedListings.delete(789);
     h.api.snatchTick();
     assert.equal(h.purchaseCalls.at(-1).qty,125,
@@ -1795,4 +1795,17 @@ test('Opportunities show Snatch only while held, never instead of ordinary Buy',
     assert.match(src,/data-moth-buy/);
     assert.doesNotMatch(src,/const canBuy = !state\.pendingBuy &&/,
         'unrelated pending buys should not disable an available opportunity');
+});
+
+
+test('Snatch: manually armed listings do not expire at a fixed half-hour deadline', () => {
+    const h=heldSnatchHarness();
+    h.state.snatchManual.get(h.key).expiresAt=Date.now()-86400000;
+    h.setServer(h.candidate.retainedUntil);
+    h.api.snatchTick();
+    assert.equal(h.purchaseCalls.length,1,
+        'still-quoted stock must remain actionable regardless of old expiry metadata');
+    assert.equal(h.state.snatchManual.has(h.key),true);
+    const source=fs.readFileSync(path.join(__dirname,'..','src','snatch-section.js'),'utf8');
+    assert.doesNotMatch(source,/snatchStop\(key,\s*'expired'\)/);
 });

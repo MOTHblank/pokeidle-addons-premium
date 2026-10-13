@@ -3560,15 +3560,13 @@
         try {
             const data = JSON.parse(localStorage.getItem(SNATCH_KEY + ':' + account) || 'null');
             if (data?.version !== 1 || !Array.isArray(data.targets)) return;
-            const now = Date.now();
             for (const entry of data.targets.slice(-SNATCH_LIMIT)) {
                 if (!['item', 'pokemon'].includes(entry.kind) ||
                     !['gold', 'orb'].includes(entry.currency) ||
                     !Number.isSafeInteger(entry.id) || entry.id <= 0 ||
                     !Number.isSafeInteger(entry.maxPrice) || entry.maxPrice <= 0 ||
                     !Number.isSafeInteger(entry.itemId || 0) ||
-                    !Number.isSafeInteger(entry.expiresAt) || entry.expiresAt <= now ||
-                    entry.expiresAt > now + 2 * SNATCH_ACTIVE_MS) continue;
+                    !Number.isSafeInteger(entry.expiresAt) || entry.expiresAt <= 0) continue;
                 state.snatchManual.set(snatchKey(entry.kind, entry.currency, entry.id), {
                     kind:entry.kind, currency:entry.currency, id:entry.id, itemId:entry.itemId || 0,
                     maxPrice:entry.maxPrice, expiresAt:entry.expiresAt
@@ -3645,12 +3643,6 @@
             confirmedUnits:0, awaitingRefresh:false, missing:0,
             observedAt:Date.now(), refreshedAt:old?.refreshedAt || 0
         });
-        if (manual && manual.expiresAt - Date.now() < 10 * 60000) {
-            // An actively visible listing stays armed. The 30-minute expiry
-            // only bounds abandoned targets that stop appearing.
-            manual.expiresAt = Date.now() + SNATCH_ACTIVE_MS;
-            snatchSave();
-        }
         if (manual && price > manual.maxPrice) {
             snatchStop(key, 'Price changed beyond authorized ceiling');
             return;
@@ -3742,7 +3734,6 @@
         state.snatchWake = null;
         const now = Date.now();
         for (const [key, target] of [...state.snatchManual]) {
-            if (target.expiresAt <= now) { snatchStop(key, 'expired'); continue; }
             if (state.snatchObserved.has(key) || now - Number(state.snatchRecoverAt?.get(key)||0)<10000) continue;
             state.snatchRecoverAt.set(key,now);
             if (target.kind === 'item' && target.itemId > 0 && !communityMarketIsOpen()) {
@@ -3764,7 +3755,6 @@
             const manual = state.snatchManual.get(key);
             const rule = entry.ruleId ? activeRuleById(entry.ruleId) : null;
             if (!manual && !rule) { state.snatchObserved.delete(key); continue; }
-            if (manual?.expiresAt <= now) { snatchStop(key, 'expired'); continue; }
             const c = entry.candidate;
             if (manual && (c.price > manual.maxPrice || c.itemId !== manual.itemId && c.kind==='item')) {
                 snatchStop(key,'quote changed'); continue;
