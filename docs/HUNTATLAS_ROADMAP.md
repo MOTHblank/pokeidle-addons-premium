@@ -176,6 +176,19 @@ These patches do **not** turn external live-engine assertions into tested facts.
 
 **Intentionally retired:** delivery minigame, Pokémon XP/h ranking, net Coins/h ranking, and Coins per capture sorting. Their source calculations may remain for informational details. MW-15/MW-16 have been cancelled; do not recreate a MothWatch inventory/farming integration merely because historical roadmap text mentions one.
 
+### v1.9.16 UX follow-through — boost simulation explained
+
+The optional PokeIdle Tools-inspired preview under **Hunt details** is now labeled
+**“Simular bônus” / “Simulate bonuses”**, rather than implying that an external
+calculator's bonuses are active in the user's game. It remains **off by default**.
+Capture/shiny and rare-item assumptions are grouped and explained separately; each
+shows the ordinary chance **before** and the hypothetical chance **after** the
+user's selected modifiers. Kick assumptions are collapsed into a separate advanced
+section, with an explicit no-integration warning. Labels clarify percentages
+versus multipliers, and neutral settings explain why no result changes. No model,
+server state, ranking, measured data, or network polling was changed by this UX pass.
+See the README and `huntatlas/tests/pokeidle-tools-reference.test.cjs`.
+
 ## Key deterministic regression scenarios
 
 1. **Core math:** XP at levels 1 and 150 is 8 and 13,508. Gold at levels 1/5,000/25,000/160,300 is 36/6,000/15,776/15,776. Two XP streams never combine into one player rate.
