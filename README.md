@@ -2,6 +2,10 @@
 
 Moth Watch **v0.3.0** lives in this repository. The standard `pokeidle-addons` controller does not install or update it automatically.
 
+## Development roadmap
+
+See [**Moth Watch roadmap**](docs/MOTHWATCH_ROADMAP.md) for the prioritized, 20-task implementation queue: purchase safety and protocol validation first, Pokémon pricing second, economy analysis third, and UI/distribution improvements throughout. The roadmap explicitly separates implemented v0.3.0 behavior from proposed work and unverified live-server assumptions.
+
 ## Moth Watch installation
 
 Install [Violentmonkey](https://addons.mozilla.org/firefox/addon/violentmonkey/) in the desired Firefox profile. While signed in with access to this **private** repository, open [Moth Watch source](addons/market-bot.user.js), copy the script into Violentmonkey, and save. Do not keep an old Moth Watch copy enabled alongside it. The script contains premium `@updateURL` and `@downloadURL` metadata, but private GitHub raw endpoints might not be accessible to a userscript manager; manual updates may be necessary.
