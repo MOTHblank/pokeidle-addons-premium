@@ -3163,6 +3163,15 @@
             ledger.slots.delete(ledger.slots.keys().next().value);
     }
 
+    function farmingExpireCorpse(ledger, slot) {
+        if (!ledger || slot === null || slot === undefined) return false;
+        const corpse=ledger.slots.get(String(slot));
+        // Never infer that a body expired from a local wall-clock estimate.
+        if (!corpse?.dead || corpse.captured || corpse.expired) return false;
+        corpse.expired=true;
+        return true;
+    }
+
     function acceptFarmingEvent(ledger, receipt) {
         if (!ledger || !receipt) {
             if (ledger) ledger.diagnostics.malformed++;
@@ -3202,7 +3211,7 @@
                 ['killCoins', 'killCoins'], ['autoSaleCoins', 'autoSaleCoins']
             ]) ledger.totals[name] += receipt[field] ?? 0;
         } else if (kind === 'bola') {
-            if (!corpse?.dead || corpse.thrown) {
+            if (!corpse?.dead || corpse.thrown || corpse.expired) {
                 ledger.diagnostics.uncertainCosts++;
                 ledger.diagnostics.unlinked++;
                 return false;
@@ -3215,7 +3224,7 @@
             ledger.totals.acceptedThrows++;
             if (receipt.shinySeen) ledger.totals.shinySeen++;
         } else if (kind === 'capturado') {
-            if (!corpse?.thrown || corpse.captured) {
+            if (!corpse?.thrown || corpse.captured || corpse.expired) {
                 ledger.diagnostics.unlinked++;
                 return false;
             }
@@ -4278,6 +4287,11 @@
                 recordDeathEvent(
                     event
                 );
+            } else if (event?.k === 'despawn' ||
+                event?.k === 'corpoExpirado') {
+                // Only an explicit native disappearance event closes a corpse.
+                if (event.quem === undefined || event.quem === 'selvagem')
+                    farmingExpireCorpse(state.farmingLedger,event.slot??event.s);
             } else {
                 const receipt = normalizeFarmingEvent(event);
                 if (receipt && acceptFarmingEvent(state.farmingLedger, receipt)) {
