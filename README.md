@@ -1,10 +1,10 @@
 # PokéIdle Addons Premium
 
-Moth Watch **v0.4.0** lives in this repository. The standard `pokeidle-addons` controller does not install or update it automatically.
+Moth Watch **v0.5.0** lives in this repository. The standard `pokeidle-addons` controller does not install or update it automatically.
 
 ## Development roadmap
 
-See [**Moth Watch roadmap**](docs/MOTHWATCH_ROADMAP.md) for the prioritized, 20-task implementation queue: purchase safety and protocol validation first, Pokémon pricing second, economy analysis third, and UI/distribution improvements throughout. The roadmap explicitly separates implemented v0.4.0 behavior from proposed work and unverified live-server assumptions.
+See [**Moth Watch roadmap**](docs/MOTHWATCH_ROADMAP.md) for the prioritized, 20-task implementation queue: purchase safety and protocol validation first, Pokémon pricing second, economy analysis third, and UI/distribution improvements throughout. The roadmap explicitly separates implemented v0.5.0 behavior from proposed work and unverified live-server assumptions.
 
 ## Moth Watch installation
 
@@ -27,6 +27,16 @@ All modes use the same reserves and per-purchase spending caps, plus optional **
 The broad-item scanner uses the market's item summary to shortlist relevant item types, then verifies fresh individual offers at a bounded request cadence. Offers missing explicit quantity, seller, valid price or listing identity are not purchased; previously selected rules are rechecked at submission time. The Controller buy path cannot submit an unobserved, caller-supplied price as a verified quote. When Pokémon buying rules are active, it scans up to **three cheapest-price pages per currency**. It does not promise to inspect all listings or beat retention lotteries. Pokémon and Diamond listing scans are serialized; empty replies lacking the required kind/currency/page are discarded rather than guessed. Background acceptance pauses when the player browses the normal market. A request already sent before opening the native market can still be delivered to the game's own handler.
 
 
+
+## Read-only economy context (v0.5.0)
+
+Open **Moth Watch → Economy & holdings** to see separate buyer-acknowledged purchase exposure, unverified order reservations, optional **manually entered** item holdings (one currency per asset), and a seller-fee calculator. No holdings are assumed from old purchases or inventorially synced; unknown or sparse/old completed-sale prices display as **unknown**, not as wallet balances or NPC value. A market catalog label is **not** a promise that an item is eligible for player/NPC resale.
+
+The read-only calculator reproduces the shared marginal Pokémon Gem commission formula across **500 / 5,000 Gem thresholds**, flat 15% Gem fees for item/Diamond sales and a **Coin seller-net range**, because precise Coin rounding is not verified. A Pokémon's optional listing/holding cost is **100,000 Coins/day upfront** and shown separately from the seller's net in Gems/Coins. **No sale is created.**
+
+An optional versioned `MOTH_ECONOMY_TELEMETRY_V1` session snapshot can report observed hunt Coins, NPC auto-sales, item-replacement costs, rare drops and modeled rare-drop units/h **without another polling loop**; without such a producer the farm profit remains unknown. Its inclusion flag prevents counting NPC auto-sales twice. All expected drops remain modeled and separate from realized funds.
+
+See [Milestone C economy contract](docs/MOTHWATCH_MILESTONE_C_ECONOMY.md) for source requirements, formulas, privacy and remaining live-field limitations.
 
 ## Pokémon valuation
 
