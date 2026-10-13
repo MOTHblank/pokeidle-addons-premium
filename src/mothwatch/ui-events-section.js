@@ -7,6 +7,10 @@
             event.stopPropagation();
             const target = event.target instanceof Element ? event.target : null;
             if (!target) return;
+            // Focus delegated action buttons so validation feedback can be
+            // attached to the correct composer, including mouse clicks.
+            const ruleAdd = target.closest('#moth-add-fixed-rule, #moth-add-any-rule, #moth-add-pokemon-rule');
+            if (ruleAdd) ruleAdd.focus({ preventScroll: true });
             const button = target.closest('[data-moth-snatch]');
             if (button) {
                 const parts = String(button.dataset.mothSnatch || '').split(':');
