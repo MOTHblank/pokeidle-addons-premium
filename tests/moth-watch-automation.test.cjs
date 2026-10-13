@@ -103,12 +103,12 @@ test('Multiple fixed rules are checked fairly, including after an unaffordable r
     ];
     const config = { enabled: true, fixedRulesEnabled: true, fixedItemRules: rules };
     const requested = [], bought = [];
-    const fn = new Function('config', 'state', 'gameIsLoading', 'q', 'sanitizeFixedItemRules',
+    const fn = new Function('config', 'state', 'gameIsLoading', 'q', 'communityMarketIsOpen', 'sanitizeFixedItemRules',
         'automationDetail', 'fixedRuleCandidate', 'purchaseQuantity', 'tryBuy',
         'hasAnyBuyingRules', 'activeAnyItemRules', 'activePokemonRules',
         'anyItemRuleTargets', 'anyItemRuleCandidate', 'pokemonRuleCandidate',
         section('    function runMarketAutomation(', '    function runScan(force)') + '\nreturn runMarketAutomation;')(
-        config, state, () => false, () => null, v => v,
+        config, state, () => false, () => null, () => false, v => v,
         id => { requested.push(id); }, rule => ({ listingId: rule.itemId, name: String(rule.itemId) }),
         candidate => candidate.listingId === 106 ? 0 : 1,
         candidate => { bought.push(candidate.listingId); return true; },
@@ -132,9 +132,9 @@ test('Rule requests get ahead of background scans without displacing manual item
         selectedItemFocus: null, sellRecommendationKey: null,
         lastDetailRequest: new Map()
     };
-    const fn = new Function('state', 'config', 'scheduleItemDetailPump',
+    const fn = new Function('state', 'config', 'scheduleItemDetailPump', 'MAX_DETAIL_QUEUE',
         section('    function queueItemDetail(', '    function scheduleItemDetailPump(') +
-        '\nreturn queueItemDetail;')(state, {scanSeconds:5}, () => {});
+        '\nreturn queueItemDetail;')(state, {scanSeconds:5}, () => {}, 24);
     fn(106,'gold');
     assert.deepEqual(state.detailQueue.map(x => x.key), ['105:gold','106:gold','999:gold']);
     state.selectedItemFocus = { key:'107:orb' };
@@ -464,14 +464,14 @@ test('Automated Pokémon orders require master permission and remain serialized'
     const submitted=[];
     const candidate={key:'rule:pokemon:7',kind:'pokemon',listingId:7,currency:'orb',
         price:5,unitPrice:5,qty:1,ficha:{shiny:true,potencia:5}};
-    const runner=new Function('config','state','gameIsLoading','q',
+    const runner=new Function('config','state','gameIsLoading','q','communityMarketIsOpen',
         'hasAnyBuyingRules','sanitizeFixedItemRules','activeAnyItemRules',
         'activePokemonRules','anyItemRuleTargets','automationDetail',
         'fixedRuleCandidate','anyItemRuleCandidate','pokemonRuleCandidate',
         'purchaseQuantity','tryBuy',
         section('    function runMarketAutomation(', '    function runScan(force)') +
         '\nreturn runMarketAutomation;')(
-        config,state,()=>false,()=>null,
+        config,state,()=>false,()=>null,()=>false,
         ()=>config.enabled && config.fixedRulesEnabled,
         ()=>[],()=>[],()=>config.pokemonBuyRules,()=>[],()=>{},
         ()=>null,()=>null,()=>candidate,()=>1,
