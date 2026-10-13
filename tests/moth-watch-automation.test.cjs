@@ -1101,3 +1101,116 @@ test('Milestone D: stale rule quotes are never described as currently eligible',
     assert.equal(make(true)(rule),'Eligible listing available');
     assert.match(script,/candidate \&\& freshQuote\(candidate, false\)/);
 });
+
+
+test('MothWatch v0.6.1: source sections match the single distributable userscript', () => {
+    const parts = [
+        ['RULES','rules-section.js'], ['ORDERS','orders-section.js'],
+        ['TRANSPORT','transport-section.js'], ['PRICING','pricing-section.js'],
+        ['ECONOMY','economy-section.js'], ['RULE_SAFETY','rule-safety-section.js'],
+        ['DIAGNOSTICS','diagnostics-section.js'],
+        ['ITEM_SCANNER','item-scanner-section.js'],
+        ['POKEMON_SCANNER','pokemon-scanner-section.js'],
+        ['AUTO_SCANNER','automation-scanner-section.js'],
+        ['SOCKET','socket-section.js'], ['UI_STYLE','ui-style-section.js'],
+        ['UI_BROWSER','ui-browser-section.js'], ['UI_RULES','ui-rules-section.js'],
+        ['UI_RENDER','ui-render-section.js'], ['UI_EVENTS','ui-events-section.js']
+    ];
+    for (const [id, name] of parts) {
+        const begin = '    // BEGIN MOTHWATCH ' + id + ' GENERATED\n';
+        const end = '\n    // END MOTHWATCH ' + id + ' GENERATED';
+        const a = script.indexOf(begin), b = script.indexOf(end, a + begin.length);
+        assert.ok(a >= 0 && b > a, 'module markers: ' + id);
+        const moduleSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'mothwatch', name), 'utf8').trimEnd();
+        assert.equal(script.slice(a + begin.length, b), moduleSource, 'generated parity: ' + id);
+    }
+    assert.match(script, /@version\s+0\.6\.1/);
+    assert.doesNotMatch(script, /\bimport\s*\(|\brequire\s*\(/,
+        'one Violentmonkey userscript must not require runtime module loading');
+});
+
+function inventoryMemoHarness() {
+    const state = {
+        selectedItemFocus: null,
+        itemDetailStatus: null,
+        itemOfferDetails: new Map(),
+        itemSummary: {106: {minGold: 100}},
+        itemNames: new Map(),
+        catalog: new Map([[106, {id: 106}]]),
+        itemInventoryCollapsed: false,
+        detailQueued: new Set(),
+        detailQueue: [],
+        detailPending: null,
+        itemInventoryMemo: null,
+        orderJournal: {accountKey: 'profileA'}
+    };
+    let builds = 0, locale = 'pt-BR';
+    const renderItemInventory = () => 'inventory-' + (++builds);
+    const code = section('    function inventoryViewSnapshot(', '    function renderWatch(');
+    const snapshot = new Function('state', 'currentLocale', 'renderItemInventory',
+        code + '\nreturn inventoryViewSnapshot;')(state, () => locale, renderItemInventory);
+    return {state, snapshot, builds: () => builds, setLocale: next => {locale = next;}};
+}
+
+test('MothWatch v0.6.1: inventory HTML cache ignores unrelated repeated telemetry updates', () => {
+    const h = inventoryMemoHarness();
+    const first = h.snapshot();
+    assert.equal(first.html, 'inventory-1');
+    for (let i = 0; i < 3000; i++) {
+        assert.equal(h.snapshot(), first);
+    }
+    assert.equal(h.builds(), 1, 'no unnecessary rebuilding in long sessions');
+    h.state.itemSummary = {106:{minGold: 99}};
+    assert.notEqual(h.snapshot(), first);
+    assert.equal(h.builds(), 2, 'changed summary must invalidate');
+
+    h.state.selectedItemFocus = {key:'106:gold'};
+    h.state.itemOfferDetails.set('106:gold', {updatedAt:1, offers:[]});
+    const focused = h.snapshot();
+    assert.equal(h.builds(), 3);
+    h.state.itemOfferDetails.set('106:gold', {updatedAt:2, offers:[{id:7,preco:50}]});
+    assert.notEqual(h.snapshot(), focused, 'updated offer details must invalidate');
+    assert.equal(h.builds(), 4);
+    h.state.itemDetailStatus = {key:'106:gold',status:'loaded'};
+    h.snapshot();
+    assert.equal(h.builds(), 5);
+    h.state.detailPending = {key:'106:gold'};
+    h.snapshot();
+    assert.equal(h.builds(), 6);
+    h.state.detailPending = null;
+    h.snapshot();
+    assert.equal(h.builds(), 7);
+});
+
+test('MothWatch v0.6.1: inventory memo invalidates across account, locale, collapse and queue transitions', () => {
+    const h = inventoryMemoHarness();
+    h.snapshot();
+    h.state.orderJournal.accountKey = 'profileB';
+    h.snapshot();
+    h.setLocale('en');
+    h.snapshot();
+    h.state.itemInventoryCollapsed = true;
+    h.snapshot();
+    h.state.selectedItemFocus = {key:'106:gold'};
+    h.snapshot();
+    h.state.detailQueued.add('106:gold');
+    h.snapshot();
+    h.state.detailQueued.clear();
+    h.snapshot();
+    h.state.itemInventoryMemo = null;
+    h.snapshot();
+    assert.equal(h.builds(), 8);
+    assert.match(script, /state\.itemInventoryMemo\s*=\s*null;\s*state\.lastInventoryPaint\s*=\s*null;\s*state\.catalog\.clear\(\)/,
+        'new welcome catalog must invalidate memo despite stable Map identity');
+});
+
+test('MothWatch v0.6.1: off-tab view updates avoid candidate sorting and settings serialization', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'mothwatch',
+        'ui-render-section.js'), 'utf8');
+    assert.match(src, /if \(state\.watchView === 'opportunities'\) candidates\.sort\(candidateSort\)/);
+    assert.match(src, /const baseline = state\.watchView === 'activity' \? baselineStats\(\) : null/);
+    assert.match(src, /const settingsSignature = state\.watchView === 'automation'/);
+    assert.match(src, /state\.lastInventoryPaint !== snapshot/);
+    assert.doesNotMatch(src, /host\.innerHTML !== html\)\s*\{\s*const oldScroller/,
+        'do not serialize the entire inventory DOM every 250 ms');
+});
