@@ -78,6 +78,15 @@ test('rare caps, impossibility and invalid input do not fabricate a forecast',()
         {catchEvent:-1}),null);
 });
 
+test('higher Outland tier is accessible in the main Atlas view, guarded by native state',()=>{
+    assert.match(src,/quickOutlandHtml/);
+    assert.match(src,/\$\{quickOutlandHtml\}/);
+    assert.match(src,/data-mha-quick-outland/);
+    assert.match(src,/data-mha-quick-tier-apply/);
+    assert.match(src,/requestOutlandTier\(state\.filters\.outlandPreviewTier\)/);
+    assert.match(src,/activateTier=Boolean\(tierInfo && state\.outlandTierSeen/);
+    assert.match(src,/if\(!state\.outlandTierSeen \|\|/);
+});
 test('reference panel cannot alter core forecast or sort functions',()=>{
     assert.match(src,/data-mha-reference-setting/);
     assert.match(src,/referenceCapturePreview\(/);
