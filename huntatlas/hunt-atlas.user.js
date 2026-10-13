@@ -12750,8 +12750,23 @@
                 '<option value="'+item.id+'" '+
                 (state.filters.rareSortItem===item.id?'selected':'')+
                 '>'+escapeHtml(item.name)+'</option>').join('')+
-            '</select></label> · '+escapeHtml(tr('rank.rarePreview',{
-                tier:state.filters.outlandPreviewTier}))+'</div>':'';
+            '</select></label> · <label>'+
+            escapeHtml(tr('rare.preview'))+' <select data-mha-sort-outland-tier>'+
+            FARM_OUTLAND_TIERS.map(([level],i)=>
+                '<option value="'+(i+1)+'" '+
+                (state.filters.outlandPreviewTier===i+1?'selected':'')+
+                '>Outland '+(i+1)+' · Lv '+level+'</option>').join('')+
+            '</select></label> · '+escapeHtml(tr('rare.previewOnly'))+
+            '</div>':'';
+        const ballSortHtml=['capture','shinyCatch'].includes(objective)?
+            '<div class="mha-xp-note"><label>'+
+            escapeHtml(tr('catch.ball'))+' <select data-mha-sort-capture-ball>'+
+            '<option value="ultra" '+
+                (state.filters.captureBall==='ultra'?'selected':'')+'>'+
+                escapeHtml(tr('catch.ultra'))+'</option>'+
+            '<option value="beast" '+
+                (state.filters.captureBall==='beast'?'selected':'')+'>'+
+                escapeHtml(tr('catch.beast'))+'</option></select></label></div>':'';
         const activateTier=Boolean(tierInfo && state.outlandTierSeen &&
             nativeTier!==null && nativeTier!==selectedTier &&
             !state.pendingOutlandTier && socketReady());
@@ -12904,6 +12919,7 @@
             </div>
 
             ${rareChoiceHtml}
+            ${ballSortHtml}
             <div class="mha-xp-primary">
                 <div class="mha-xp-primary-main">
                     <strong>${best
@@ -13058,6 +13074,21 @@
         if (host.innerHTML === html) return;
         host.innerHTML = html;
 
+        q('[data-mha-sort-outland-tier]',host)?.addEventListener('change',event=>{
+            const tier=Number(event.target.value);
+            if(!farmingTier(tier,state.playerLevel) &&
+                !Number.isInteger(tier))return;
+            if(tier<1||tier>8)return;
+            state.filters.outlandPreviewTier=tier;
+            saveFilters();
+            renderDrawer();
+        });
+        q('[data-mha-sort-capture-ball]',host)?.addEventListener('change',event=>{
+            if(!['ultra','beast'].includes(event.target.value))return;
+            state.filters.captureBall=event.target.value;
+            saveFilters();
+            renderDrawer();
+        });
         q('[data-mha-rare-item]',host)?.addEventListener('change',event=>{
             const item=Number(event.target.value);
             if(!HA_RARE_SORT_IDS.includes(item))return;
