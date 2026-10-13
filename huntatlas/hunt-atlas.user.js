@@ -6457,8 +6457,11 @@
                     Object.entries(source) : [];
             for (const [id,quantity] of entries.slice(0,200)) {
                 const n = Number(id), count = farmNum(quantity);
-                if (Number.isInteger(n) && count !== null)
-                    state.inventoryForCosts.set(kind+':'+n,count);
+                if (!Number.isSafeInteger(n) || n < 0) continue;
+                const key=kind+':'+n;
+                if (quantity === null) state.inventoryForCosts.delete(key);
+                else if (Number.isSafeInteger(count))
+                    state.inventoryForCosts.set(key,count);
             }
         }
     }
