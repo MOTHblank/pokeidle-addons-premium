@@ -372,6 +372,7 @@
             button.dataset.mothNativeSnatch=key;
             button.dataset.mothSnatchItem=String(Number(offer.itemId)||0);
             button.textContent=tr(state.snatchManual.has(key)?'Cancel snatch':'Snatch');
+            button.title=tr('Buy this exact listing automatically at its displayed price when eligible, even if you leave the market view.');
             button.style.marginInlineStart='0.4rem';
             button.addEventListener('click',event=>{
                 event.preventDefault(); event.stopPropagation();
@@ -409,6 +410,7 @@
         const active = state.snatchManual.has(key);
         return '<button type="button" class="moth-mw-btn" data-moth-snatch="' +
             escapeHtml(key) + '" data-moth-snatch-item="' + Number(itemId||0) +
+            '" title="' + escapeHtml(tr('Buy this exact listing automatically at its displayed price when eligible, even if you leave the market view.')) +
             '" aria-pressed="' + (active?'true':'false') + '">' +
             escapeHtml(tr(active ? 'Cancel snatch' : 'Snatch')) + '</button>';
     }
