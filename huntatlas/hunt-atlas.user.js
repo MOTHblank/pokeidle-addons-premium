@@ -11316,6 +11316,7 @@
                 hunt
             );
 
+        const economicInfo = huntEconomyEstimate(hunt,xpInfo);
         const xpLabel =
             xpInfo?.value
                 ? tr(
@@ -11358,6 +11359,14 @@
                         : 'hunt.locked'
                 ),
                 xpLabel,
+                typeof economicInfo.killCoinsH === 'number'
+                    ? tr('econ.kill') + ': ' + formatRate(economicInfo.killCoinsH)
+                        + ' (' + (economicInfo.killSource === 'observed-server/event'
+                            ? tr('econ.observed') : tr('econ.model')) + ')'
+                    : null,
+                typeof economicInfo.netH === 'number'
+                    ? tr('econ.net') + ': ' + formatRate(economicInfo.netH)
+                    : null,
                 xpInfo?.incomplete ? tr('xp.incompleteShort', { percentage: xpInfo.coverage }) : null,
                 sharedHunts.length ? tr('location.shared', { hunts: sharedHunts.join(', ') }) : null
             ]
@@ -11776,6 +11785,14 @@
                 tr('econ.observed')),
             economic.diamondsH ? econLine(tr('econ.diamonds'),
                 economic.diamondsH,tr('econ.observed')) : '',
+            ...economic.useEvidence.filter(row=>
+                row.remaining !== null && row.hoursRemaining !== null
+            ).slice(0,3).map(row=>'<div class="mha-xp-note">' +
+                escapeHtml((row.type==='ball'?'Ball ':'Item ') + row.id) +
+                ': ' + escapeHtml(tr('econ.stock', {
+                    count:row.remaining,
+                    hours:row.hoursRemaining.toFixed(1)
+                })) + '</div>'),
             '<div class="mha-xp-note">' +
                 escapeHtml(tr('econ.netCaveat')) + '</div>',
             economic.unknownCosts ? '<div class="mha-xp-note">' +
