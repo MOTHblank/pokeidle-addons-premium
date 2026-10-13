@@ -4063,7 +4063,7 @@
         return next;
     }
 
-    function nativeXpBonusReading(state,level) {
+    function nativeXpBonusReading(state,level,now=Date.now()) {
         const values=state||{};
         let trainer=1,pokemon=1;
         const sources=[],unknown=[];
@@ -4089,7 +4089,26 @@
             trainer*=1+p/100;pokemon*=1+p/100;
             sources.push({kind:'guild',pct:p});
         }
-        if(values.loja?.boostKeys>0) unknown.push('shop');
+        // These are upstream-defined, timestamp-gated multiplicative XP
+        // sources, not arbitrary interpretations of a generic 'boost' flag.
+        if(Number(values.loja?.vipUntil)>now) {
+            trainer*=1.5;pokemon*=1.5;
+            sources.push({kind:'vip'});
+        }
+        if(Number(values.guild?.boostUntil)>now) {
+            trainer*=1.1;pokemon*=1.1;
+            sources.push({kind:'guildBank'});
+        }
+        const shopBoosts=values.loja?.boosts||{};
+        for(const [kind,key] of [['shopTrainer','xp'],['shopPokemon','pokexp']]) {
+            if(!(Number(shopBoosts[key])>now))continue;
+            const mult=values.tiposBoost?.[key];
+            if(typeof mult==='number'&&Number.isFinite(mult)&&mult>=1) {
+                if(key==='xp')trainer*=mult;
+                else pokemon*=mult;
+                sources.push({kind,mult});
+            } else unknown.push(kind);
+        }
         const catchup=values.loja?.catchup;
         if(catchup) {
             // The upstream x10 catch-up ends at a trainer-XP threshold and
@@ -4099,21 +4118,28 @@
                 unknown.push('catchup');
             else if(target===null) unknown.push('catchup');
         }
-        const reported=['twitch','evento','guildBonusPct','loja']
+        const reported=['twitch','evento','guildBonusPct','guild','loja']
             .some(key=>Object.hasOwn(values,key));
         return {trainer, pokemon,sources,unknown,
             reported,knownFactors:sources.length>0,
             complete:reported&&unknown.length===0 &&
-                ['twitch','evento','guildBonusPct','loja']
+                ['twitch','evento','guildBonusPct','guild','loja']
                     .every(key=>Object.hasOwn(values,key))};
     }
 
-    function nativeXpBonusScope(values) {
-        // Stable, small signature; no usernames and no per-frame timestamps.
+    function nativeXpBonusScope(values,now=Date.now()) {
+        // Invalidate a cached forecast when an upstream timed boost expires,
+        // even without another websocket packet.
+        const active=end=>typeof end==='number'&&end>now;
         return JSON.stringify([
             values?.twitch?.pct??null,values?.twitch?.watching??null,
             values?.evento?.trainer??null,values?.evento?.pokemon??null,
-            values?.guildBonusPct??null,values?.loja?.boostKeys??null,
+            values?.guildBonusPct??null,
+            active(values?.guild?.boostUntil),
+            active(values?.loja?.vipUntil),
+            active(values?.loja?.boosts?.xp),
+            active(values?.loja?.boosts?.pokexp),
+            values?.tiposBoost?.xp??null,values?.tiposBoost?.pokexp??null,
             values?.loja?.catchup?.target??null,
             values?.loja?.catchup?.multiplier??null
         ]);
