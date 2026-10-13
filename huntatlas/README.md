@@ -49,6 +49,10 @@ No painel **Planejador de capturas e shinies**, a escolha Ultra/Beast e a simula
 
 Veja [contrato técnico, cenários de teste e limitações](../docs/HUNTATLAS_MILESTONE_E.md). O addon não compra bolas automaticamente nem altera o Auto Catch+.
 
+### Troca rápida de tier Outland (v1.9.10)
+
+O seletor **Tier Outland (troca rápida)** fica na área principal do Atlas quando a Outland está desbloqueada. Escolha um tier de 1 a 8 e clique em **Mudar para este tier**, sem desativar o HuntAtlas ou expandir Detalhes da hunt. Ele informa o tier realmente ativo quando o jogo transmite esse dado, respeita bloqueios por nível, exige conexão, evita reenvios simultâneos e aguarda confirmação do estado do jogo. **Mudar a prévia sozinho não muda o tier da conta.** Se o jogo não enviar o tier atual, o botão continua indisponível; a conexão e o protocolo precisam ser verificados em uma sessão real.
+
 ### Cenários de referência PokeIdle Tools (v1.9.10)
 
 Dentro de **Detalhes da hunt → Cenários de bônus de referência externa**, há uma simulação opcional, **desligada por padrão**, que incorpora os coeficientes matemáticos que o site externo realmente usa: bônus shiny e de captura ×1,5, hipóteses de Kick ×1,15, percentuais de eventos e multiplicadores de loot/guilda/evento/Kick para os drops raros. Todos os valores são escolhidos manualmente e a interface deixa claro que **não foram observados nem confirmados no servidor**. Kick é apenas uma hipótese numérica, não uma reintegração ao Controller.
