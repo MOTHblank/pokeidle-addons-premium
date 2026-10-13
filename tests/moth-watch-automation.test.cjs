@@ -105,12 +105,12 @@ test('Multiple fixed rules are checked fairly, including after an unaffordable r
     ];
     const config = { enabled: true, fixedRulesEnabled: true, fixedItemRules: rules };
     const requested = [], bought = [];
-    const fn = new Function('config', 'state', 'gameIsLoading', 'q', 'communityMarketIsOpen', 'sanitizeFixedItemRules',
+    const fn = new Function('config', 'state', 'gameIsLoading', 'q', 'communityMarketIsOpen', 'unverifiedOrdersExist', 'sanitizeFixedItemRules',
         'automationDetail', 'fixedRuleCandidate', 'purchaseQuantity', 'tryBuy',
         'hasAnyBuyingRules', 'activeAnyItemRules', 'activePokemonRules',
         'anyItemRuleTargets', 'anyItemRuleCandidate', 'pokemonRuleCandidate',
         section('    function runMarketAutomation(', '    function runScan(force)') + '\nreturn runMarketAutomation;')(
-        config, state, () => false, () => null, () => false, v => v,
+        config, state, () => false, () => null, () => false, () => false, v => v,
         id => { requested.push(id); }, rule => ({ listingId: rule.itemId, name: String(rule.itemId) }),
         candidate => candidate.listingId === 106 ? 0 : 1,
         candidate => { bought.push(candidate.listingId); return true; },
@@ -466,14 +466,14 @@ test('Automated Pokémon orders require master permission and remain serialized'
     const submitted=[];
     const candidate={key:'rule:pokemon:7',kind:'pokemon',listingId:7,currency:'orb',
         price:5,unitPrice:5,qty:1,ficha:{shiny:true,potencia:5}};
-    const runner=new Function('config','state','gameIsLoading','q','communityMarketIsOpen',
+    const runner=new Function('config','state','gameIsLoading','q','communityMarketIsOpen','unverifiedOrdersExist',
         'hasAnyBuyingRules','sanitizeFixedItemRules','activeAnyItemRules',
         'activePokemonRules','anyItemRuleTargets','automationDetail',
         'fixedRuleCandidate','anyItemRuleCandidate','pokemonRuleCandidate',
         'purchaseQuantity','tryBuy',
         section('    function runMarketAutomation(', '    function runScan(force)') +
         '\nreturn runMarketAutomation;')(
-        config,state,()=>false,()=>null,()=>false,
+        config,state,()=>false,()=>null,()=>false,()=>false,
         ()=>config.enabled && config.fixedRulesEnabled,
         ()=>[],()=>[],()=>config.pokemonBuyRules,()=>[],()=>{},
         ()=>null,()=>null,()=>candidate,()=>1,
@@ -626,4 +626,11 @@ test('Milestone A: fixture families cover positive, empty, missing and conflicti
     assert.equal(api.marketReplyMatches(fixtures.diamondVitrine.positive,'diamante'),true);
     assert.equal(api.marketReplyMatches(fixtures.diamondVitrine.empty,'diamante'),true);
     assert.equal(api.marketReplyMatches(fixtures.diamondVitrine.wrongCurrency,'diamante'),false);
+});
+
+test('Milestone A: orders remain blocked after uncertain outcome even across listing IDs', () => {
+    const body = section('    function tryBuy(', '    function controllerResult(');
+    assert.match(body, /unverifiedOrdersExist\(\)/);
+    const runner = section('    function runMarketAutomation(', '    function runScan(force)');
+    assert.match(runner, /unverifiedOrdersExist\(\)/);
 });
