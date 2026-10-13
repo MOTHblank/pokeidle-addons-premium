@@ -64,7 +64,7 @@ Run the non-network tests with `node --test tests/moth-watch-automation.test.cjs
 
 ## Hunt Atlas experiment
 
-The independent Hunt Atlas experiment is preserved under [`huntatlas/`](huntatlas/) at version **1.9.3**. This copy stays separate from the regular Hunt Atlas installed by `pokeidle-addons` and does not automatically synchronize with it. The original preview image, combat accuracy tests and Parcel Panic minigame tests have all been retained.
+The independent Hunt Atlas experiment is maintained under [`huntatlas/`](huntatlas/) at version **1.9.13**. This copy stays separate from the regular Hunt Atlas installed by `pokeidle-addons` and does not automatically synchronize with it. Its preview image, combat and rare-rate regression tests remain.
 
 See the [**Hunt Atlas premium development roadmap**](docs/HUNTATLAS_ROADMAP.md) for the prioritized 27-task plan covering measured and modeled XP/h, net Coins/h, rare drops, eight Outland tiers, catch probabilities, ball costs, uncertainty and low-resource operation.
 
