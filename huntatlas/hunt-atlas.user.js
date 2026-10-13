@@ -511,6 +511,8 @@
             'econ.noPrice': 'Costs unavailable: missing official shop price for {count} uses',
             'econ.unlinked': 'Net unavailable: {count} throw event(s) could not be reconciled to a unique corpse',
             'econ.stock': 'Stock {count} · runway {hours}h at observed use rate',
+            'econ.ball': 'Ball',
+            'econ.item': 'Item',
             'econ.unknown': '— (insufficient evidence)',
             'filter.panelTitle': 'Search and filters',
             'filter.showPanel': 'Show filters',
@@ -831,6 +833,8 @@
             'econ.noPrice': 'Custo indisponível: falta preço oficial de {count} usos',
             'econ.unlinked': 'Líquido indisponível: {count} evento(s) de bola sem associação confiável a um corpo',
             'econ.stock': 'Estoque {count} · duração {hours}h no ritmo observado',
+            'econ.ball': 'Bola',
+            'econ.item': 'Item',
             'econ.unknown': '— (evidência insuficiente)',
             'filter.panelTitle': 'Busca e filtros',
             'filter.showPanel': 'Mostrar filtros',
@@ -11805,7 +11809,7 @@
             }):null,
             sharedHunts.length?tr('location.shared',{
                 hunts:sharedHunts.join(', ')}):null,
-            tr('rank.confidence',{confidence:xpInfo?.confidence??'low'}),
+            tr('rank.confidence',{confidence:tr('xp.confidence.'+(xpInfo?.confidence??'low'))}),
             tr('rank.coverage',{percent:xpInfo?.coverage??0}),
             xpInfo?.observed?tr('econ.observed'):tr('rank.unboosted')
         ].filter(Boolean).join(' · ');
@@ -12205,7 +12209,7 @@
             ...economic.useEvidence.filter(row=>
                 row.remaining !== null && row.hoursRemaining !== null
             ).slice(0,3).map(row=>'<div class="mha-xp-note">' +
-                escapeHtml((row.type==='ball'?'Ball ':'Item ') + row.id) +
+                escapeHtml((row.type==='ball'?tr('econ.ball'):tr('econ.item'))+' '+row.id) +
                 ': ' + escapeHtml(tr('econ.stock', {
                     count:row.remaining,
                     hours:row.hoursRemaining.toFixed(1)
@@ -12609,7 +12613,7 @@
                 ${state.diagnosticsEnabled?'<div class="mha-xp-note">'+
                     escapeHtml(tr('diag.title'))+' · '+
                     escapeHtml(tr('diag.source',{
-                        source:currentXp?.source||tr('rank.unknown'),
+                        source:currentXp?xpSourceLabel(currentXp):tr('rank.unknown'),
                         window:currentXp?.observed?
                             Math.round(currentXp.windowMs/1000)+' s':
                             tr('diag.noWindow'),
