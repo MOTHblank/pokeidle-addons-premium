@@ -151,7 +151,7 @@
             } else if (state.watchView === 'economy') {
                 content.innerHTML = '<div class="moth-mw-section-title"><h4>' +
                     escapeHtml(tr('Economy & holdings')) + '</h4><span>' +
-                    escapeHtml(tr('Read-only estimates and user-entered holdings; never realized proceeds.')) +
+                    escapeHtml(tr('Read-only fees, market eligibility, and recorded purchase exposure.')) +
                     '</span></div><div id="moth-mw-economy"></div>';
             } else if (state.watchView === 'snatches') {
                 content.innerHTML =
@@ -190,20 +190,23 @@
                     fixedRulesHtml() + categoryRulesHtml('any') + categoryRulesHtml('pokemon') +
                     '<details class="moth-mw-advanced"><summary>' + escapeHtml(tr('Advanced monitoring & references')) +
                     '</summary><div class="moth-mw-advanced-body"><p class="moth-mw-advanced-note">' +
-                    escapeHtml(tr('Scanning and reference-quality controls. These do not authorize orders by themselves.')) +
+                    escapeHtml(tr('Scanning controls only. Price thresholds for suggestions never authorize or restrict your explicit buying rules.')) +
                     '</p><div class="moth-mw-settings-grid"><section class="moth-mw-settings-card"><h4>' + escapeHtml(tr('Watch rules')) +
                     '</h4><div class="moth-mw-config">' + configField('Watch price threshold', 'watchPercent', 'range', '%') +
                     configField('Scan interval', 'scanSeconds', 'number', 'seconds') + configField('Watch items', 'scanItems', 'checkbox') +
                     configField('Watch Pokémon', 'scanPokemon', 'checkbox') + configField('Watch diamonds', 'scanDiamonds', 'checkbox') +
-                    '</div></section><section class="moth-mw-settings-card"><h4>' + escapeHtml(tr('Reference confidence')) +
-                    '</h4><div class="moth-mw-config">' + configField('Minimum sold item units', 'minItemUnits', 'number', '') +
-                    configField('Minimum Pokémon sale samples', 'minPokemonSamples', 'number', '') +
-                    configField('Pokémon history pages', 'pokemonHistoryPages', 'number', '') +
                     '</div></section></div></div></details>';
             } else {
                 content.innerHTML =
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Price references')) + '</h4><span>' +
-                    escapeHtml(tr('Inspect and refresh reference data used to judge offers.')) + '</span></div>' +
+                    escapeHtml(tr('Inspect market-price evidence independently of your buying rules.')) + '</span></div>' +
+                    '<section class="moth-mw-settings-card"><h4>' + escapeHtml(tr('Valuation sample settings (not buying limits)')) +
+                    '</h4><p class="moth-mw-rule-hint">' + escapeHtml(tr('These settings affect price estimates and deal discovery only. Rules such as “buy any item below 10,000 Coins” never require historical sales.')) +
+                    '</p><div class="moth-mw-config">' +
+                    configField('Sold item units for estimate confidence', 'minItemUnits', 'number', '') +
+                    configField('Comparable Pokémon sales for price estimates', 'minPokemonSamples', 'number', '') +
+                    configField('Pokémon history pages', 'pokemonHistoryPages', 'number', '') +
+                    '</div></section>' +
                     '<div class="moth-mw-reference-tools" id="moth-mw-reference-tools"></div>' +
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Recent activity')) + '</h4><span>' +
                     escapeHtml(tr('Purchase attempts, confirmations, and errors.')) + '</span></div>' +
