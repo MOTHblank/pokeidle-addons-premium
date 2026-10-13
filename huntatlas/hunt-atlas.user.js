@@ -5273,6 +5273,11 @@
                 message.estado,
                 true
             );
+            // The upstream Hunt Analyser obtains multipliers from tiposBoost.
+            // Read only catalog entries the live game explicitly supplies.
+            if(Array.isArray(message.tiposBoost))
+                state.nativeXpContext=nativeXpBonusDelta(
+                    state.nativeXpContext,{tiposBoost:message.tiposBoost});
 
             saveCache();
 
