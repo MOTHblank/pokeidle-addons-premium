@@ -1830,11 +1830,11 @@
     }
 
     function pokemonListingName(ficha) {
-        const shiny = ficha && ficha.shiny ? 'Shiny ' : '';
-        const species = pokemonSpeciesName(ficha);
-        const power = Math.max(1, Number(ficha && ficha.potencia || 1));
-        const level = Number(ficha && ficha.level || 0);
-        return shiny + species + ' · P' + power + ' · Lv ' + level;
+        const shiny = ficha?.shiny === true ? 'Shiny ' : '';
+        const facts = pokemonFacts(ficha);
+        return shiny + pokemonSpeciesName(ficha) +
+            ' · P' + (facts.potency ?? '?') +
+            ' · Lv ' + (facts.level ?? '?');
     }
 
     // PokéIdle v1.269.5: shiny Pokémon cannot be listed for Coins.
