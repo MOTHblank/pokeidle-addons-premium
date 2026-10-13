@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/huntatlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.12
+// @version      1.9.13
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.12');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.13');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -451,7 +451,6 @@
             'catch.targetObserved': 'observed throw coverage',
             'catch.targetCeiling': 'upper bound if all bodies targeted',
             'catch.shinyMean': 'Mean wait for shiny caught: {hours} · ≈{throws} accepted attempts/shiny caught',
-            'sort.pokemonXp': 'Pokémon XP/hour',
             'sort.npcLoot': 'NPC loot EV/hour (not cash)',
             'sort.rare': 'Selected rare item rate',
             'sort.ballEfficiency': 'Fewest Coins/capture (Ultra)',
@@ -502,7 +501,6 @@
             'diag.caveat': 'No raw messages, token, name or account ID is exported or uploaded.',
             'diag.counts': 'kills {kills}, accepted balls {throws}, captures {captures}, boosts keys {boosts}, render attempts {renders}',
             'sort.coins': 'Kill Coins/hour',
-            'sort.netCoins': 'Net Coins/hour (measured)',
             'econ.title': 'Farming economy · {hunt}',
             'econ.kill': 'Kill Coins/h',
             'econ.loot': 'NPC loot EV/h',
@@ -579,32 +577,6 @@
             'xp.confidence.high': 'observed',
             'xp.confidence.medium': 'partly observed',
             'xp.confidence.low': 'experimental',
-            'arcade.open': '🎮 Parcel Panic',
-            'arcade.back': '← Back to Atlas',
-            'arcade.title': '📦 Parcel Panic: Outland Express',
-            'arcade.subtitle': 'Deliver nonsense mail to hunt markers. The ghost auditors want a word.',
-            'arcade.region': 'Region',
-            'arcade.score': 'Deliveries',
-            'arcade.best': 'Best',
-            'arcade.hearts': 'Hearts',
-            'arcade.time': 'Time',
-            'arcade.target': 'Deliver to',
-            'arcade.start': 'Start delivering',
-            'arcade.restart': 'Restart run',
-            'arcade.resume': 'Resume',
-            'arcade.ready': 'Press Start to deliver nonsense',
-            'arcade.running': 'Avoid the ghost auditors!',
-            'arcade.paused': 'Paused — press Resume',
-            'arcade.gameOver': 'Fired by the postal service',
-            'arcade.finished': '{score} deliveries. The post office is disappointed.',
-            'arcade.delivered': 'Delivered to {hunt}!',
-            'arcade.ouch': 'Paperwork collision!',
-            'arcade.instructions': 'Focus the board for WASD / arrow keys, drag on it, or use the buttons below.',
-            'arcade.loading': 'Loading the hunt-marker index…',
-            'arcade.unavailable': 'Marker index unavailable. Try reopening Atlas later.',
-            'arcade.disclaimer': 'The roads are fictional, coordinates are stretched, and this does not move your Pokémon or grant in-game XP.',
-            'arcade.up': 'Up', 'arcade.down': 'Down',
-            'arcade.left': 'Left', 'arcade.right': 'Right',
             'xp.incompleteShort': '⚠ model covers {percentage}%',
             'xp.incompleteDetail': 'Incomplete personalized model: {covered}/{total} spawn points covered ({percentage}%); using baseline, not excluding enemies.',
             'status.movesUnavailable': ' · move index unavailable',
@@ -800,7 +772,6 @@
             'catch.targetObserved': 'cobertura medida de arremessos',
             'catch.targetCeiling': 'teto se todos os corpos receberem bola',
             'catch.shinyMean': 'Espera média por shiny capturado: {hours} · ≈{throws} bolas aceitas/shiny capturado',
-            'sort.pokemonXp': 'XP do Pokémon/hora',
             'sort.npcLoot': 'EV de loot NPC/h (não é dinheiro recebido)',
             'sort.rare': 'Frequência do item raro escolhido',
             'sort.ballEfficiency': 'Menor custo Moedas/captura (Ultra)',
@@ -851,7 +822,6 @@
             'diag.caveat': 'Nenhuma mensagem bruta, token, nome ou ID de conta é exportado ou enviado.',
             'diag.counts': 'abates {kills}, bolas aceitas {throws}, capturas {captures}, campos de bônus {boosts}, renderizações {renders}',
             'sort.coins': 'Moedas/h por abate',
-            'sort.netCoins': 'Moedas líquidas/h (medido)',
             'econ.title': 'Economia da hunt · {hunt}',
             'econ.kill': 'Moedas/h dos abates',
             'econ.loot': 'EV/h de loot vendável ao NPC',
@@ -928,32 +898,6 @@
             'xp.confidence.high': 'medido',
             'xp.confidence.medium': 'parcialmente medido',
             'xp.confidence.low': 'experimental',
-            'arcade.open': '🎮 Correio Maluco',
-            'arcade.back': '← Voltar ao Atlas',
-            'arcade.title': '📦 Correio Maluco: Expresso Outland',
-            'arcade.subtitle': 'Entregue encomendas absurdas nas hunts. Os fantasmas fiscais estão atrás de você.',
-            'arcade.region': 'Região',
-            'arcade.score': 'Entregas',
-            'arcade.best': 'Recorde',
-            'arcade.hearts': 'Vidas',
-            'arcade.time': 'Tempo',
-            'arcade.target': 'Entregar em',
-            'arcade.start': 'Começar entregas',
-            'arcade.restart': 'Reiniciar',
-            'arcade.resume': 'Continuar',
-            'arcade.ready': 'Aperte Começar para entregar bobagens',
-            'arcade.running': 'Fuja dos fiscais fantasmas!',
-            'arcade.paused': 'Pausado — aperte Continuar',
-            'arcade.gameOver': 'Demitido pelos Correios',
-            'arcade.finished': '{score} entregas. O gerente não está satisfeito.',
-            'arcade.delivered': 'Encomenda entregue em {hunt}!',
-            'arcade.ouch': 'Colisão burocrática!',
-            'arcade.instructions': 'Foque no tabuleiro e use WASD / setas, arraste nele ou use os botões abaixo.',
-            'arcade.loading': 'Carregando o índice de hunts no mapa…',
-            'arcade.unavailable': 'Índice de locais indisponível. Tente abrir o Atlas novamente.',
-            'arcade.disclaimer': 'As estradas são inventadas, as coordenadas distorcidas e nada aqui move seu Pokémon ou concede XP real.',
-            'arcade.up': 'Cima', 'arcade.down': 'Baixo',
-            'arcade.left': 'Esquerda', 'arcade.right': 'Direita',
             'xp.incompleteShort': '⚠ modelo cobre {percentage}%',
             'xp.incompleteDetail': 'Modelo personalizado incompleto: {covered}/{total} pontos de aparição cobertos ({percentage}%); usando modelo-base, sem ignorar inimigos.',
             'status.movesUnavailable': ' · índice de golpes indisponível',
@@ -1455,10 +1399,8 @@
 
             const validSorts = [
                 'xp',
-                'pokemonXp',
                 'coins',
                 'npcLoot',
-                'netCoins',
                 'rare',
                 'ballEfficiency',
                 'capture',
@@ -3360,7 +3302,7 @@
     // HA MILESTONE F PURE BEGIN. Ranking requires the requested metric,
     // never XP as a fallback for missing Coins, rare or capture evidence.
     const HA_RANK_METRICS=Object.freeze([
-        'xp','pokemonXp','coins','npcLoot','netCoins','rare',
+        'xp','coins','npcLoot','rare',
         'capture','shinyCatch','ballEfficiency'
     ]);
     const HA_RARE_SORT_IDS=Object.freeze([70000,70011,70012,70013,70017]);
@@ -3372,10 +3314,8 @@
             capture=data?.capture;
         switch(metric){
             case 'xp': return haMetricNumber(xp?.value);
-            case 'pokemonXp': return haMetricNumber(xp?.pokemonValue);
             case 'coins': return haMetricNumber(coins?.killCoinsH);
             case 'npcLoot': return haMetricNumber(coins?.npcLootEvH);
-            case 'netCoins': return haMetricNumber(coins?.netH);
             case 'rare': return haMetricNumber(rare?.unitsH);
             case 'capture': return haMetricNumber(capture?.catchesH);
             case 'shinyCatch': return haMetricNumber(capture?.shinyCaughtH);
@@ -8507,7 +8447,7 @@
             const relevant=grouped.get(hunt.slug)??[];
             let economy=null,rare=null,capture=null;
             let target=null;
-            if(['coins','npcLoot','netCoins'].includes(metric))
+            if(['coins','npcLoot'].includes(metric))
                 economy=huntEconomyEstimate(hunt,xp);
             if(metric==='rare')
                 rare=haMetricRare(hunt,state.filters.outlandPreviewTier,
@@ -8543,12 +8483,11 @@
                 capture=best;
             }
             const score=haMetricValue(metric,{xp,economy,rare,capture});
-            const source=metric==='xp'||metric==='pokemonXp'?
+            const source=metric==='xp'?
                 (xp?.observed?'measured':xp?.source??'unknown'):
-                metric==='coins'||metric==='npcLoot'||metric==='netCoins'?
+                metric==='coins'||metric==='npcLoot'?
                     (metric==='coins'?economy?.killSource:
-                        metric==='npcLoot'?economy?.lootSource:
-                        economy?.source)??'unknown':
+                        economy?.lootSource)??'unknown':
                 metric==='rare'?rare?.source??'not-eligible':
                     capture?.source??objectiveSource;
             return {hunt,xp,score,source,target,rare,capture,
@@ -9218,7 +9157,6 @@
             if(objectiveSortCache.has(key))return objectiveSortCache.get(key);
             const xp=huntXpEstimate(species.hunt);
             let value=null;
-            if(metric==='pokemonXp')value=xp?.pokemonValue??null;
             if(metric==='npcLoot')value=economyFor(species.hunt)?.npcLootEvH??null;
             if(metric==='rare'){
                 const rare=haMetricRare(species.hunt,
@@ -9349,17 +9287,16 @@
                             value(b),
                             true
                         );
-                } else if (['pokemonXp','npcLoot','rare','ballEfficiency'].includes(sort)) {
+                } else if (['npcLoot','rare','ballEfficiency'].includes(sort)) {
                     const av=objectiveFor(a),bv=objectiveFor(b);
                     const ak=av!==null,bk=bv!==null;
                     comparison=ak&&bk?(av-bv)*direction*
                         (sort==='ballEfficiency'?-1:1):
                         ak?-1:bk?1:0;
-                } else if (sort === 'coins' || sort === 'netCoins') {
+                } else if (sort === 'coins') {
                     // Null means unsupported, NOT free or equal to zero.
-                    const key = sort === 'coins' ? 'killCoinsH' : 'netH';
-                    const av = economyFor(a.hunt)?.[key];
-                    const bv = economyFor(b.hunt)?.[key];
+                    const av = economyFor(a.hunt)?.killCoinsH;
+                    const bv = economyFor(b.hunt)?.killCoinsH;
                     const aKnown = typeof av === 'number' && Number.isFinite(av);
                     const bKnown = typeof bv === 'number' && Number.isFinite(bv);
                     comparison = aKnown && bKnown ? (av - bv) * direction
@@ -9654,437 +9591,6 @@
         }
     }
 
-
-    // ------------------------------------------------------------------
-    // Parcel Panic — a toy, NOT a geographic map or game automation.
-    // Spawn locations come from the game's optional map-marker index;
-    // each region is deliberately stretched to fill the toy playfield.
-    // Absolutely nothing here sends game events, changes hunts or awards XP.
-    // ------------------------------------------------------------------
-    const ARCADE_WIDTH = 640;
-    const ARCADE_HEIGHT = 360;
-    const ARCADE_BEST_KEY = 'moth-hunt-atlas-parcel-panic-best-v1:';
-    const arcade = {
-        open: false, running: false, paused: false, raf: 0, lastFrame: 0,
-        region: '', markers: [], edges: [], player: {x: 320, y: 180},
-        destination: null, lastDestination: '', ghosts: [], sparks: [],
-        keys: new Set(), pointer: null, score: 0, best: 0,
-        hearts: 3, seconds: 60, invulnerable: 0, hudAt: 0,
-        canvas: null, context: null
-    };
-
-    function arcadeRegions() {
-        const counts = new Map();
-        for (const marker of state.locationsBySlug.values()) {
-            const region = String(marker.area || '').toLowerCase();
-            if (region && Array.isArray(marker.pixel) &&
-                marker.pixel.length === 2 &&
-                marker.pixel.every(Number.isFinite)) {
-                counts.set(region, (counts.get(region) || 0) + 1);
-            }
-        }
-        return [...counts].filter(([, count]) => count >= 3)
-            .map(([region]) => region)
-            .sort((a, b) => (a === 'outland' ? -1 : b === 'outland' ? 1 :
-                a.localeCompare(b)));
-    }
-
-    function arcadeProjectMarkers(rows, region) {
-        const matching = rows.filter(row =>
-            String(row?.area || '').toLowerCase() === region &&
-            Array.isArray(row.pixel) && row.pixel.length === 2 &&
-            row.pixel.every(Number.isFinite));
-        if (!matching.length) return [];
-        const xs = matching.map(row => row.pixel[0]);
-        const ys = matching.map(row => row.pixel[1]);
-        const minX = Math.min(...xs), maxX = Math.max(...xs);
-        const minY = Math.min(...ys), maxY = Math.max(...ys);
-        const spanX = Math.max(1, maxX - minX);
-        const spanY = Math.max(1, maxY - minY);
-        return matching.map(row => ({
-            slug: String(row.slug || ''),
-            name: String(row.name || row.slug || '?'),
-            x: 32 + ((row.pixel[0] - minX) / spanX) * (ARCADE_WIDTH - 64),
-            y: 32 + ((row.pixel[1] - minY) / spanY) * (ARCADE_HEIGHT - 64)
-        }));
-    }
-
-    function arcadeDistance(a, b) {
-        return Math.hypot(a.x - b.x, a.y - b.y);
-    }
-
-    function arcadeEdges(markers) {
-        // Fake roads for a silly constellation: nearest-neighbor art only.
-        // They are NOT valid walkable routes or accurate world distances.
-        return markers.map((marker, i) => {
-            let best = -1, distance = Infinity;
-            for (let j = 0; j < markers.length; j++) {
-                if (j === i) continue;
-                const next = arcadeDistance(marker, markers[j]);
-                if (next < distance) { distance = next; best = j; }
-            }
-            return [i, best];
-        }).filter(([, j]) => j >= 0);
-    }
-
-    function arcadePickDestination() {
-        const choices = arcade.markers.filter(row =>
-            row.slug !== arcade.lastDestination &&
-            arcadeDistance(row, arcade.player) >= 85);
-        const pool = choices.length ? choices : arcade.markers.filter(row =>
-            row.slug !== arcade.lastDestination);
-        if (!pool.length) return null;
-        const chosen = pool[Math.floor(Math.random() * pool.length)];
-        arcade.lastDestination = chosen.slug;
-        return chosen;
-    }
-
-    function arcadeSpawnGhost() {
-        if (!arcade.markers.length || arcade.ghosts.length >= 5) return;
-        const far = arcade.markers.filter(marker =>
-            arcadeDistance(marker, arcade.player) > 120 &&
-            (!arcade.destination || marker.slug !== arcade.destination.slug));
-        const pool = far.length ? far : arcade.markers;
-        const spawn = pool[Math.floor(Math.random() * pool.length)];
-        arcade.ghosts.push({
-            x: spawn.x, y: spawn.y,
-            phase: Math.random() * Math.PI * 2
-        });
-    }
-
-    function arcadeReadBest(region) {
-        try {
-            return Math.max(0, Math.min(9999,
-                Number(localStorage.getItem(ARCADE_BEST_KEY + region)) || 0));
-        } catch { return 0; }
-    }
-
-    function arcadeRememberBest() {
-        if (arcade.score <= arcade.best) return;
-        arcade.best = arcade.score;
-        try {
-            localStorage.setItem(ARCADE_BEST_KEY + arcade.region,
-                String(arcade.best));
-        } catch {}
-    }
-
-    function arcadeStop() {
-        if (arcade.raf) cancelAnimationFrame(arcade.raf);
-        arcade.raf = 0;
-        arcade.running = false;
-        arcade.lastFrame = 0;
-        arcade.keys.clear();
-        arcade.pointer = null;
-    }
-
-    function arcadeClose() {
-        arcadeRememberBest();
-        arcadeStop();
-        arcade.paused = false;
-        arcade.open = false;
-    }
-
-    function arcadePrepare(region) {
-        arcadeStop();
-        arcade.paused = false;
-        arcade.region = region;
-        arcade.markers = arcadeProjectMarkers(
-            [...state.locationsBySlug.values()], region);
-        arcade.edges = arcadeEdges(arcade.markers);
-        arcade.score = 0;
-        arcade.seconds = 60;
-        arcade.hearts = 3;
-        arcade.invulnerable = 0;
-        arcade.ghosts = [];
-        arcade.sparks = [];
-        arcade.lastDestination = '';
-        arcade.best = arcadeReadBest(region);
-        const spawn = arcade.markers[Math.floor(arcade.markers.length / 2)];
-        arcade.player = spawn
-            ? {x: spawn.x, y: spawn.y} : {x: 320, y: 180};
-        arcade.destination = arcadePickDestination();
-        arcadeSpawnGhost();
-        arcadeSpawnGhost();
-        arcadeHud();
-        arcadeDraw();
-    }
-
-    function arcadeHud(message = null) {
-        const panel = q('[data-mha-arcade-panel]');
-        if (!panel) return;
-        const set = (selector, value) => {
-            const element = q(selector, panel);
-            if (element && element.textContent !== value)
-                element.textContent = value;
-        };
-        set('[data-mha-arcade-score]', String(arcade.score));
-        set('[data-mha-arcade-best]', String(arcade.best));
-        set('[data-mha-arcade-hearts]', '♥'.repeat(arcade.hearts) +
-            '♡'.repeat(3 - arcade.hearts));
-        set('[data-mha-arcade-time]', String(Math.ceil(arcade.seconds)));
-        set('[data-mha-arcade-target]',
-            arcade.destination?.name || '—');
-        const button = q('[data-mha-arcade-start]', panel);
-        if (button) button.textContent = tr(
-            arcade.running ? 'arcade.restart' :
-                arcade.paused ? 'arcade.resume' : 'arcade.start');
-        if (message !== null) set('[data-mha-arcade-message]', message);
-    }
-
-    function arcadeDraw() {
-        const ctx = arcade.context;
-        if (!ctx || !arcade.canvas?.isConnected) return;
-        const w = ARCADE_WIDTH, h = ARCADE_HEIGHT;
-        ctx.fillStyle = '#0a1324';
-        ctx.fillRect(0, 0, w, h);
-        ctx.strokeStyle = 'rgba(127,177,210,.075)';
-        ctx.lineWidth = 1;
-        for (let x = 0; x <= w; x += 32) {
-            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
-        }
-        for (let y = 0; y <= h; y += 32) {
-            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-        }
-        ctx.strokeStyle = 'rgba(120,196,221,.13)';
-        for (const [a, b] of arcade.edges) {
-            ctx.beginPath();
-            ctx.moveTo(arcade.markers[a].x, arcade.markers[a].y);
-            ctx.lineTo(arcade.markers[b].x, arcade.markers[b].y);
-            ctx.stroke();
-        }
-        ctx.fillStyle = 'rgba(120,191,215,.45)';
-        for (const row of arcade.markers) {
-            ctx.beginPath(); ctx.arc(row.x, row.y, 2.6, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        if (arcade.destination) {
-            const target = arcade.destination;
-            ctx.strokeStyle = 'rgba(253,211,98,.9)';
-            ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.arc(target.x, target.y, 17, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.font = '24px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('📮', target.x, target.y + 8);
-            ctx.font = 'bold 12px sans-serif';
-            ctx.fillStyle = '#ffe598';
-            ctx.fillText(target.name.slice(0, 30),
-                Math.max(92, Math.min(w - 92, target.x)),
-                target.y < 65 ? target.y + 38 : target.y - 25, 180);
-        }
-        for (const ghost of arcade.ghosts) {
-            ctx.font = '23px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('👻', ghost.x, ghost.y + 8);
-        }
-        for (const spark of arcade.sparks) {
-            ctx.globalAlpha = Math.max(0, spark.life);
-            ctx.fillStyle = '#ffdf74';
-            ctx.fillRect(spark.x, spark.y, 5, 5);
-        }
-        ctx.globalAlpha = 1;
-        if (arcade.invulnerable <= 0 ||
-            Math.floor(arcade.invulnerable * 10) % 2 === 0) {
-            ctx.font = '27px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('🚚', arcade.player.x, arcade.player.y + 9);
-        }
-        if (!arcade.running) {
-            ctx.fillStyle = 'rgba(5,12,27,.50)';
-            ctx.fillRect(0, h - 47, w, 47);
-            ctx.font = 'bold 16px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillStyle = '#e9f3fc';
-            ctx.fillText(arcade.paused ? tr('arcade.paused') :
-                arcade.hearts === 0 || arcade.seconds === 0
-                    ? tr('arcade.gameOver') : tr('arcade.ready'),
-                w / 2, h - 19);
-        }
-    }
-
-    function arcadeGameOver() {
-        arcadeRememberBest();
-        arcadeStop();
-        arcade.paused = false;
-        arcadeHud(tr('arcade.finished', {score: arcade.score}));
-        arcadeDraw();
-    }
-
-    function arcadeFrame(now) {
-        arcade.raf = 0;
-        if (!arcade.open || !arcade.running ||
-            !arcade.canvas?.isConnected ||
-            !state.atlasEnabled || !isMapModalOpen()) {
-            arcadeStop();
-            return;
-        }
-        if (document.hidden) {
-            arcadeStop();
-            arcade.paused = true;
-            arcadeHud(tr('arcade.paused'));
-            arcadeDraw();
-            return;
-        }
-        const dt = arcade.lastFrame
-            ? Math.min(.05, (now - arcade.lastFrame) / 1000) : 0;
-        arcade.lastFrame = now;
-        arcade.seconds = Math.max(0, arcade.seconds - dt);
-        if (arcade.seconds <= 0) {
-            arcadeGameOver();
-            return;
-        }
-        let dx = 0, dy = 0;
-        const held = arcade.keys;
-        if (held.has('arrowleft') || held.has('a')) dx--;
-        if (held.has('arrowright') || held.has('d')) dx++;
-        if (held.has('arrowup') || held.has('w')) dy--;
-        if (held.has('arrowdown') || held.has('s')) dy++;
-        if (arcade.pointer && dx === 0 && dy === 0) {
-            dx = arcade.pointer.x - arcade.player.x;
-            dy = arcade.pointer.y - arcade.player.y;
-            if (Math.hypot(dx, dy) < 8) { dx = 0; dy = 0; }
-        }
-        const length = Math.hypot(dx, dy) || 1;
-        arcade.player.x = Math.max(16, Math.min(624,
-            arcade.player.x + dx / length * 192 * dt));
-        arcade.player.y = Math.max(16, Math.min(344,
-            arcade.player.y + dy / length * 192 * dt));
-        if (arcade.destination &&
-            arcadeDistance(arcade.player, arcade.destination) < 20) {
-            const old = arcade.destination;
-            arcade.score++;
-            arcadeRememberBest();
-            arcade.seconds = Math.min(90, arcade.seconds + 5);
-            arcade.destination = arcadePickDestination();
-            if (arcade.score % 3 === 0) arcadeSpawnGhost();
-            for (let i = 0; i < 9; i++) {
-                arcade.sparks.push({
-                    x: old.x + (Math.random() -.5) * 36,
-                    y: old.y + (Math.random() -.5) * 36, life: 1
-                });
-            }
-            arcadeHud(tr('arcade.delivered', {hunt: old.name}));
-        }
-        arcade.invulnerable = Math.max(0, arcade.invulnerable - dt);
-        for (const ghost of arcade.ghosts) {
-            const vx = arcade.player.x - ghost.x;
-            const vy = arcade.player.y - ghost.y;
-            const len = Math.hypot(vx, vy) || 1;
-            const speed = Math.min(74, 34 + arcade.score * 2);
-            ghost.x += (vx / len + Math.sin(now / 750 + ghost.phase) * .28) *
-                speed * dt;
-            ghost.y += (vy / len + Math.cos(now / 900 + ghost.phase) * .28) *
-                speed * dt;
-            if (len < 20 && arcade.invulnerable <= 0) {
-                arcade.hearts--;
-                arcade.invulnerable = 1.6;
-                arcadeHud(tr('arcade.ouch'));
-                if (arcade.hearts <= 0) {
-                    arcadeGameOver();
-                    return;
-                }
-            }
-        }
-        for (const spark of arcade.sparks) spark.life -= dt * 1.8;
-        arcade.sparks = arcade.sparks.filter(spark => spark.life > 0);
-        if (now - arcade.hudAt > 180) {
-            arcade.hudAt = now;
-            arcadeHud();
-        }
-        arcadeDraw();
-        arcade.raf = requestAnimationFrame(arcadeFrame);
-    }
-
-    function arcadeStart() {
-        if (!arcade.open || !arcade.markers.length) return;
-        if (!arcade.paused) arcadePrepare(arcade.region);
-        arcade.paused = false;
-        arcade.running = true;
-        arcade.lastFrame = 0;
-        arcadeHud(tr('arcade.running'));
-        arcade.canvas?.focus({preventScroll: true});
-        arcade.raf = requestAnimationFrame(arcadeFrame);
-    }
-
-    function arcadeCanvasPointer(event) {
-        if (!arcade.running || !arcade.canvas) return;
-        const rect = arcade.canvas.getBoundingClientRect();
-        arcade.pointer = {
-            x: (event.clientX - rect.left) / rect.width * ARCADE_WIDTH,
-            y: (event.clientY - rect.top) / rect.height * ARCADE_HEIGHT
-        };
-    }
-
-    function arcadeBind(canvas) {
-        if (arcade.canvas === canvas) return;
-        arcadeStop();
-        arcade.canvas = canvas;
-        arcade.context = canvas.getContext('2d');
-        canvas.addEventListener('keydown', event => {
-            const key = event.key.toLowerCase();
-            if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright',
-                'w', 'a', 's', 'd'].includes(key)) {
-                event.preventDefault();
-                arcade.keys.add(key);
-            }
-        });
-        canvas.addEventListener('keyup', event => {
-            arcade.keys.delete(event.key.toLowerCase());
-        });
-        canvas.addEventListener('blur', () => arcade.keys.clear());
-        canvas.addEventListener('pointerdown', event => {
-            if (!arcade.running) return;
-            event.preventDefault();
-            canvas.focus({preventScroll: true});
-            canvas.setPointerCapture(event.pointerId);
-            arcadeCanvasPointer(event);
-        });
-        canvas.addEventListener('pointermove', event => {
-            if (arcade.pointer) arcadeCanvasPointer(event);
-        });
-        for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-            canvas.addEventListener(type, () => { arcade.pointer = null; });
-        }
-    }
-
-    function arcadeRender(drawer) {
-        const button = q('[data-mha-arcade-toggle]', drawer);
-        if (button) {
-            button.textContent = tr(arcade.open ? 'arcade.back' : 'arcade.open');
-            button.setAttribute('aria-pressed', String(arcade.open));
-        }
-        drawer.dataset.arcadeOpen = arcade.open ? '1' : '0';
-        const panel = q('[data-mha-arcade-panel]', drawer);
-        if (!panel) return;
-        panel.hidden = !arcade.open;
-        if (!arcade.open) return;
-        const regions = arcadeRegions();
-        const select = q('[data-mha-arcade-region]', panel);
-        const html = regions.map(region =>
-            '<option value="' + escapeHtml(region) + '">' +
-            escapeHtml(region.toUpperCase()) + '</option>').join('');
-        if (select.innerHTML !== html) select.innerHTML = html;
-        if (!regions.includes(arcade.region)) {
-            arcadePrepare(regions.includes('outland') ? 'outland' :
-                regions[0] || '');
-        }
-        select.disabled = !regions.length;
-        if (regions.length) select.value = arcade.region;
-        const start = q('[data-mha-arcade-start]', panel);
-        start.disabled = arcade.markers.length < 3;
-        arcadeBind(q('[data-mha-arcade-canvas]', panel));
-        if (!arcade.running) {
-            arcadeHud(!regions.length
-                ? tr(state.locationIndexStatus === 'error'
-                    ? 'arcade.unavailable' : 'arcade.loading')
-                : arcade.paused
-                    ? tr('arcade.paused')
-                    : arcade.hearts === 0 || arcade.seconds === 0
-                        ? tr('arcade.finished', {score: arcade.score})
-                        : tr('arcade.instructions'));
-        } else arcadeHud();
-        arcadeDraw();
-    }
 
     // ------------------------------------------------------------------
     // UI
@@ -10764,220 +10270,6 @@
             }
 
 
-            /* Parcel Panic is a separate toy view, not a map replacement.
-               Only the game canvas is animated while the player is active. */
-            .mha-arcade-toggle {
-                flex: 0 0 auto;
-                padding: 5px 10px;
-                border: 1px solid #4c758c;
-                border-radius: 7px;
-                color: #b8e7ff;
-                background: #223546;
-                font: 700 12px/1.2 system-ui, sans-serif;
-                cursor: pointer;
-            }
-
-            .mha-arcade-toggle:hover,
-            .mha-arcade-start:hover {
-                filter: brightness(1.13);
-            }
-
-            #moth-hunt-atlas-drawer[data-arcade-open="1"] .mha-filters,
-            #moth-hunt-atlas-drawer[data-arcade-open="1"] .mha-xp-summary,
-            #moth-hunt-atlas-drawer[data-arcade-open="1"] .mha-body,
-            #moth-hunt-atlas-drawer[data-arcade-open="1"] .mha-meta .mha-status,
-            #moth-hunt-atlas-drawer[data-arcade-open="1"] .mha-meta .mha-count {
-                display: none !important;
-            }
-
-            #moth-hunt-atlas-drawer .mha-arcade-panel[hidden] {
-                display: none !important;
-            }
-
-            #moth-hunt-atlas-drawer .mha-arcade-panel {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                flex: 1 1 auto;
-                min-height: 0;
-                gap: 10px;
-                padding: 16px;
-                overflow: auto;
-                background: radial-gradient(ellipse at 50% 0%, #202d45, #141b29 75%);
-                color: #e4f3ff;
-                font: 13px/1.4 system-ui, sans-serif;
-            }
-
-            .mha-arcade-heading {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 16px;
-                width: min(100%, 870px);
-            }
-
-            .mha-arcade-heading h3 {
-                margin: 0;
-                font-size: 21px;
-                letter-spacing: -.3px;
-                color: #ffdfa0;
-            }
-
-            .mha-arcade-heading p {
-                margin: 4px 0 0;
-                color: #aabfd3;
-                font-size: 12px;
-            }
-
-            .mha-arcade-heading label {
-                display: grid;
-                gap: 4px;
-                color: #9cbed3;
-                font-weight: 700;
-                white-space: nowrap;
-            }
-
-            .mha-arcade-heading select {
-                padding: 7px 10px;
-                border: 1px solid #4b627a;
-                border-radius: 7px;
-                color: #e9f2ff;
-                background: #1b2b42;
-                font: inherit;
-            }
-
-            .mha-arcade-stats {
-                display: flex;
-                flex-wrap: wrap;
-                align-items: center;
-                justify-content: center;
-                gap: 12px;
-                width: min(100%, 870px);
-            }
-
-            .mha-arcade-stats span {
-                padding: 6px 12px;
-                border: 1px solid #35465f;
-                border-radius: 8px;
-                background: #19283d;
-            }
-
-            .mha-arcade-stats b {
-                margin-left: 6px;
-                color: #ffdb74;
-                font-size: 17px;
-                font-variant-numeric: tabular-nums;
-            }
-
-            .mha-arcade-destination {
-                color: #c9d7e5;
-                font-size: 14px;
-                text-align: center;
-            }
-
-            .mha-arcade-destination strong {
-                color: #ffe78d;
-            }
-
-            .mha-arcade-board {
-                width: min(100%, 760px);
-                border: 2px solid #496682;
-                border-radius: 12px;
-                overflow: hidden;
-                box-shadow: 0 14px 35px rgba(0,0,0,.35);
-                line-height: 0;
-                flex: 0 0 auto;
-            }
-
-            .mha-arcade-board canvas {
-                width: 100%;
-                height: auto;
-                aspect-ratio: 16 / 9;
-                display: block;
-                background: #0a1324;
-                cursor: crosshair;
-                touch-action: none;
-            }
-
-            .mha-arcade-board canvas:focus-visible {
-                outline: 3px solid #ffdf75;
-                outline-offset: -3px;
-            }
-
-            .mha-arcade-bottom {
-                width: min(100%, 760px);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                flex-wrap: wrap;
-                gap: 12px;
-                min-height: 34px;
-                color: #bcd0e1;
-            }
-
-            .mha-arcade-start {
-                padding: 9px 15px;
-                border: 1px solid #efc976;
-                border-radius: 9px;
-                background: #65491f;
-                color: #ffe8a6;
-                font: 800 13px system-ui, sans-serif;
-                cursor: pointer;
-            }
-
-            .mha-arcade-start:disabled {
-                opacity: .4;
-                cursor: not-allowed;
-            }
-
-            .mha-arcade-pad {
-                display: flex;
-                flex-wrap: wrap;
-                justify-content: center;
-                gap: 10px;
-            }
-
-            .mha-arcade-pad button {
-                min-width: 53px;
-                min-height: 45px;
-                border: 1px solid #456483;
-                border-radius: 9px;
-                color: #e3effc;
-                background: #263a51;
-                cursor: pointer;
-                touch-action: none;
-                user-select: none;
-                font-size: 17px;
-            }
-
-            .mha-arcade-pad button:active {
-                background: #547da4;
-            }
-
-            .mha-arcade-disclaimer {
-                max-width: 760px;
-                margin: 0;
-                text-align: center;
-                color: #91a6bb;
-                font-size: 11px;
-            }
-
-            @media (max-width: 620px) {
-                #moth-hunt-atlas-drawer .mha-arcade-panel {
-                    padding: 10px;
-                    gap: 8px;
-                }
-
-                .mha-arcade-heading h3 { font-size: 16px; }
-                .mha-arcade-heading { gap: 8px; }
-                .mha-arcade-heading p { font-size: 10px; }
-                .mha-arcade-stats { gap: 5px; }
-                .mha-arcade-stats span { padding: 4px 6px; }
-                .mha-arcade-stats b { font-size: 14px; }
-                .mha-arcade-heading select { padding: 5px; }
-            }
-
-
             /* UX audit: contrast, focus and controls sized for real use. */
             #${DRAWER_ID} {
                 font-size: 12px !important;
@@ -11347,7 +10639,6 @@
     }
 
     function restoreNativeMapView() {
-        if (arcade.open || arcade.running) arcadeClose();
         const box =
             q(
                 '#modal .modal-caixa'
@@ -11763,9 +11054,7 @@
                     <div class="mha-sort-control">
                         <select data-mha-filter="sort">
                             <option value="xp">${tr('sort.xp')}</option>
-                            <option value="pokemonXp">${tr('sort.pokemonXp')}</option>
                             <option value="coins">${tr('sort.coins')}</option>
-                            <option value="netCoins">${tr('sort.netCoins')}</option>
                             <option value="npcLoot">${tr('sort.npcLoot')}</option>
                             <option value="rare">${tr('sort.rare')}</option>
                             <option value="ballEfficiency">${tr('sort.ballEfficiency')}</option>
@@ -11798,43 +11087,7 @@
             <div class="mha-meta">
                 <span class="mha-status"></span>
                 <span class="mha-count"></span>
-                <button type="button" class="mha-arcade-toggle" data-mha-arcade-toggle
-                    aria-pressed="false">${tr('arcade.open')}</button>
             </div>
-
-            <section class="mha-arcade-panel" data-mha-arcade-panel hidden>
-                <header class="mha-arcade-heading">
-                    <div>
-                        <h3>${tr('arcade.title')}</h3>
-                        <p>${tr('arcade.subtitle')}</p>
-                    </div>
-                    <label>${tr('arcade.region')}
-                        <select data-mha-arcade-region aria-label="${tr('arcade.region')}"></select>
-                    </label>
-                </header>
-                <div class="mha-arcade-stats">
-                    <span>${tr('arcade.score')} <b data-mha-arcade-score>0</b></span>
-                    <span>${tr('arcade.best')} <b data-mha-arcade-best>0</b></span>
-                    <span>${tr('arcade.hearts')} <b data-mha-arcade-hearts>♥♥♥</b></span>
-                    <span>${tr('arcade.time')} <b data-mha-arcade-time>60</b>s</span>
-                </div>
-                <div class="mha-arcade-destination">${tr('arcade.target')}: <strong data-mha-arcade-target>—</strong></div>
-                <div class="mha-arcade-board">
-                    <canvas data-mha-arcade-canvas width="640" height="360" tabindex="0"
-                        aria-label="${tr('arcade.instructions')}"></canvas>
-                </div>
-                <div class="mha-arcade-bottom">
-                    <button type="button" class="mha-arcade-start" data-mha-arcade-start>${tr('arcade.start')}</button>
-                    <span data-mha-arcade-message role="status">${tr('arcade.loading')}</span>
-                </div>
-                <div class="mha-arcade-pad" aria-label="${tr('arcade.instructions')}">
-                    <button type="button" data-mha-arcade-dir="arrowleft" aria-label="${tr('arcade.left')}">◀</button>
-                    <button type="button" data-mha-arcade-dir="arrowup" aria-label="${tr('arcade.up')}">▲</button>
-                    <button type="button" data-mha-arcade-dir="arrowdown" aria-label="${tr('arcade.down')}">▼</button>
-                    <button type="button" data-mha-arcade-dir="arrowright" aria-label="${tr('arcade.right')}">▶</button>
-                </div>
-                <p class="mha-arcade-disclaimer">${tr('arcade.disclaimer')}</p>
-            </section>
 
             <div class="mha-body"></div>
 
@@ -11848,31 +11101,6 @@
             state.filtersExpanded=!state.filtersExpanded;
             renderFilterControls(drawer);
         });
-        q('[data-mha-arcade-toggle]', drawer)?.addEventListener('click', () => {
-            if (arcade.open) arcadeClose();
-            else arcade.open = true;
-            renderDrawer();
-        });
-        q('[data-mha-arcade-region]', drawer)?.addEventListener('change', event => {
-            arcadePrepare(String(event.currentTarget.value || ''));
-            arcadeRender(drawer);
-        });
-        q('[data-mha-arcade-start]', drawer)?.addEventListener('click', arcadeStart);
-        for (const button of qa('[data-mha-arcade-dir]', drawer)) {
-            const key = button.dataset.mhaArcadeDir;
-            button.addEventListener('pointerdown', event => {
-                event.preventDefault();
-                if (!arcade.running) return;
-                arcade.keys.add(key);
-                button.setPointerCapture(event.pointerId);
-            });
-            for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-                button.addEventListener(type, () => arcade.keys.delete(key));
-            }
-        }
-
-
-
         q(
             '[data-mha-clear]',
             drawer
@@ -13752,8 +12980,6 @@
         state.lastDrawerRenderAt=Date.now();
         state.renderStats.attempts=Math.min(1000000000,
             state.renderStats.attempts+1);
-        arcadeRender(drawer);
-        if (arcade.open) return;
 
         renderFilterControls(
             drawer
@@ -13990,8 +13216,8 @@
 
     function queueRender() {
         // No expensive list/rate work in headless/background mode or when
-        // the user has switched back to the native map / minigame.
-        if(!state.drawerOpen || !state.atlasEnabled || arcade.open ||
+        // the user has switched back to the native map.
+        if(!state.drawerOpen || !state.atlasEnabled ||
             !isMapModalOpen()) {
             state.renderStats.skipped=Math.min(1000000000,
                 state.renderStats.skipped+1);
@@ -14003,7 +13229,7 @@
         state.drawerRenderTimer=setTimeout(()=>{
             state.renderQueued=false;
             state.drawerRenderTimer=null;
-            if(state.drawerOpen&&state.atlasEnabled&&!arcade.open&&
+            if(state.drawerOpen&&state.atlasEnabled&&
                 isMapModalOpen()){
                 renderDrawer();
             }
@@ -14375,7 +13601,7 @@
                 return;
             }
             ensureMapToggle();
-            if(!state.atlasEnabled||arcade.open)return;
+            if(!state.atlasEnabled)return;
             if(Date.now()-state.lastDrawerRenderAt>=12000){
                 syncFromControllerBridge();
                 state.drawerOpen=true;
@@ -14384,7 +13610,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.12 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.13 experimental loaded'
         );
     }
 
