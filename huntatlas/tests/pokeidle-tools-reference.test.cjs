@@ -91,7 +91,7 @@ test('reference panel cannot alter core forecast or sort functions',()=>{
     assert.match(src,/data-mha-reference-setting/);
     assert.match(src,/referenceCapturePreview\(/);
     assert.match(src,/referenceRarePreview\(/);
-    assert.match(src,/nothing changes in the game, measured rates, normal estimates or rankings/);
+    assert.match(src,/Nothing changes in the game or measured rates/);
     assert.match(src,/referenceEnabled: false/);
     assert.match(src,/const refActive=state\.filters\.referenceEnabled/);
     assert.doesNotMatch(src,/referenceCapturePreview\([\s\S]{0,200}haMetricValue/);
@@ -105,8 +105,8 @@ test('the optional boost calculator communicates what its controls do in both la
         'Chance to capture per accepted ball','Chance de capturar por bola aceita',
         'Additional assumptions (Kick)','Outras hipóteses (Kick)'
     ]) assert.ok(src.includes(label),label);
-    assert.match(src,/The game is NOT checked for active bonuses/);
-    assert.match(src,/O Atlas NÃO detecta bônus ativos/);
+    assert.match(src,/Those bonuses are NOT detected here/);
+    assert.match(src,/Esses bônus NÃO são detectados aqui/);
     assert.match(src,/reference\.catchCompare/);
     assert.match(src,/reference\.rareCompare/);
     assert.match(src,/reference\.unchanged/);
