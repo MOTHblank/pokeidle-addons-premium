@@ -2,7 +2,7 @@
 
 > **Implementation and maintenance reference for Moth Watch** (`addons/market-bot.user.js`), focused on *real Community Market* requests/responses, transaction safety and economic meaning. This is a **description of existing behavior and proposed validation**, **not a new API**, an invitation to bypass server restrictions, or an automatic trading strategy.
 >
-> **Reviewed:** 2026-10-12 · **Addon inspected:** premium **Moth Watch v0.2.1**, on the repository's default `main` branch.
+> **Reviewed:** 2026-10-13 · **Addon inspected:** premium **Moth Watch v0.3.1**. Live server packet shapes and settlement semantics are still **UNVERIFIED**; see [Milestone A synthetic fixtures](./MOTHWATCH_MILESTONE_A_PROTOCOL_FIXTURES.md). Historical v0.2.1 descriptions are explicitly labeled below.
 
 ## Scope, trust model and linked sources
 
@@ -139,9 +139,9 @@ flowchart TD
   F -- Timeout or unrelated event --> I[Outcome unverified; longer cooldown and refresh]
 ```
 
-**[ADDON]** `batalha.ev[k:'marketComprado']` with a matching listing ID is the **buyer-side confirmation**. The addon uses a **5-second settle timeout** (and an additional ~4.5-second stale-order check when player balances change). A timeout is **not** declared a failed buy: it is logged as **unverified**, and the listing is held from another attempt for **60 seconds**.
+**[ADDON v0.3.1]** A matching `batalha.ev[k:'marketComprado']` is the **only buyer-side success confirmation**. A five-second timeout, loss of socket, or page reload leaves the attempt **unknown** in an account-profile-local journal; its quoted maximum spend remains reserved against cumulative budgets. The same listing is protected **without an automatic retry deadline** until matching authoritative evidence arrives. A balance change alone does not settle an order.
 
-On a confirmed buy, the addon prevents repeated buying from the same partially filled listing for **30 minutes**, so a `maxCoinsPerBuy` or `maxGemsPerBuy` limit cannot be evaded by repeated successive buys of the same remainder. On a **matched rejection**, the cooldown is **5 seconds**. A newly sent attempt initially sets a **15-second** attempted-listing guard; on a confirm/refusal/unknown it is superseded.
+On a confirmed buy, the addon prevents repeated buying from the same partially filled listing for **30 minutes**; a matched rejection applies a **5-second** cooldown. An initial attempt guard lasts **15 seconds**. Once marked unknown, the offer stays blocked across refresh/reconnect; a matching late acknowledgement/refusal can settle the journal record. An acknowledgement without authoritative execution details proves success but does **not** establish executed unit price or partial quantity, so spending exposure conservatively uses the **submitted upper-bound quote**.
 
 **Implementation requirement:** do not cancel pending orders based solely on unrelated `erro` packets or `estado` balance changes. Do not resend because an ack was delayed or a WebSocket disconnected. Resolve uncertain outcomes by refreshed inventory/orders/history before further spending; the server is the source of truth, not the userscript's timer.
 
@@ -149,10 +149,11 @@ On a confirmed buy, the addon prevents repeated buying from the same partially f
 
 ## 5. Coin/Gem budget guards and automatic-buy opt-in
 
-**[ADDON]** New-profile defaults in premium Moth Watch v0.2.1:
+**[ADDON v0.3.1]** New-profile defaults (v0.2.1 had only item rules):
 - `enabled: true` (**Watch itself is on**), `scanItems/scanPokemon/scanDiamonds: true`, `scanSeconds: 5`.
-- `fixedRulesEnabled: false` and `fixedItemRules: []`. **No purchases occur automatically by default.**
+- `fixedRulesEnabled: false` and empty `fixedItemRules`, `anyItemRules`, `pokemonBuyRules`. **No purchases occur automatically by default.**
 - `goldReserve: 0`, `gemReserve: 0`, `maxCoinsPerBuy: 0`, `maxGemsPerBuy: 0`.
+- `purchasesPaused: false`, and **all cumulative spend, count and quantity caps default to zero (unlimited)**. A rule must still be opted in and assigned a positive maximum price.
 - `watchPercent: 70` means show offers at or below **70% of a trusted reference**; it is a **discovery/display threshold, not a percentage-based auto-purchase feature**.
 
 A fixed rule has the source-backed shape:
@@ -167,15 +168,16 @@ A fixed rule has the source-backed shape:
 }
 ```
 
-To automatically buy **items**, the user must explicitly enable the master **rule-based buying** switch **and** have at least one valid item rule with buying on and a positive maximum price per unit. **No separate auto-buy-by-percent, auto-sell or Pokémon/diamond auto-buy switches exist.** The addon strips legacy auto-buy/auto-sell configuration fields rather than resurrecting removed behavior. Pokémon offers remain **manual purchase only**; Diamond offers are scanned, not rule-bought. Tests in [`tests/moth-watch-automation.test.cjs`](../tests/moth-watch-automation.test.cjs) assert these invariants.
+To automatically buy **items or Pokémon**, enable the master **rule-based buying** switch and one explicitly configured, enabled rule with a positive maximum **unit** price. Item rules support fixed items and **Any item**; Pokémon rules support **Any**, **Shiny** (Gems only) and **P5**. Pokémon price ceilings are **not** valuation recommendations. Diamonds remain manual-only; no auto-selling or percentage-based purchase controls exist. Retired flags are stripped. The global pause switch blocks manual and automatic purchase submissions. Tests cover these invariants without submitting real orders.
 
 ### 5.1 Spend math
 
 ```text
 balance(currency)    = observed state.gold or state.orbs
 spendable            = max(0, balance - perCurrencyReserve)
-effectiveBudget      = min(spendable, perBuyCap) if cap > 0, else spendable
-affordableUnits      = floor(effectiveBudget / unitPrice)
+effectiveBudget      = min(spendable, optional perBuyCap, remaining global session/day cap,
+                           remaining per-rule session/day cap)
+affordableUnits      = min(floor(effectiveBudget / unitPrice), remaining session quantity limit)
 requestedUnits       = min(listingQuantity, affordableUnits, optionalManualRequestedLimit)
 for Pokémon          = min(requestedUnits, 1)
 ```
@@ -282,7 +284,7 @@ InventoryAssetValue != completedSaleProceeds
 
 **[ADDON]** Pokémon rules specify category `any`, `shiny`, or `p5`, currency, and maximum **per-specimen** price. Shiny is Gem-only, P5 is detected through `ficha.potencia`, and the server remains authoritative on invalid/missing metadata. A rule uses current listing data, not estimated fair value, and never requires historical sales. It skips own listings, retained listings, recent attempts, incompatible currency and non-single-unit specimen offers. The same `tryBuy()`, quantity/balance/reserve/per-order-cap validation, one-pending-order gate, and acknowledgement/cooldown path applies to all item and Pokémon rules.
 
-**[ADDON / UNVERIFIED]** Pokémon buying asks the market for the cheapest-priced listings and follows at most **three pages per currency** when `temMais` is true. This is a low-resource, bounded sample, not proof of exhaustive market coverage or confirmed server-side sort semantics. The ordinary scanner still requests the first recent page. Empty `vitrine` responses, changing listings between pages and parallel native market interaction still require live protocol verification. The native market continues to govern retention, payment and winning any release lottery.
+**[ADDON v0.3.1 / UNVERIFIED]** Pokémon buying asks the market for the cheapest-priced listings and follows at most **three pages per currency** when `temMais` is true. This is a low-resource, bounded sample, not proof of exhaustive market coverage or confirmed server-side sort semantics. The ordinary scanner still requests the first recent page. Empty `vitrine` responses, changing listings between pages and parallel native market interaction still require live protocol verification. The native market continues to govern retention, payment and winning any release lottery.
 
 ## 10. Scanner cadence, rate limits and low-resource operation
 
@@ -315,7 +317,7 @@ The Watch prioritizes rule item-detail jobs over discovery-only background work 
 5. **Partial-fill quota:** cap/quantity validation occurs **before** submission; server can fill fewer units if listings change. Reconcile the actual received units and cost, not just intended `qtd`.
 6. **Price-reference contamination:** an active asking-price median is **not** a completed-sale median; the 7-day average can be manipulated by isolated samples; retain `source`, age and sample count.
 7. **Moth Watch's global `enabled:true` is not auto-buy:** separately gate purchases on `fixedRulesEnabled` and an explicit valid item rule.
-8. **Budget caps are per purchase**, not rolling or daily. A sequence across **different** listings can spend more than one individual cap; the user must understand the difference.
+8. **Per-purchase vs cumulative caps:** optional per-rule and account-wide session/day ceilings and quantity/count limits now apply. Zero denotes **unlimited**. Unknown attempts keep reserved exposure; there is still no verified partial-fill settlement report. A per-buy cap alone does not restrict aggregate spend.
 9. **Held/favorited/stale listings may not exist** after a later page scan. The server must validate price, currency and availability at purchase time.
 10. **Live-server rules may change:** version/date the observed schema and place a clear warning on unknown unsupported fields rather than silently falling back to a dangerous assumed value.
 
