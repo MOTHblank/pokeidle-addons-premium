@@ -163,7 +163,7 @@
             return Number.isSafeInteger(id) && id > 0 &&
                 Number.isFinite(price) && price > 0 && price <= rule.buyMax &&
                 Number.isSafeInteger(Number(offer.qtd)) && Number(offer.qtd) > 0 &&
-                !isOwnListing(offer) && !unresolvedListing(id) &&
+                !isOwnListing(offer) &&
                 !(retentionUntil(offer) > serverNow()) &&
                 Number(state.attemptedListings.get(id) || 0) <= Date.now();
         }).sort((a, b) => Number(a.preco) - Number(b.preco) || Number(a.id) - Number(b.id));

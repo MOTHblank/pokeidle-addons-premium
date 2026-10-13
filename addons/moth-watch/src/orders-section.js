@@ -171,12 +171,21 @@
         saveOrderJournal();
         state.lastPurchaseOutcome = status;
         if (status === 'confirmed') {
-            state.attemptedListings.set(order.listingId, Date.now() + 30 * 60000);
+            // Items may be only partially filled and the upstream game does
+            // not include a remaining-stock quantity in marketComprado.
+            // Keep them buyable after a short retry gap; unique Pokémon remain
+            // protected from duplicate acquisition attempts.
+            const retryMs = order.kind === 'item' ? 400 : 30 * 60000;
+            state.attemptedListings.set(order.listingId, Date.now() + retryMs);
             addLog('Purchase confirmed · listing #' + order.listingId);
         } else if (status === 'refused') {
             state.attemptedListings.set(order.listingId, Date.now() + 5000);
         } else {
-            state.attemptedListings.set(order.listingId, Number.MAX_SAFE_INTEGER);
+            // Automatic item rules may retry after timeout using a fresh
+            // listing quote. User-initiated buys and unique Pokémon still
+            // require explicit acknowledgement before another request.
+            state.attemptedListings.set(order.listingId,
+                order.kind === 'item' && !!order.ruleId ? Date.now() + 400 : Number.MAX_SAFE_INTEGER);
             addLog('Purchase outcome unverified · listing #' + order.listingId);
         }
         snatchOutcome(order.listingId, status, order);

@@ -946,7 +946,7 @@ test('Milestone C: optional session telemetry avoids duplicate NPC sales', () =>
 test('Milestone C: independent economy UI cannot start selling automation', () => {
     assert.match(script,/data-moth-view="economy"/);
     assert.match(script,/Read-only fees, market eligibility, and recorded purchase exposure/);
-    assert.match(script,/@version\s+0\.6\.12/);
+    assert.match(script,/@version\s+0\.6\.13/);
     assert.doesNotMatch(script,/market\.criar|autoSellRules|sendItemSale/);
 });
 
@@ -1026,7 +1026,7 @@ test('Milestone D: diagnostics source is synchronized with standalone userscript
     assert.equal(embedded,source,'module must exactly match generated userscript section');
     const tool=fs.readFileSync(path.join(__dirname,'..','build.cjs'),'utf8');
     assert.match(tool,/--check/);
-    assert.match(script,/@version\s+0\.6\.12/);
+    assert.match(script,/@version\s+0\.6\.13/);
     assert.doesNotMatch(script,/^\s*\/\/\s*@(?:downloadURL|updateURL)/m,
         'private repo must not advertise inaccessible raw auto-update endpoints');
 });
@@ -1157,7 +1157,7 @@ test('MothWatch v0.6.1: source sections match the single distributable userscrip
         const moduleSource = fs.readFileSync(path.join(__dirname, '..', 'src', name), 'utf8').trimEnd();
         assert.equal(script.slice(a + begin.length, b), moduleSource, 'generated parity: ' + id);
     }
-    assert.match(script, /@version\s+0\.6\.12/);
+    assert.match(script, /@version\s+0\.6\.13/);
     assert.doesNotMatch(script, /\bimport\s*\(|\brequire\s*\(/,
         'one Violentmonkey userscript must not require runtime module loading');
 });
@@ -1303,7 +1303,8 @@ function heldSnatchHarness() {
         ()=>true,()=> 'Pokémon',()=> 'Item', {getItem:()=>null,setItem:()=>{}},
         ()=>{},()=>{},x=>x,String,String,String,()=>false,()=>unknown,
         ()=>false,()=>1,()=>0,(c,manual,qty,rule,release)=>{
-            purchaseCalls.push({id:c.listingId,manual,qty,release});
+            // tryBuy computes the maximum when Snatch passes no explicit limit.
+            purchaseCalls.push({id:c.listingId,manual,qty:qty == null ? c.qty : qty,release});
             state.pendingBuy={listingId:c.listingId,sentAt:now};
             sentAt=server;return true;
         },()=>{refreshCalls++;},()=>true);
@@ -1358,7 +1359,8 @@ test('Snatch: confirmed item purchase does not disarm a listing without new stoc
     assert.equal(h.state.snatchObserved.has(h.key),true,
         'a successful item order cannot prove the seller has no remaining stock');
     assert.equal(h.state.snatchManual.has(h.key),true);
-    assert.equal(h.state.snatchObserved.get(h.key).awaitingRefresh,true);
+    assert.equal(!!h.state.snatchObserved.get(h.key).awaitingRefresh,false,
+        'a confirmed item purchase must not pause maximum-quantity retries');
 });
 
 test('Snatch: stale pre-release quotes fail closed and server backoff is observed', () => {
@@ -1730,15 +1732,20 @@ test('Snatch: bulk request buys all quoted available units then keeps checking r
         'Snatch should ask for the full 200-unit listing, not a single unit');
     h.api.snatchOutcome(789,'confirmed',{qty:75});
     const entry=h.state.snatchObserved.get(h.key);
-    assert.equal(entry.confirmedUnits,75);
     assert.equal(!!entry.awaitingRefresh,false);
+    assert.equal(h.purchaseCalls[0].qty,200,
+        'the successful first request also carried all available units');
     entry.retryAt=0;h.state.attemptedListings.delete(789);
     h.api.snatchTick();
-    assert.equal(h.purchaseCalls.at(-1).qty,125,
-        'a partial confirmed purchase keeps trying to acquire remaining units');
+    assert.equal(h.purchaseCalls.at(-1).qty,200,
+        'each attempt requests the entire last quoted stock, not 200 minus previous receipts');
     h.api.snatchOutcome(789,'confirmed',{qty:125});
-    assert.equal(entry.awaitingRefresh,true,
-        'quoted stock exhaustion triggers a refresh rather than deleting Snatch');
+    assert.equal(!!entry.awaitingRefresh,false,
+        'even a full successful request does not prove the seller has no stock');
+    entry.retryAt=0;h.state.attemptedListings.delete(789);
+    h.api.snatchTick();
+    assert.equal(h.purchaseCalls.at(-1).qty,200,
+        'further attempts keep using the maximum quantity until a newer server quote replaces it');
     assert.equal(h.state.snatchManual.has(h.key),true);
 });
 
@@ -1905,4 +1912,123 @@ test('marketComprado: websocket routes exactly the ordinary buy event through ac
     assert.doesNotMatch(code,/event\?\.k === 'marketCompradoLote'/);
     assert.match(code,/listingId > 0 && resolveOrder\(listingId, 'refused'\)/,
         'unrelated ID-less errors must not refuse an arbitrary purchase');
+});
+
+
+test('Items: confirmed purchases retry after 400ms, while unique Pokémon stay on cooldown', () => {
+    const src=section('    function settleOrder(', '    function resolveOrder(');
+    const now=Date.now(), logs=[];
+    const state={attemptedListings:new Map(),lastPurchaseOutcome:'',
+        orderJournal:{orders:[]}};
+    const Clock=class extends Date {static now(){return now;}};
+    const settle=new Function('state','Date','verifiedOrderFill',
+        'saveOrderJournal','addLog','snatchOutcome','queueRender',src+
+        '\nreturn settleOrder;')(state,Clock,()=>null,()=>true,
+        text=>logs.push(text),()=>{},()=>{});
+    const item={kind:'item',listingId:789,status:'submitted',qty:200,
+        ruleId:'fixed-1'};
+    assert.equal(settle(item,'confirmed'),true);
+    assert.equal(state.attemptedListings.get(789),now+400,
+        'a partially filled item listing must be retried promptly');
+    const poke={kind:'pokemon',listingId:790,status:'submitted',qty:1};
+    assert.equal(settle(poke,'confirmed'),true);
+    assert.equal(state.attemptedListings.get(790),now+30*60000);
+    const unknownItem={kind:'item',listingId:791,status:'submitted',ruleId:'fixed-1'};
+    settle(unknownItem,'unknown');
+    assert.equal(state.attemptedListings.get(791),now+400,
+        'missing feedback must not permanently block an automatic item purchase');
+    const manualItem={kind:'item',listingId:792,status:'submitted',ruleId:''};
+    settle(manualItem,'unknown');
+    assert.equal(state.attemptedListings.get(792),Number.MAX_SAFE_INTEGER,
+        'one-click manual Buy does not silently repeat an unverified purchase');
+});
+
+test('Items: automatic buying can retry a still-quoted listing after a missing acknowledgement', () => {
+    const src=section('    function fixedRuleCandidate(', '    function anyItemRuleTargets(');
+    const now=Date.now();
+    const offer={id:789,preco:21495,qtd:200,vendedor:'seller'};
+    const state={
+        itemOfferDetails:new Map([['106:gold',{offers:[offer],updatedAt:now}]]),
+        attemptedListings:new Map(),pendingBuys:new Map()
+    };
+    const candidate=new Function('state','Date','isOwnListing','unresolvedListing',
+        'retentionUntil','serverNow','itemReference','catalogName',src+
+        '\nreturn fixedRuleCandidate;')(
+        state,Date,()=>false,()=>true,()=>0,()=>now,
+        ()=>null,()=> 'Cocoon Stone')(
+            {itemId:106,currency:'gold',buyMax:30000});
+    assert.equal(candidate.listingId,789);
+    assert.equal(candidate.qty,200);
+    const srcQuote=section('    function freshQuote(', '    // END MOTHWATCH ORDERS GENERATED');
+    const quote=new Function('state','Date','QUOTE_MAX_AGE_MS','serverNow',
+        'isOwnListing','unresolvedListing',srcQuote+'\nreturn freshQuote;')(
+        {nick:'buyer'},Date,30000,()=>now,()=>false,()=>true);
+    assert.equal(quote(candidate,false,false),false);
+    assert.equal(quote(candidate,false,true),true,
+        'automatic item retry can reuse a valid quote even after unknown status');
+});
+
+test('Items: three concurrent repeat attempts each send maximum 200-unit quantity', () => {
+    const src=section('    function balanceFor(', '    function controllerResult(');
+    let now=Date.now();
+    const Clock=class extends Date {static now(){return now;}};
+    const sent=[],scheduled=[],logs=[];
+    const state={
+        gold:10000000,orbs:0,nick:'buyer',
+        gameSocket:{readyState:1},
+        orderJournal:{accountKey:'acct',sessionId:'sess',orders:[]},
+        pendingBuy:null,pendingBuys:new Map(),lastPurchaseSendAt:0,
+        attemptedListings:new Map(),rateLimitedUntil:0
+    };
+    const config={purchasesPaused:false,goldReserve:0,gemReserve:0,
+        maxCoinsPerBuy:0,maxGemsPerBuy:0};
+    const srcFn=new Function('state','config','Date','remainingBudget',
+        'pokemonCurrencyAllowed','freshQuote','snatchReleaseQuote',
+        'activeRuleById','currentRuleMatches','orderAccountKey',
+        'serverNow','orderDay','reserveOrder','diagnosticOutcome','send',
+        'saveOrderJournal','addLog','num','queueRender','setTimeout',
+        'runMarketAutomation','MAX_PENDING_BUYS','MAX_SNATCH_PENDING_PER_LISTING',
+        'BUY_DISPATCH_GAP_MS','SNATCH_RETRY_MS',src+
+        '\nreturn {purchaseQuantity,tryBuy};');
+    const {purchaseQuantity,tryBuy}=srcFn(state,config,Clock,
+        ()=>({spend:Infinity,quantity:Infinity}),
+        ()=>true,()=>true,()=>true,()=>({id:'fixed-1'}),()=>true,
+        ()=> 'acct',()=>now,()=> '2026-10-13',
+        order=>{state.orderJournal.orders.push(order);return true;},
+        ()=>{},packet=>{sent.push(packet);return true;},
+        ()=>true,text=>logs.push(text),String,()=>{},
+        (fn,ms)=>scheduled.push({fn,ms}),()=>{},
+        5,3,120,400);
+    const candidate={kind:'item',listingId:789,key:'rule:106:gold:789',
+        itemId:106,name:'Cocoon Stone',currency:'gold',price:21495,
+        qty:200,seller:'seller',seenAt:now,retainedUntil:0};
+    assert.equal(purchaseQuantity(candidate,'fixed-1'),200,
+        'maximum affordable quantity must reflect actual listing stock');
+    for(let i=0;i<3;i++){
+        assert.equal(tryBuy(candidate,false,null,{id:'fixed-1'}),true);
+        now+=400;
+    }
+    assert.deepEqual(sent.map(packet=>packet.qtd),[200,200,200],
+        'all repeated requests must carry 200 units, not 1');
+    assert.ok(sent.every(packet=>packet.t==='market.comprar' &&
+        packet.id===789 && packet.preco===21495));
+    assert.equal(tryBuy(candidate,false,null,{id:'fixed-1'}),false,
+        'at most three concurrent item attempts per listing');
+    state.pendingBuys.get(789).shift();
+    assert.equal(tryBuy(candidate,false,null,{id:'fixed-1'}),true);
+    assert.deepEqual(sent.map(packet=>packet.qtd),[200,200,200,200],
+        'a settled attempt opens another full-quantity slot');
+    assert.match(logs[0],/offered 200/,
+        'diagnostics must distinguish server-observed stock from sent quantity');
+    assert.equal(scheduled.some(x=>x.ms===420),true,
+        'another buying pass is scheduled when the listing retry cooldown elapses');
+});
+
+test('Items: explicitly configured per-purchase caps still bound maximum quantity', () => {
+    const src=section('    function purchaseQuantity(', '    function tryBuy(');
+    const q=new Function('config','balanceFor','reserveFor','maxSpendFor',
+        'pokemonCurrencyAllowed','remainingBudget',src+'\nreturn purchaseQuantity;')(
+        {maxCoinsPerBuy:100000},()=>1000000,()=>0,()=>100000,
+        ()=>true,()=>({spend:Infinity,quantity:Infinity}));
+    assert.equal(q({kind:'item',currency:'gold',price:21495,qty:200}),4);
 });

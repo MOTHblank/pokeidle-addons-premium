@@ -127,9 +127,9 @@
             candidate, ruleId:rule?.id || old?.ruleId || '',
             releaseAt:held ? until : old?.releaseAt || 0,
             attempts:old?.attempts || 0, retryAt:old?.retryAt || 0,
-            // Every returned listing quote resets the quantity estimate.
-            // Only a new authenticated quote can revive an exhausted lot.
-            confirmedUnits:0, awaitingRefresh:false, missing:0,
+            // Every authenticated listing response replaces the previous
+            // quantity quote. No purchase ack implies a remaining-stock count.
+            missing:0,
             observedAt:Date.now(), refreshedAt:old?.refreshedAt || 0
         });
         if (manual && price > manual.maxPrice) {
@@ -256,18 +256,6 @@
                     snatchRefresh(entry,now);
                 continue;
             }
-            if (entry.awaitingRefresh) {
-                // Prefer a new quantity quote after a reported full fill.
-                // If the market stalls, resume attempting with the last
-                // server-observed listing rather than deadlocking the queue.
-                snatchRefresh(entry,now);
-                if (now - Number(entry.waitingSince || now) < 5000) {
-                    entry.retryAt = now + 1000;
-                    continue;
-                }
-                entry.awaitingRefresh = false;
-                entry.confirmedUnits = 0;
-            }
             if (!freshQuote(c,!!manual,true) && !snatchReleaseQuote(c)) {
                 // Missing a current quote must not create a 35ms busy loop.
                 entry.retryAt = now + 1000;
@@ -289,12 +277,12 @@
                 entry.retryAt = now + 1000;
                 continue;
             }
-            // Buy as many units as permitted by this listing, available
-            // balance and configured caps. A one-unit Snatch used to leave
-            // nearly all of a multi-unit listing behind.
+            // Each attempt requests the FULL quoted listing quantity, bounded
+            // only by funds and explicit configuration inside tryBuy.
+            // marketComprado does not generally report the remaining stock,
+            // so subtracting previous orders here could shrink retries to 1.
             entry.retryAt = now + snatchRetryDelay(entry.attempts);
-            if (tryBuy(c,!!manual,Math.max(1,c.qty-Number(entry.confirmedUnits||0)),
-                activeRule || false,true)) {
+            if (tryBuy(c,!!manual,null,activeRule || false,true)) {
                 entry.attempts++;
                 queueRender();
                 break;
@@ -333,7 +321,7 @@
                     // Match the timer to the actual listing cooldown instead
                     // of waking every 35 ms for a temporarily blocked offer.
                     const attempted = Number(state.attemptedListings.get(entry.candidate.listingId) || 0);
-                    wait = Math.min(wait, entry.awaitingRefresh ? 1000 : Math.max(35,
+                    wait = Math.min(wait, Math.max(35,
                         Math.max(entry.retryAt || 0, attempted) - Date.now()));
                 }
             }
@@ -350,18 +338,16 @@
                     // Pokémon listings contain exactly one specimen.
                     snatchStop(key,'confirmed'); continue;
                 }
-                const filled = Math.max(1,Number(order?.fillQty || order?.qty || 1));
-                entry.confirmedUnits = (entry.confirmedUnits || 0) + filled;
-                if (entry.confirmedUnits >= entry.candidate.qty) {
-                    entry.awaitingRefresh = true;
-                    entry.waitingSince = Date.now();
-                    entry.refreshedAt = 0;
-                    snatchRefresh(entry,Date.now());
-                }
+                // The upstream marketComprado notification does not prove
+                // that the whole item listing sold, even when qtd was large.
+                // Ask for a new authenticated stock quote asynchronously but
+                // never block the next maximum-quantity purchase on it.
+                entry.refreshedAt = 0;
+                snatchRefresh(entry, Date.now());
             }
-            // A success, a refusal or an unknown outcome does not prove an
-            // item listing is gone. Retry until the newly observed stock is
-            // exhausted, then recheck whether the seller still has any.
+            // Success, refusal and unknown all leave item stock uncertain.
+            // Keep requesting the largest affordable quantity while the quote
+            // is valid; the authoritative server decides what remains.
             entry.retryAt = Date.now() + snatchRetryDelay(entry.attempts);
             state.attemptedListings.set(listingId,entry.retryAt);
         }
@@ -458,8 +444,6 @@
         }
         const retry = Math.ceil((Number(observation.retryAt||0)-Date.now())/1000);
         if (retry>0) return {tone:'pending',text:tr('Next attempt in {seconds}s',{seconds:retry})};
-        if (observation.awaitingRefresh)
-            return {tone:'pending',text:tr('Refreshing listing evidence')};
         if (!freshQuote(observation.candidate,true,true) && !snatchReleaseQuote(observation.candidate))
             return {tone:'warning',text:tr('Refreshing listing evidence')};
         return {tone:'ready',text:tr('Competing for purchase')};
