@@ -2167,7 +2167,10 @@
                 Object.values(listing.traits || {}).every(flag => flag != null) &&
                 matches.every(sale => Object.values(sale.traits || {}).length === 6 &&
                     Object.values(sale.traits).every(flag => flag != null));
-            const recent = dateCoverage === 1 && newestSoldAt != null &&
+            const snapshotFresh = Number.isFinite(state.pokemonReference.capturedAt) &&
+                state.pokemonReference.capturedAt > 0 &&
+                Date.now() - state.pokemonReference.capturedAt <= 24 * 3600000;
+            const recent = snapshotFresh && dateCoverage === 1 && newestSoldAt != null &&
                 Date.now() - newestSoldAt <= POKEMON_HISTORY_FRESH_MS;
             const gradeMatched = stage.options.grade !== false && listing.score != null;
             // Incomplete or undated samples remain contextual, never bargain alerts.
