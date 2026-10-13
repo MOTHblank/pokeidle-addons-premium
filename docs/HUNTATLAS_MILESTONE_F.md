@@ -1,3 +1,5 @@
+> **Atualização v1.9.14:** a ordenação por Moedas/captura foi removida, assim como o controle Mostrar/Ocultar Top 5. A nota técnica abaixo é um registro da entrega original v1.9.9 e não descreve todas as opções atuais.
+
 # Hunt Atlas Milestone F — goal-specific recommendations, compact UX and resource safeguards
 
 **Implemented in experimental premium v1.9.9, 2026-10-13.** Regression tests are deterministic fixtures; **the owner is responsible for live-game verification**. This document supplements the [roadmap](HUNTATLAS_ROADMAP.md), [capture math](HUNTATLAS_MILESTONE_E.md), [economy](HUNTATLAS_MILESTONE_C.md) and [rare model](HUNTATLAS_MILESTONE_D.md).
