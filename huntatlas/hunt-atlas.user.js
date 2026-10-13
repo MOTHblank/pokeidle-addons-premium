@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/huntatlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.11
+// @version      1.9.12
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.11');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.12');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -460,7 +460,7 @@
             'rank.best': 'Best for {metric}: {hunt}',
             'rank.noEvidence': 'No comparable estimate for this metric under the current filters.',
             'rank.rareLabel': 'Rare item for comparison',
-            'rank.value': '{value}/h · {source}',
+            'rank.value': '{value} · {source}',
             'rank.efficiency': '{value} Coins/expected capture · wiki-conditional',
             'rank.rarePreview': 'Outland tier {tier} preview, not the active tier',
             'rank.invalid': 'Unavailable — insufficient model evidence or not eligible',
@@ -809,7 +809,7 @@
             'rank.best': 'Melhor para {metric}: {hunt}',
             'rank.noEvidence': 'Nenhuma previsão comparável nesta métrica com os filtros atuais.',
             'rank.rareLabel': 'Item raro para comparar',
-            'rank.value': '{value}/h · {source}',
+            'rank.value': '{value} · {source}',
             'rank.efficiency': '{value} Moedas/captura esperada · condicional da wiki',
             'rank.rarePreview': 'Prévia Outland {tier}, não o tier ativo',
             'rank.invalid': 'Indisponível — dados insuficientes ou não elegível',
@@ -1753,52 +1753,44 @@
         ].join(':');
     }
 
-    function formatRate(
-        value
-    ) {
-        const n =
-            Number(value);
-
-        if (
-            !Number.isFinite(n) ||
-            n <= 0
-        ) {
-            return '—';
-        }
-
-        if (n >= 1000000000) {
-            return (
-                n / 1000000000
-            ).toFixed(
-                n >= 10000000000
-                    ? 0
-                    : 1
-            ) + 'b';
-        }
-
-        if (n >= 1000000) {
-            return (
-                n / 1000000
-            ).toFixed(
-                n >= 10000000
-                    ? 0
-                    : 1
-            ) + 'm';
-        }
-
-        if (n >= 1000) {
-            return (
-                n / 1000
-            ).toFixed(
-                n >= 100000
-                    ? 0
-                    : 1
-            ) + 'k';
-        }
-
-        return Math.round(n)
-            .toLocaleString();
+    // HA RARE RATE UI PURE BEGIN. Presentation only; preserve raw sorting and evidence.
+    function formatRate(value) {
+        if(typeof value!=='number'||!Number.isFinite(value))return '—';
+        if(value===0)return '0';
+        const sign=value<0?'-':'', n=Math.abs(value);
+        if(n>=1e9)return sign+(n/1e9).toFixed(n>=1e10?0:1)+'b';
+        if(n>=1e6)return sign+(n/1e6).toFixed(n>=1e7?0:1)+'m';
+        if(n>=1e3)return sign+(n/1e3).toFixed(n>=1e5?0:1)+'k';
+        if(n>=100)return sign+Math.round(n).toLocaleString();
+        if(n>=10)return sign+n.toFixed(n%1<.05?0:1);
+        if(n>=1)return sign+n.toFixed(n%1<.005?0:2);
+        if(n>=.01)return sign+n.toFixed(3).replace(/0+$/,'').replace(/\.$/,'');
+        if(n>=.0001)return sign+n.toFixed(5).replace(/0+$/,'').replace(/\.$/,'');
+        if(n>=.000001)return sign+n.toFixed(7).replace(/0+$/,'').replace(/\.$/,'');
+        return sign+n.toExponential(2);
     }
+    // A complete value+unit: do not append "/h" to event rates.
+    // "~1 / N d" means an average interval, never a drop guarantee.
+    function formatEventRate(value) {
+        if(typeof value!=='number'||!Number.isFinite(value)||value<0)return '—';
+        if(value===0)return '0/h';
+        if(value>=.1)return formatRate(value)+'/h';
+        const daily=value*24;
+        if(daily>=1)return formatRate(daily)+'/d';
+        const days=1/daily;
+        if(!Number.isFinite(days))return formatRate(value)+'/h';
+        if(days>=365)return '~1 / '+formatRate(days/365)+' yr';
+        return '~1 / '+formatRate(days)+' d';
+    }
+    function formatObjectiveValue(value,objective,portuguese=false) {
+        if(typeof value!=='number'||!Number.isFinite(value))return '—';
+        if(['rare','shinyCatch','capture'].includes(objective))
+            return formatEventRate(value);
+        if(objective==='ballEfficiency')
+            return formatRate(value)+' '+(portuguese?'Moedas/captura':'Coins/capture');
+        return formatRate(value)+'/h';
+    }
+    // HA RARE RATE UI PURE END.
 
     function leadPokemon() {
         const active =
@@ -12954,7 +12946,7 @@
                                 ].filter(Boolean).join(' · '))}">${escapeHtml(
                                     tr(
                                         'rank.value',{
-                                            value:formatRate(row.score),
+                                            value:formatObjectiveValue(row.score,objective,currentLocale()==='pt-BR'),
                                             source:row.source||tr('rank.unknown')
                                         }
                                     )
@@ -13402,7 +13394,7 @@
                         ? escapeHtml(
                             tr(
                                 'rank.value',{
-                                    value:formatRate(best.score),
+                                    value:formatObjectiveValue(best.score,objective,currentLocale()==='pt-BR'),
                                     source:best.source||tr('rank.unknown')
                                 }
                             )
@@ -14333,7 +14325,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.11 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.12 experimental loaded'
         );
     }
 
