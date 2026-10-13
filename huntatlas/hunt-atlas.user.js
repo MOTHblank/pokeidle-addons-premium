@@ -12470,6 +12470,89 @@
             '<div class="mha-xp-note">'+escapeHtml(tr('rare.uncertainty'))+'</div>'
         ].join('');
 
+
+        const captureHunt=current && isUnlocked(current) ? current :
+            best?.hunt??null;
+        const activeCaptureId=state.filters.captureBall==='beast'?5:4;
+        const capXp=captureHunt?huntXpEstimate(captureHunt):null;
+        const ultra=captureHunt?capturePlanForHunt(captureHunt,4,capXp):null;
+        const beast=captureHunt?capturePlanForHunt(captureHunt,5,capXp):null;
+        const chosen=activeCaptureId===5?beast:ultra;
+        const pct=value=>typeof value==='number'&&Number.isFinite(value)
+            ?(100*value).toFixed(3)+'%':tr('catch.unknown');
+        const rate=value=>typeof value==='number'&&Number.isFinite(value)
+            ?value.toFixed(value<1?5:2):tr('catch.unknown');
+        const captureLine=(label,value)=>'<div class="mha-xp-note">'+
+            '<strong>'+escapeHtml(label)+'</strong> · '+
+            escapeHtml(value)+'</div>';
+        const observedCapture=chosen?.observed;
+        const capEvidence=chosen?
+            tr('catch.source',{coverage:chosen.coverage,
+                source:chosen.source}):tr('catch.unknown');
+        const captureHtml=[
+            '<div class="mha-xp-list-title">'+escapeHtml(tr('catch.title'))+'</div>',
+            '<div class="mha-xp-note"><label>'+escapeHtml(tr('catch.ball'))+
+                ' <select data-mha-capture-ball>'+
+                '<option value="ultra" '+(activeCaptureId===4?'selected':'')+'>'+
+                escapeHtml(tr('catch.ultra'))+'</option>'+
+                '<option value="beast" '+(activeCaptureId===5?'selected':'')+'>'+
+                escapeHtml(tr('catch.beast'))+'</option></select></label></div>',
+            '<div class="mha-xp-note"><label><input type="checkbox" '+
+                'data-mha-shiny-lure-preview '+
+                (state.filters.shinyLurePreview?'checked':'')+
+                ' /> '+escapeHtml(tr('catch.lure'))+'</label></div>',
+            captureLine(tr('catch.current',{hunt:captureHunt?.nome||
+                captureHunt?.slug||'?'}),[
+                    'Ultra '+pct(ultra?.chance),
+                    'Beast '+pct(beast?.chance),
+                    chosen?.ball?.source
+                ].filter(Boolean).join(' · ')),
+            chosen ? captureLine(tr('catch.percent',{
+                chance:chosen.chance===null?'—':(100*chosen.chance).toFixed(3)
+            }),tr('catch.expected',{
+                count:rate(chosen.catchesH),
+                balls:rate(chosen.ballsPerCapture)
+            })):'',
+            chosen ? captureLine(tr('catch.seen',{
+                count:rate(chosen.shinySeenH),
+                caught:rate(chosen.shinyCaughtH)
+            }),tr('catch.oneDay',{
+                chance:chosen.shinyCaught24hChance===null?'—':
+                    (100*chosen.shinyCaught24hChance).toFixed(5)
+            })):'',
+            chosen && chosen.ball.id===4 && chosen.coinsPerCapture!==null ?
+                captureLine(tr('catch.cost',{
+                    coins:formatRate(chosen.coinsPerCapture)}),
+                    chosen.ball.priceSource):'',
+            chosen && chosen.ball.id===5 ?
+                captureLine(tr('catch.diamondCost'),
+                    chosen.diamondsPerCapture!==null?
+                        rate(chosen.diamondsPerCapture)+' Diamonds/capture':
+                        'Diamonds price unknown'):'',
+            chosen && chosen.ball.stock!==null ?
+                captureLine(tr('catch.stock',{count:chosen.ball.stock,
+                    hours:chosen.stockHours===null?'—':
+                        rate(chosen.stockHours)}),
+                    chosen.observed?'observed usage':'usage unknown'):'',
+            observedCapture ?
+                captureLine(tr('catch.observed',{
+                    throws:observedCapture.throws,
+                    caught:observedCapture.captures,
+                    seen:observedCapture.shinySeen,
+                    shiny:observedCapture.shinyCaught,
+                    fraction:(100*Math.min(1,
+                        observedCapture.targetableFraction)).toFixed(1)
+                }),tr('econ.observed')):'',
+            '<div class="mha-xp-note">'+escapeHtml(capEvidence)+'</div>',
+            '<div class="mha-xp-note">'+escapeHtml(tr('catch.limit'))+'</div>',
+            '<div class="mha-xp-note">'+escapeHtml(tr('catch.shiny'))+'</div>',
+            chosen?.shinyEligible===null ?
+                '<div class="mha-xp-note">'+escapeHtml(tr('catch.outland'))+
+                '</div>':'',
+            '<div class="mha-xp-note">'+escapeHtml(tr('catch.clamp'))+'</div>',
+            '<div class="mha-xp-note">'+escapeHtml(tr('catch.mystic'))+'</div>'
+        ].join('');
+
         const html = `
             <div class="mha-xp-heading">
                 <strong>${escapeHtml(
@@ -12615,6 +12698,7 @@
             </div>
             ${economyHtml}
             ${rareHtml}
+            ${captureHtml}
         `;
 
         // This summary is polled with the drawer, but should only replace its
@@ -12623,6 +12707,17 @@
         if (host.innerHTML === html) return;
         host.innerHTML = html;
 
+        q('[data-mha-capture-ball]',host)?.addEventListener('change',event=>{
+            if(!['ultra','beast'].includes(event.target.value))return;
+            state.filters.captureBall=event.target.value;
+            saveFilters();
+            renderDrawer();
+        });
+        q('[data-mha-shiny-lure-preview]',host)?.addEventListener('change',event=>{
+            state.filters.shinyLurePreview=event.target.checked;
+            saveFilters();
+            renderDrawer();
+        });
         q('[data-mha-outland-preview]',host)?.addEventListener('change',event=>{
             const tier=Number(event.target.value);
             if(Number.isInteger(tier)&&tier>=1&&tier<=8){
