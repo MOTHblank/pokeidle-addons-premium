@@ -171,7 +171,7 @@
     };
 
     let config = loadConfig();
-    state.orderJournal = loadOrderJournal();
+    // Do not load an order journal before the game identifies the account.
 
     function q(selector, root) {
         return (root || document).querySelector(selector);
@@ -622,21 +622,39 @@
 
     // Account-profile-local journal; unknown orders are retained after reload.
     // Never infer success from a send(), an inventory delta, or a timeout.
+    function orderAccountKey() {
+        // Storage keys never include the actual nickname.
+        const name = normalize(state.nick || '');
+        if (!name) return null;
+        // Stable 64-bit FNV-1a for local partitioning, not authentication.
+        let hash = 0xcbf29ce484222325n;
+        for (const char of name) {
+            hash = (hash ^ BigInt(char.codePointAt(0))) * 0x100000001b3n &
+                0xffffffffffffffffn;
+        }
+        return hash.toString(16).padStart(16, '0');
+    }
+
     function orderSessionId() {
         try {
-            let id = sessionStorage.getItem(ORDER_SESSION_KEY);
+            const accountKey = orderAccountKey();
+            if (!accountKey) return null;
+            const storageKey = ORDER_SESSION_KEY + ':' + accountKey;
+            let id = sessionStorage.getItem(storageKey);
             if (!id) {
                 id = String(Date.now()) + '-' + Math.random().toString(36).slice(2);
-                sessionStorage.setItem(ORDER_SESSION_KEY, id);
+                sessionStorage.setItem(storageKey, id);
             }
             return id;
         } catch { return null; }
     }
 
     function loadOrderJournal() {
+        const accountKey = orderAccountKey();
+        if (!accountKey) return null;
         let rows = [];
         try {
-            const data = JSON.parse(localStorage.getItem(ORDER_JOURNAL_KEY) || 'null');
+            const data = JSON.parse(localStorage.getItem(ORDER_JOURNAL_KEY + ':' + accountKey) || 'null');
             if (data?.version === 1 && Array.isArray(data.orders)) rows = data.orders;
         } catch {}
         const now = Date.now();
@@ -655,14 +673,16 @@
             day: String(o.day || ''),
             status: ['prepared', 'submitted'].includes(o.status) ? 'unknown' : o.status
         })).slice(-2500);
-        return { version: 1, sessionId: orderSessionId(), orders };
+        return { version: 1, accountKey, sessionId: orderSessionId(), orders };
     }
 
     function saveOrderJournal() {
         state.exposureCache?.clear();
-        if (!state.orderJournal?.sessionId) return false;
+        if (!state.orderJournal?.sessionId ||
+            state.orderJournal.accountKey !== orderAccountKey()) return false;
         try {
-            localStorage.setItem(ORDER_JOURNAL_KEY, JSON.stringify(state.orderJournal));
+            localStorage.setItem(ORDER_JOURNAL_KEY + ':' + state.orderJournal.accountKey,
+                JSON.stringify(state.orderJournal));
             return true;
         } catch { return false; }
     }
@@ -2456,8 +2476,9 @@
         const rule = !manual && fixedRule ? activeRuleById(fixedRule.id) : null;
         const quotedPrice = Number(candidate.unitPrice || candidate.price);
         if (!manual && !currentRuleMatches(rule, candidate, quotedPrice)) return false;
-        if (!candidate || state.pendingBuy ||
-            state.orderJournal?.orders.length >= 2500) return false;
+        if (!candidate || state.pendingBuy || !state.orderJournal?.sessionId ||
+            state.orderJournal?.accountKey !== orderAccountKey() ||
+            state.orderJournal.orders.length >= 2500) return false;
         if (candidate.kind === 'pokemon' &&
             !pokemonCurrencyAllowed(candidate.ficha, candidate.currency)) {
             if (manual) addLog('Skipped: shiny Pokémon require Gems');
@@ -3043,7 +3064,21 @@
         }
 
         if (message.t === 'welcome') {
+            // Never let two authenticated accounts share a spending journal.
+            if (state.pendingBuy) finishPendingBuy('account-refresh');
+            const previousAccount = state.orderJournal?.accountKey;
+            state.nick = String(message.estado?.nick || '');
             mergePlayer(message.estado, true);
+            state.orderJournal = loadOrderJournal();
+            state.exposureCache.clear();
+            if (previousAccount !== state.orderJournal?.accountKey) {
+                state.attemptedListings.clear();
+                state.itemOfferDetails.clear();
+                state.pokemonAutoOffers.clear();
+                state.candidates.clear();
+                for (const entry of state.releaseTimers.values()) clearTimeout(entry.timer);
+                state.releaseTimers.clear();
+            }
             const catalog = message.mercado && Array.isArray(message.mercado.catalogo)
                 ? message.mercado.catalogo
                 : [];
