@@ -29,9 +29,3 @@ No new polling intervals, WebSockets or document observers were introduced by th
 ## Purchase-throughput follow-up (v0.6.8)
 
 The Snatch socket quiet window now affects only background requests for about 1.2 seconds before through 1.5 seconds after a release, **not ordinary available-listing purchases**. When a different purchase is still awaiting a server result at unlock, Snatch checks again after 250 ms and is also revisited immediately after the other transaction settles. Multiple buys may follow in rapid succession, with the next distinct matching listing sent immediately after an authoritative acknowledgement rather than waiting for the scan tick. Unset budgets are unlimited. Listing-price authorization, account scoping and no blind resubmission of an unverified purchase are retained. Only a server purchase receipt proves a win.
-
-## Active release buying — v0.6.9
-
-After the verified `compravelEm` unlock, a Snatch can submit repeated one-unit `market.comprar` requests even before an acknowledgement or explicit refusal arrives. Initial pacing is 400 ms between attempts, progressively backing off after prolonged refusals. The account journal records **each** request separately. The client permits up to three unacknowledged requests for one released listing and five total outstanding orders, including ordinary rule buys on unrelated available items. A missing server response no longer removes an armed target by itself. Confirmed purchases stop new sends; server rate-limit responses pause sending. The original listing/price/currency permission and seller/own-listing checks stay enforced.
-
-**Intentional trade-off:** If a seller lists multiple units, requests already in flight may purchase more than one. Late/unmatched server responses can leave conservative unknown order entries. The server decides which orders actually succeeded; a local send is not confirmation.
