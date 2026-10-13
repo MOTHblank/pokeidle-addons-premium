@@ -1,4 +1,4 @@
-name: Moth Watch regression tests
+name: Premium addons regression tests
 on:
   push:
     branches: [main]
@@ -14,3 +14,4 @@ jobs:
         with:
           node-version: '22'
       - run: node --test tests/moth-watch-automation.test.cjs
+      - run: node --test huntatlas/tests/*.test.cjs
