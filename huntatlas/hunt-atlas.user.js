@@ -420,6 +420,17 @@
             'xp.currentModeled': ' · current modeled {value} trainer XP/h',
             'xp.warmingSession': 'warming up: sustained observations still insufficient',
             'xp.sessionEvidence': '{samples} kills / {minutes} min, wall-clock',
+            'xp.sourceLabel': 'source: {source}',
+            'xp.sourceMeasured': 'server kill rewards (observed)',
+            'xp.sourceModel': 'personalized combat projection',
+            'xp.sourceBaseline': 'unboosted static baseline',
+            'xp.sourceImmunity': 'known immunity',
+            'xp.ranged': 'heuristic range {low}–{high} trainer XP/h',
+            'xp.unboosted': 'modeled XP excludes unverified VIP, guild, stream, event and catch-up bonuses',
+            'xp.uncertainLeader': 'Leading candidate (uncertain): {hunt}',
+            'xp.fallback': 'reason: {reason}',
+            'xp.calibration': 'validated against {count} hunt(s) in this context; median absolute error {error}%',
+            'xp.unknownPokemon': 'Pokémon XP event stream incomplete (not combined with trainer XP)',
             'xp.modelNote': ' · exact upstream XP curve; real combat samples take priority over experimental move-index estimates.',
             'xp.possibleMoves': '{count} level-eligible indexed moves (not confirmed equipped)',
             'xp.knownMoves': '{count} named moves confirmed by battle events',
@@ -622,6 +633,17 @@
             'xp.currentModeled': ' · atual modelado {value} XP de treinador/h',
             'xp.warmingSession': 'aquecendo: ainda faltam medições sustentadas',
             'xp.sessionEvidence': '{samples} abates / {minutes} min, tempo corrido',
+            'xp.sourceLabel': 'fonte: {source}',
+            'xp.sourceMeasured': 'recompensas do servidor (medidas)',
+            'xp.sourceModel': 'projeção personalizada de combate',
+            'xp.sourceBaseline': 'estimativa-base sem bônus',
+            'xp.sourceImmunity': 'imunidade conhecida',
+            'xp.ranged': 'faixa heurística {low}–{high} XP de treinador/h',
+            'xp.unboosted': 'XP modelado não inclui bônus não verificados de VIP, guilda, lives, eventos ou catch-up',
+            'xp.uncertainLeader': 'Candidato principal (incerto): {hunt}',
+            'xp.fallback': 'motivo: {reason}',
+            'xp.calibration': 'comparado com {count} hunt(s) neste contexto; erro absoluto mediano {error}%',
+            'xp.unknownPokemon': 'evento de XP do Pokémon incompleto (não somado ao XP do treinador)',
             'xp.modelNote': ' · curva oficial de XP; amostras reais de combate têm prioridade sobre estimativas experimentais do índice de golpes.',
             'xp.possibleMoves': '{count} golpes possíveis neste nível (não confirmados como equipados)',
             'xp.knownMoves': '{count} golpes identificados nos eventos de combate',
@@ -11053,8 +11075,24 @@
                     ) > 0
             );
 
-        const best =
-            usable[0] || null;
+        const best = usable[0] || null;
+        const xpSourceLabel = estimate => estimate?.observed
+            ? tr('xp.sourceMeasured')
+            : estimate?.source === 'immune combat model'
+                ? tr('xp.sourceImmunity')
+                : estimate?.source === 'baseline model'
+                    ? tr('xp.sourceBaseline')
+                    : tr('xp.sourceModel');
+        const rangeLabel = estimate => estimate?.range
+            ? tr('xp.ranged', {low: formatRate(estimate.range.low),
+                high: formatRate(estimate.range.high)}) : '';
+        const displayEvidence = estimate => [
+            tr('xp.sourceLabel', {source: xpSourceLabel(estimate)}),
+            rangeLabel(estimate),
+            estimate?.observed ? null : tr('xp.unboosted'),
+            estimate?.fallbackReason
+                ? tr('xp.fallback', {reason: estimate.fallbackReason}) : null
+        ].filter(Boolean).join(' · ');
 
         const current =
             currentHunt();
