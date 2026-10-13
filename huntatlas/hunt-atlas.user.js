@@ -436,6 +436,7 @@
             'catch.diamondsPerCapture': '{count} Diamonds/capture',
             'catch.diamondsPriceUnknown': 'Diamond cost unavailable',
             'catch.stock': 'Stock: {count} · coverage at observed throw rate: {hours}h',
+            'catch.stockEmpty': 'Selected ball out of stock; future attempts require restocking',
             'catch.observed': 'Observed: {throws} accepted throws, {caught} captures, {seen} shiny seen, {shiny} shiny caught; {fraction}% of killed corpses thrown at',
             'catch.observedBall': 'Selected ball: {throws} accepted · {caught} confirmed captures (small samples are noisy)',
             'catch.measuredChance': 'Observed success: {chance} ({throws} accepted throws)',
@@ -756,6 +757,7 @@
             'catch.diamondsPerCapture': '{count} Diamantes/captura',
             'catch.diamondsPriceUnknown': 'Custo em Diamantes indisponível',
             'catch.stock': 'Estoque: {count} · duração no ritmo observado: {hours}h',
+            'catch.stockEmpty': 'Bola selecionada sem estoque; novas tentativas exigem reposição',
             'catch.observed': 'Observado: {throws} bolas aceitas, {caught} capturas, {seen} shinies vistos, {shiny} shinies capturados; {fraction}% dos corpos derrotados receberam bola',
             'catch.observedBall': 'Bola selecionada: {throws} aceitas · {caught} capturas confirmadas (amostras pequenas oscilam)',
             'catch.measuredChance': 'Sucesso observado: {chance} ({throws} bolas aceitas)',
@@ -12559,6 +12561,8 @@
                 captureLine(tr('catch.stock',{count:chosen.ball.stock,
                     hours:chosen.stockHours===null?'—':
                         rate(chosen.stockHours)})):'',
+            chosen?.ball.stock===0 ?
+                '<div class="mha-xp-note">'+escapeHtml(tr('catch.stockEmpty'))+'</div>':'',
             observedCapture?.byBall?.[activeCaptureId] ?
                 captureLine(tr('catch.observedBall',{
                     throws:observedCapture.byBall[activeCaptureId],
