@@ -47,7 +47,9 @@
             qty: o.qty, spend: o.spend, ruleId: String(o.ruleId || ''),
             kind: String(o.kind || ''), sessionId: String(o.sessionId || ''),
             day: String(o.day || ''),
-            status: ['prepared', 'submitted'].includes(o.status) ? 'unknown' : o.status
+            status: ['prepared', 'submitted'].includes(o.status) ? 'unknown' : o.status,
+            fillQty: Number.isSafeInteger(o.fillQty) && o.fillQty > 0 && o.fillQty <= o.qty ? o.fillQty : null,
+            fillSpend: Number.isSafeInteger(o.fillSpend) && o.fillSpend > 0 && o.fillSpend <= o.spend ? o.fillSpend : null
         })).slice(-2500);
         return { version: 1, accountKey, sessionId: orderSessionId(), orders };
     }
@@ -147,9 +149,24 @@
         return false;
     }
 
-    function settleOrder(order, status) {
+    // Only explicit, matching server receipt fields are usable as fill evidence.
+    // Missing or ambiguous fields retain the quoted upper-bound exposure.
+    function verifiedOrderFill(receipt, order) {
+        if (!receipt || !order) return null;
+        const quantity = Number(receipt.quantidadeComprada ?? receipt.qtdComprada ?? receipt.executedQuantity);
+        const total = Number(receipt.totalPago ?? receipt.valorPago ?? receipt.executedTotal);
+        if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > order.qty ||
+            !Number.isSafeInteger(total) || total < 1 || total > order.spend) return null;
+        return { fillQty: quantity, fillSpend: total };
+    }
+
+    function settleOrder(order, status, receipt = null) {
         if (!order || !['confirmed', 'refused', 'unknown'].includes(status) ||
             ['confirmed', 'refused'].includes(order.status)) return false;
+        if (status === 'confirmed') {
+            const fill = verifiedOrderFill(receipt, order);
+            if (fill) Object.assign(order, fill);
+        }
         order.status = status;
         saveOrderJournal();
         state.lastPurchaseOutcome = status;
@@ -167,14 +184,18 @@
         return true;
     }
 
-    function resolveOrder(listingId, status) {
+    function resolveOrder(listingId, status, receipt = null) {
         if (state.pendingBuy?.listingId === listingId) {
+            if (status === 'confirmed' && receipt) {
+                const fill = verifiedOrderFill(receipt, state.pendingBuy.order);
+                if (fill) Object.assign(state.pendingBuy.order, fill);
+            }
             finishPendingBuy(status === 'confirmed' ? 'server-confirmed' : 'refused');
             return true;
         }
         const order = [...(state.orderJournal?.orders || [])].reverse().find(o =>
             o.listingId === listingId && o.status === 'unknown');
-        if (order) return settleOrder(order, status);
+        if (order) return settleOrder(order, status, receipt);
         return false;
     }
 
