@@ -9,7 +9,7 @@ const blocks=section('// HA MILESTONE A PURE BEGIN.','// HA MILESTONE A PURE END
     section('// HA MILESTONE E PURE BEGIN','// HA MILESTONE E PURE END.');
 const names=['captureRarityFromCatalog','captureWikiChance','captureBallCatalog',
     'captureMysticChance','captureAppend','captureObservedWindow',
-    'captureHuntChance','captureForecast','CAPTURE_BALLS',
+    'captureHuntChance','captureForecast','captureSpeciesForecast','CAPTURE_BALLS',
     'normalizeFarmingEvent','acceptFarmingEvent','makeFarmingLedger','farmingSpawn'];
 const h=vm.runInNewContext(blocks+'\n({' + names.join(',') + '})',{});
 const example={especies:[{pokeId:1,pontos:2},{pokeId:2,pontos:1}],area:'kanto',nivel:100};
@@ -128,4 +128,29 @@ test('UI retains Ultra default, independent Beast and hypothetical shiny lure to
     assert.match(source,/captureBall: 'ultra'/);
     assert.match(source,/shinyLurePreview: false/);
     assert.match(source,/data-mha-capture-ball/);
+});
+
+test('target species shiny catches/h accounts for encounter prevalence not just whole-hunt catch',()=>{
+    const hunt={area:'kanto',nivel:100,especies:[
+        {pokeId:1,pontos:9},{pokeId:2,pontos:1}]};
+    const first=h.captureSpeciesForecast(hunt,1,100,4,1000,
+        {acceptedFraction:.5});
+    const second=h.captureSpeciesForecast(hunt,2,100,4,1000,
+        {acceptedFraction:.5});
+    near(first.targetFraction,.9);
+    near(second.targetFraction,.1);
+    near(first.catchesH/second.catchesH,9);
+    near(first.shinyCaughtH,first.catchesH/24000);
+    assert.ok(first.shiny24h>second.shiny24h);
+    assert.equal(h.captureSpeciesForecast(hunt,3,100,4,1000),null);
+});
+test('representative measured species mix can replace theoretical spawn weights',()=>{
+    const hunt={area:'kanto',nivel:100,especies:[
+        {pokeId:1,pontos:9},{pokeId:2,pontos:1}]};
+    const mix={1:{kills:10},2:{kills:90}};
+    const one=h.captureSpeciesForecast(hunt,1,100,4,1000,{mix});
+    near(one.targetFraction,.1);
+    assert.match(one.source,/measured-species-mix/);
+    assert.match(source,/mixKills===observed.kills/); // no partial sample normalization
+    assert.match(source,/captureSortCache/);
 });
