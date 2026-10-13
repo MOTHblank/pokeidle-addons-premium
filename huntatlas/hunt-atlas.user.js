@@ -466,6 +466,13 @@
             'rank.invalid': 'Unavailable — insufficient model evidence or not eligible',
             'rank.unboosted': 'Unboosted / not validated against active server buffs',
             'rank.details': 'Hunt details (tap to expand)',
+            'rank.pokemonXp': 'Pokémon XP/h',
+            'rank.kills': 'Kills/h',
+            'rank.coverage': 'Coverage {percent}%',
+            'rank.rare': 'Selected rare items/h',
+            'rank.capture': 'Selected ball: {chance}% per accepted throw',
+            'rank.confidence': 'Confidence: {confidence} (heuristic)',
+
             'rank.keyInfo': 'Rates are conditional, and the best hunt depends on the selected metric.',
             'rank.unknown': 'No data',
             'rank.learning': 'Learning',
@@ -776,6 +783,13 @@
             'rank.invalid': 'Indisponível — dados insuficientes ou não elegível',
             'rank.unboosted': 'Sem bônus / não validado com bônus ativos do servidor',
             'rank.details': 'Detalhes da hunt (clique para abrir)',
+            'rank.pokemonXp': 'XP do Pokémon/h',
+            'rank.kills': 'Abates/h',
+            'rank.coverage': 'Cobertura {percent}%',
+            'rank.rare': 'Itens raros selecionados/h',
+            'rank.capture': 'Bola selecionada: {chance}% por arremesso aceito',
+            'rank.confidence': 'Confiança: {confidence} (heurística)',
+
             'rank.keyInfo': 'As taxas são condicionais; a melhor hunt depende da métrica escolhida.',
             'rank.unknown': 'Sem dados',
             'rank.learning': 'Aprendendo',
@@ -1156,6 +1170,7 @@
         resultLimit: 120,
         xpDetailsOpen: false,
         diagnosticsEnabled: false,
+        openHuntDetails:new Set(),
         lastDrawerRenderAt: 0,
         drawerRenderTimer: null,
         renderStats: {attempts:0,skipped:0},
@@ -12240,12 +12255,53 @@
                         : 'hunt.locked'
             );
 
+
+        const selectedBall=state.filters.captureBall==='beast'?5:4;
+        const selectedRare=haMetricRare(hunt,
+            state.filters.outlandPreviewTier,state.playerLevel,
+            xpInfo?.killsH??null,state.filters.rareSortItem);
+        const activeChance=selectedBall===5?beastPct:ultraPct;
+        const detailId=String(species.id)+'|'+String(hunt.slug);
+        const expanded=state.openHuntDetails.has(detailId);
+        const metricRate=value=>typeof value==='number'&&Number.isFinite(value)
+            ?formatRate(value):tr('rank.unknown');
+        const compactSub=[
+            String(hunt.area||'').toUpperCase(),
+            tr('hunt.level',{level:Number(hunt.nivel)||0}),
+            tr(unlocked?'hunt.unlocked':'hunt.locked'),
+            xpLabel,
+            catchCard
+        ].join(' · ');
+        const moreSub=[
+            tr('rank.kills')+': '+metricRate(xpInfo?.killsH),
+            tr('rank.pokemonXp')+': '+metricRate(xpInfo?.pokemonValue),
+            tr('econ.kill')+': '+metricRate(economicInfo.killCoinsH),
+            tr('econ.loot')+': '+metricRate(economicInfo.npcLootEvH),
+            tr('econ.net')+': '+metricRate(economicInfo.netH),
+            tr('rank.rare')+': '+metricRate(selectedRare?.unitsH),
+            selectedRare?selectedRare.name+' · '+selectedRare.source+
+                ' · '+tr('rank.rarePreview',{
+                    tier:state.filters.outlandPreviewTier}):
+                tr('rank.invalid'),
+            tr('rank.capture',{chance:activeChance===null?'—':
+                (activeChance*100).toFixed(3)}),
+            shinyCard??tr('rank.invalid'),
+            tr('rank.confidence',{confidence:xpInfo?.confidence??'low'}),
+            tr('rank.coverage',{percent:xpInfo?.coverage??0}),
+            xpInfo?.observed?tr('econ.observed'):tr('rank.unboosted')
+        ].join(' · ');
+
         const huntMarkup =
             `
                 <div class="mha-hunt ${current ? 'current' : ''} ${!unlocked ? 'locked' : ''}">
                     <div class="mha-hunt-main">
                         <div class="mha-hunt-title" ${worldLocation ? 'title="' + escapeHtml(tr('location.coordinates', { region: worldLocation.area, x: worldLocation.pixel[0], y: worldLocation.pixel[1] })) + '"' : ''}>${escapeHtml(hunt.nome || hunt.slug)}</div>
-                        <div class="mha-hunt-sub">${escapeHtml(sub)}</div>
+                        <div class="mha-hunt-sub">${escapeHtml(compactSub)}</div>
+                        <details class="mha-hunt-detail" data-mha-hunt-detail=
+                            "${escapeHtml(detailId)}" ${expanded?'open':''}>
+                            <summary>${escapeHtml(tr('rank.details'))}</summary>
+                            <div class="mha-hunt-sub">${escapeHtml(moreSub)}</div>
+                        </details>
                     </div>
 
                     <button
@@ -13208,6 +13264,17 @@
             body.innerHTML =
                 html;
 
+            for(const detail of qa('[data-mha-hunt-detail]',body)){
+                detail.addEventListener('toggle',()=>{
+                    const id=detail.dataset.mhaHuntDetail;
+                    if(detail.open){
+                        state.openHuntDetails.add(id);
+                        if(state.openHuntDetails.size>40)
+                            state.openHuntDetails.delete(
+                                state.openHuntDetails.values().next().value);
+                    }else state.openHuntDetails.delete(id);
+                });
+            }
             for (
                 const button of
                 qa(
