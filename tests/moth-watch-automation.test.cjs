@@ -348,3 +348,20 @@ test('V2 stores only non-identifying Pokémon sale traits and never creates an a
     assert.doesNotMatch(script, /autoBuyPokemon\s*:\s*true/);
     assert.match(script, /if \(!ref \|\| !\(ref\.value > 0\) \|\| !ref\.actionable\) continue/);
 });
+
+test('Category rule defaults and currency constraints', () => {
+    assert.deepEqual(defaults.anyItemRules, []);
+    assert.deepEqual(defaults.pokemonBuyRules, []);
+    assert.equal(defaults.fixedRulesEnabled, false);
+    const helpers = new Function(section('    function sanitizeAnyItemRules(', '    function loadConfig()') +
+        '\nreturn {sanitizeAnyItemRules, sanitizePokemonBuyRules};')();
+    const item = helpers.sanitizeAnyItemRules([{buyMax:10000}, {buyMax:0}]);
+    assert.equal(item.length, 1);
+    assert.equal(item[0].buyEnabled, false);
+    const poke = helpers.sanitizePokemonBuyRules([
+        {kind:'any',currency:'gold',buyMax:1000000,buyEnabled:true},
+        {kind:'shiny',currency:'orb',buyMax:5,buyEnabled:true},
+        {kind:'shiny',currency:'gold',buyMax:5,buyEnabled:true}
+    ]);
+    assert.deepEqual(poke.map(r => r.kind), ['any','shiny']);
+});
