@@ -965,6 +965,9 @@
         npcLootBySpecies: new Map(),
         ballPrices: new Map(),
         itemPrices: new Map(),
+        captureBallRates: new Map(),
+        captureRarities: new Map(),
+        captureBonusEvidence: {},
         inventoryForCosts: new Map(),
         calibrationEvidence: new Map(),
         hunts: [],
@@ -1091,6 +1094,8 @@
             captured: 'all',
             sort: 'xp',
             outlandPreviewTier: 1,
+            captureBall: 'ultra',
+            shinyLurePreview: false,
             sortDirection: 'desc'
         };
     }
@@ -1114,6 +1119,9 @@
             const preview=Number(next.outlandPreviewTier);
             next.outlandPreviewTier=Number.isInteger(preview)&&preview>=1&&
                 preview<=8?preview:1;
+            next.captureBall=['ultra','beast'].includes(next.captureBall)
+                ?next.captureBall:'ultra';
+            next.shinyLurePreview=next.shinyLurePreview===true;
 
             if (typeof next.weakness === 'string') {
                 next.weakness =
@@ -1732,6 +1740,7 @@
             sessionToken: state.farmingSessionToken,
             snapshotScope: farmingSnapshotScope(),
             rateWindow: null,
+            captureWindow: null,
             huntSlug,
             signature:
                 leadSignature(
@@ -3041,6 +3050,180 @@
 
 
 
+
+
+    // HA MILESTONE E PURE BEGIN — wiki-conditional, not deployed server parity.
+    const CAPTURE_BALLS=Object.freeze([
+        {id:1,name:'Poké',efficiency:1,defaultCoins:5},
+        {id:2,name:'Great',efficiency:2,defaultCoins:20},
+        {id:3,name:'Super',efficiency:3,defaultCoins:50},
+        {id:4,name:'Ultra',efficiency:4,defaultCoins:130},
+        {id:5,name:'Beast',efficiency:8,defaultCoins:null}
+    ]);
+    function captureRarityFromCatalog(meta) {
+        if (!meta) return null;
+        const level=Number(meta.huntLevel);
+        // The high-level economic normalization is upstream's
+        // aplicarEconomiaRegiaoAlta, BEFORE the independent NPC SALE cap.
+        if (Number.isFinite(level) && level>150)
+            return Math.round(12000*(level/150)**.6);
+        const sell=Number(meta.catalogSellValue);
+        const npc=Number(meta.priceNpc);
+        if (sell>0 && sell<=500000) return sell;
+        if (sell>500000 && level>0)
+            return Math.round(12000*(level/150)**.6);
+        if (npc>0 && npc<=500000) return npc;
+        return null; // Never borrow a specimen sale price or RMT listing.
+    }
+    function captureWikiChance(rarity,efficiency,hpFraction=0) {
+        const price=Number(rarity),eff=Number(efficiency),hp=Number(hpFraction);
+        if (!(price>0)||!Number.isFinite(price)||!(eff>0)||
+            !Number.isFinite(eff)||!Number.isFinite(hp)||hp<0||hp>1)
+            return null;
+        const r=Math.log10(Math.max(100,price))-1;
+        const factor=1+r**3/17;
+        return Math.min(.10,Math.max(.003,
+            .0075*eff/factor*(1.4-hp)));
+    }
+    function captureBallCatalog(source) {
+        const rows=Array.isArray(source)?source:
+            source&&typeof source==='object'?
+                Object.entries(source).map(([id,row])=>({
+                    id,...(row&&typeof row==='object'?row:{})
+                })): [];
+        const out=new Map();
+        for(const row of rows.slice(0,16)){
+            const id=Number(row?.id??row?.ballId);
+            const rate=Number(row?.catchRate);
+            const price=Number(row?.priceGold);
+            if(!Number.isInteger(id)||id<1||id>5)continue;
+            // The efficiency is meaningful only when a real catalog supplies
+            // a finite positive catchRate; absent values remain wiki conditional.
+            out.set(id,{efficiency:Number.isFinite(rate)&&rate>0?rate:null,
+                coins:row?.priceGold!==null&&row?.priceGold!==undefined&&
+                    Number.isFinite(price)&&price>=0?price:null,
+                currency:id===5?'diamonds':'coins',source:'observed-client-catalog'});
+        }
+        return out;
+    }
+    function captureMysticChance(ballId,captureBoost=1) {
+        const n=Number(ballId),boost=Number(captureBoost);
+        if(!Number.isInteger(n)||n<1||n>5 || !(boost>0))return null;
+        return Math.min(1,.001*n*boost);
+    }
+    function captureAppend(window,receipt,at,speciesId=null) {
+        if(!receipt||!Number.isFinite(at))return window;
+        const rows=!window||at<window.lastAt||
+            at-window.lastAt>900000?[]:
+                window.rows.filter(row=>row.at>=at-930000);
+        const bucket=Math.floor(at/30000);
+        let row=rows[rows.length-1];
+        if(!row||row.bucket!==bucket){
+            row={at,bucket,kills:0,throws:0,captures:0,shinySeen:0,
+                shinyCaught:0,byBall:{},bySpecies:{}};
+            rows.push(row);
+        }
+        const kind=receipt.kind;
+        if(kind==='morte')row.kills++;
+        if(kind==='bola'){
+            row.throws++;
+            if(receipt.shinySeen===true)row.shinySeen++;
+            const id=receipt.itemId;
+            if(id!==null && Number.isInteger(id)&&id>=1&&id<=5)
+                row.byBall[id]=(row.byBall[id]||0)+1;
+        }
+        if(kind==='capturado'){
+            row.captures++;
+            if(receipt.shinyCaught===true)row.shinyCaught++;
+        }
+        const species=Number(speciesId);
+        if(Number.isInteger(species)&&species>0 && species<100000){
+            const key=String(species);
+            const target=row.bySpecies[key]??{kills:0,throws:0,captures:0};
+            if(kind==='morte')target.kills++;
+            if(kind==='bola')target.throws++;
+            if(kind==='capturado')target.captures++;
+            if(Object.keys(row.bySpecies).length<80||row.bySpecies[key])
+                row.bySpecies[key]=target;
+        }
+        if(rows.length>33)rows.splice(0,rows.length-33);
+        return {lastAt:at,rows};
+    }
+    function captureObservedWindow(window,start,now) {
+        if(!window||!(now>start)||now-window.lastAt>120000)return null;
+        const rows=window.rows.filter(row=>row.at>=start-30000&&row.at<=now);
+        const sum=key=>rows.reduce((n,row)=>n+row[key],0);
+        const byBall={},bySpecies={};
+        for(const row of rows){
+            for(const [id,count] of Object.entries(row.byBall))
+                byBall[id]=(byBall[id]||0)+count;
+            for(const [id,counts] of Object.entries(row.bySpecies)){
+                const target=bySpecies[id]??{kills:0,throws:0,captures:0};
+                for(const key of ['kills','throws','captures'])
+                    target[key]+=counts[key];
+                bySpecies[id]=target;
+            }
+        }
+        const kills=sum('kills'),throws=sum('throws'),hours=(now-start)/3600000;
+        if(kills<6||hours<1/60)return null;
+        return {kills,throws,captures:sum('captures'),
+            shinySeen:sum('shinySeen'),shinyCaught:sum('shinyCaught'),
+            throwsH:throws/hours,capturesH:sum('captures')/hours,
+            targetableFraction:throws/kills,
+            byBall,bySpecies,source:'observed-server/accepted-correlated'};
+    }
+    function captureHuntChance(hunt,rarities,efficiency,mix=null) {
+        if(!Array.isArray(hunt?.especies)||!hunt.especies.length)
+            return {chance:null,coverage:0,source:'no-spawns'};
+        const measured=mix&&Object.values(mix).reduce((n,x)=>n+x.kills,0)>=30;
+        let total=0,covered=0,weighted=0;
+        for(const row of hunt.especies){
+            const id=Number(outlandNormalizeSpeciesId(row.pokeId));
+            const weight=measured?(mix?.[id]?.kills??0):
+                Math.max(1,Number(row.pontos)||1);
+            total+=weight;
+            const rarity=rarities.get(id);
+            const chance=captureWikiChance(rarity,efficiency);
+            if(chance!==null){covered+=weight;weighted+=weight*chance;}
+        }
+        return {chance:total>0&&covered===total?weighted/total:null,
+            coverage:total?Math.round(100*covered/total):0,
+            source:measured?'measured-species-mix+wiki-conditional':
+                'spawn-weighted-wiki-conditional'};
+    }
+    function captureForecast(hunt,rarities,killsH,efficiency,options={}) {
+        const base=captureHuntChance(hunt,rarities,efficiency,options.mix);
+        const fraction=options.acceptedFraction;
+        const observed=typeof fraction==='number'&&
+            Number.isFinite(fraction)&&fraction>=0&&fraction<=1;
+        const acceptedH=Number.isFinite(killsH)&&killsH>=0 ?
+            killsH*(observed?fraction:1):null;
+        const catchesH=base.chance===null||acceptedH===null?
+            null:acceptedH*base.chance;
+        const shinyEligible=String(hunt?.area||'').toLowerCase()==='outland'
+            ? null : true; // Outland eligibility is not inferred from wiki.
+        const lure=options.hypotheticalLure===true;
+        const shinyP=lure?1/12000:1/24000;
+        return {...base,acceptedH,catchesH,
+            acceptedSource:observed?'observed-corpse-attempt-fraction':
+                'upper-bound-if-every-corpse-targeted',
+            ballsPerCapture:base.chance>0?1/base.chance:null,
+            coinsPerCapture:base.chance>0&&
+                Number.isFinite(options.coinPrice)?options.coinPrice/base.chance:null,
+            diamondsPerCapture:base.chance>0&&
+                Number.isFinite(options.diamondPrice)?
+                    options.diamondPrice/base.chance:null,
+            shinyEligible,shinyP,
+            shinySeenH:shinyEligible&&acceptedH!==null?
+                acceptedH*shinyP:null,
+            shinyCaughtH:shinyEligible&&catchesH!==null?
+                catchesH*shinyP:null,
+            shinyCaught24hChance:shinyEligible&&acceptedH!==null&&
+                base.chance!==null?farmingChanceAtLeastOne(
+                    shinyP*base.chance,24*acceptedH):null,
+            hypotheticalLure:lure};
+    }
+    // HA MILESTONE E PURE END.
 
     // HA MILESTONE D PURE BEGIN — base probabilities; no inferred boosts.
     const RARE_OUTLAND_DROPS = Object.freeze([
@@ -5796,6 +5979,11 @@
             return farmNpcPrice(item, shopIds, special);
         };
         state.npcLootBySpecies.clear();
+        state.captureRarities.clear();
+        for(const [id,meta] of state.speciesCombat) {
+            const rarity=captureRarityFromCatalog(meta);
+            if(rarity!==null)state.captureRarities.set(id,rarity);
+        }
         if (!state.itemsByName.size) return;
         for (const [id, meta] of state.speciesCombat) {
             if (!Array.isArray(meta.rawLoot)) continue;
@@ -5811,8 +5999,10 @@
     function farmApplyRuntimeCatalog(message) {
         const balls = message?.catalogoBolas;
         const items = message?.itensCompraveis;
-        if (balls !== undefined)
+        if (balls !== undefined) {
             state.ballPrices = farmNormalizePrices(balls, 'ball');
+            state.captureBallRates = captureBallCatalog(balls);
+        }
         if (items !== undefined) {
             state.itemPrices = farmNormalizePrices(items, 'item');
             if (state.itemsByName.size) rebuildNpcLootCatalog();
