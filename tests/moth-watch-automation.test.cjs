@@ -1082,3 +1082,22 @@ test('Milestone D: disabled rule statuses take precedence over exhausted budget'
     cfg.fixedRulesEnabled=false;
     assert.equal(fn({currency:'gold',buyMax:10,buyEnabled:true}),'Enable rule-based buying above');
 });
+
+
+test('Milestone D: stale rule quotes are never described as currently eligible', () => {
+    const state={socket:{readyState:1},pendingBuy:null,
+        itemOfferDetails:new Map([['106:gold',{updatedAt:Date.now()}]])};
+    const cfg={enabled:true,fixedRulesEnabled:true,purchasesPaused:false};
+    const src=section('    function fixedRuleStatus(', '    function ruleNumber(');
+    const fn=new Function('config','state','unverifiedOrdersExist','remainingBudget',
+        'gameIsLoading','balanceFor','reserveFor','fixedRuleCandidate',
+        'purchaseQuantity','freshQuote','tr',
+        src+'\nreturn fixedRuleStatus;');
+    const make=fresh=>fn(cfg,state,()=>false,()=>({spend:Infinity}),
+        ()=>false,()=>10000,()=>0,()=>({listingId:1,seenAt:Date.now()-45000}),
+        ()=>1,()=>fresh,x=>x);
+    const rule={id:'test',itemId:106,currency:'gold',buyEnabled:true,buyMax:50};
+    assert.equal(make(false)(rule),'Checking listings…');
+    assert.equal(make(true)(rule),'Eligible listing available');
+    assert.match(script,/candidate \&\& freshQuote\(candidate, false\)/);
+});
