@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "source": "https://pokeidle-tools.vercel.app/",
+  "observedAt": "2026-10-13",
+  "bundle": "/assets/index-CW1XaDka.js",
+  "status": "Third-party calculator assumptions; not verified game mechanics",
+  "shiny": {
+    "baseChance": 0.000041666666666666665,
+    "boostMultiplier": 1.5,
+    "kickMultiplier": 1.15,
+    "eventMultiplier": "1 + eventPercent / 100",
+    "catchBoostMultiplier": 1.5,
+    "kickCatchMultiplier": 1.15,
+    "defaults": {
+      "encounters": 10000,
+      "baseCatchPercent": 2.44,
+      "shinyBoost": false,
+      "kickShinyBoost": false,
+      "shinyEventPercent": 0,
+      "catchBoost": false,
+      "kickCatchBoost": false,
+      "catchEventPercent": 0
+    }
+  },
+  "outlands": [
+    {
+      "id": 1,
+      "name": "Outland 1",
+      "trainerLevel": 150,
+      "multiplier": 1
+    },
+    {
+      "id": 2,
+      "name": "Outland 2",
+      "trainerLevel": 500,
+      "multiplier": 1.25
+    },
+    {
+      "id": 3,
+      "name": "Outland 3",
+      "trainerLevel": 1000,
+      "multiplier": 1.5
+    },
+    {
+      "id": 4,
+      "name": "Outland 4",
+      "trainerLevel": 2000,
+      "multiplier": 2
+    },
+    {
+      "id": 5,
+      "name": "Outland 5",
+      "trainerLevel": 4000,
+      "multiplier": 3
+    },
+    {
+      "id": 6,
+      "name": "Outland 6",
+      "trainerLevel": 8000,
+      "multiplier": 4
+    },
+    {
+      "id": 7,
+      "name": "Outland 7",
+      "trainerLevel": 16000,
+      "multiplier": 6
+    },
+    {
+      "id": 8,
+      "name": "Outland 8",
+      "trainerLevel": 25000,
+      "multiplier": 8
+    }
+  ],
+  "drops": [
+    {
+      "id": "bronze-boss-token",
+      "name": "Bronze Boss Token",
+      "baseChance": 0.0005
+    },
+    {
+      "id": "bike-fragment",
+      "name": "Fragmento de Bicicleta",
+      "baseChance": 0.000005
+    },
+    {
+      "id": "key-fragment",
+      "name": "Fragmento de Chave",
+      "baseChance": 0.000005
+    },
+    {
+      "id": "shiny-stone-fragment",
+      "name": "Fragmento de Shiny Stone",
+      "baseChance": 0.000005,
+      "fragmentsRequired": 10
+    }
+  ],
+  "dropDefaults": {
+    "item": "bronze-boss-token",
+    "outland": 1,
+    "lootMultiplier": 1,
+    "guildMultiplier": 1,
+    "eventMultiplier": 1,
+    "kickMultiplier": 1,
+    "mode": "meta",
+    "targetPercent": 90,
+    "killsPerHour": 250,
+    "killsInput": "10000'"
+  },
+  "tools": [
+    {
+      "id": "shiny",
+      "status": "available"
+    },
+    {
+      "id": "drops",
+      "status": "available"
+    },
+    {
+      "id": "farm",
+      "status": "planned"
+    },
+    {
+      "id": "iv",
+      "status": "planned"
+    },
+    {
+      "id": "dps",
+      "status": "planned"
+    }
+  ]
+}
