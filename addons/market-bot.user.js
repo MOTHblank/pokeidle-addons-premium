@@ -1958,6 +1958,7 @@
     function requestHistoryPage() {
         const fetch = state.historyFetch;
         if (!fetch) return;
+        if (fetch.waitingSince && Date.now() - fetch.waitingSince < 12000) return;
         if (q('#cm-hist-corpo')) {
             setTimeout(requestHistoryPage, 1500);
             return;
@@ -1970,6 +1971,10 @@
         }
 
         const currency = fetch.currencies[fetch.currencyIndex];
+        if (!marketReplyAvailable()) {
+            setTimeout(requestHistoryPage, 600);
+            return;
+        }
         if (!sendBackground({
             t: 'market.historicoGlobal',
             pagina: fetch.page,
@@ -1980,6 +1985,10 @@
             return;
         }
         fetch.waitingSince = Date.now();
+        setTimeout(() => {
+            if (state.historyFetch === fetch && fetch.waitingSince &&
+                Date.now() - fetch.waitingSince >= 12000) requestHistoryPage();
+        }, 12100);
     }
 
     function gameIsLoading() {
@@ -2026,7 +2035,11 @@
 
     function handlePokemonHistory(message) {
         const fetch = state.historyFetch;
-        if (!fetch || message.aba !== 'historicoGlobal') return false;
+        if (!fetch || message.aba !== 'historicoGlobal' || !fetch.waitingSince ||
+            Date.now() - fetch.waitingSince > 12000 ||
+            (message.tipo && message.tipo !== 'pokemon') ||
+            (message.pagina != null && Number(message.pagina) !== fetch.page) ||
+            (message.moeda && message.moeda !== fetch.currencies[fetch.currencyIndex])) return false;
 
         const expectedCurrency = fetch.currencies[fetch.currencyIndex];
         const lines = Array.isArray(message.linhas) ? message.linhas : [];
@@ -2034,7 +2047,10 @@
             line && line.tipo && line.tipo !== 'pokemon' ||
             line && line.moeda && line.moeda !== expectedCurrency
         );
-        if (foreign) return false;
+        if (foreign || !Array.isArray(message.linhas) ||
+            (!lines.length && (message.moeda !== expectedCurrency || Number(message.pagina) !== fetch.page)) ||
+            (!message.moeda && lines.some(line => line?.moeda !== expectedCurrency))) return false;
+        fetch.waitingSince = 0;
 
         for (const line of lines) addPokemonHistorySample(line, fetch.working);
 
@@ -2134,6 +2150,10 @@
             return;
         }
 
+        if (!marketReplyAvailable()) {
+            setTimeout(pumpPokemonScan, 500);
+            return;
+        }
         if (!sendBackground(recentPokemonRequest(job.currency, job.page,
             activePokemonRules().length ? 'baratos' : 'recentes'))) {
             setTimeout(pumpPokemonScan, BACKGROUND_MIN_GAP_MS);
@@ -2141,6 +2161,8 @@
         }
 
         scan.queue.shift();
+        state.marketReply = { kind: 'pokemon', currency: job.currency,
+            page: job.page, sentAt: Date.now() };
         scan.waiting = job;
         scan.sentAt = Date.now();
         state.pokemonStatus = 'scanning ' + (job.currency === 'orb' ? 'gems' : 'coins');
@@ -2152,9 +2174,43 @@
         }, 2600);
     }
 
+    // One outstanding vitrine scan at a time. An empty untyped response
+    // cannot be safely attributed to the Pokémon or Diamond scanner.
+    function marketReplyAvailable() {
+        if (!state.marketReply) return true;
+        if (Date.now() - state.marketReply.sentAt < 6500) return false;
+        state.marketReply = null; // timeout is not evidence of an empty page
+        return true;
+    }
+
+    function marketReplyMatches(message, kind) {
+        const pending = state.marketReply;
+        if (!pending || pending.kind !== kind || message.aba !== 'vitrine' ||
+            communityMarketIsOpen()) return false;
+        const rows = Array.isArray(message.linhas) ? message.linhas : null;
+        if (!rows) return false;
+        if (message.pagina != null && Number(message.pagina) !== pending.page) return false;
+        if (message.moeda && message.moeda !== pending.currency) return false;
+        if (message.tipo && message.tipo !== kind) return false;
+        if (!rows.length) {
+            // No row evidence: every discriminator must be explicit.
+            return message.tipo === kind && message.moeda === pending.currency &&
+                Number(message.pagina) === pending.page;
+        }
+        if (message.pagina == null && pending.page !== 0) return false;
+        const shape = rows.every(row => row && (
+            kind === 'pokemon'
+                ? !!row.ficha && (!row.tipo || row.tipo === 'pokemon')
+                : !row.ficha && row.itemId == null && (!row.tipo || row.tipo === 'diamante')
+        ));
+        const currency = !!message.moeda || rows.every(row => row.moeda === pending.currency);
+        return shape && currency;
+    }
+
     function handleDiamondListings(message) {
-        const currency = state.diamondPendingCurrency ||
-            (message.moeda === 'orb' ? 'orb' : 'gold');
+        const currency = state.marketReply?.currency;
+        if (!currency || !marketReplyMatches(message, 'diamante')) return;
+        state.marketReply = null;
         const lines = Array.isArray(message.linhas) ? message.linhas : [];
 
         if (message.mediaDiamante && typeof message.mediaDiamante === 'object') {
@@ -2224,7 +2280,7 @@
 
     function handlePokemonListings(message) {
         const scan = state.pokemonScan;
-        if (!scan || !scan.waiting || message.aba !== 'vitrine') return false;
+        if (!scan || !scan.waiting || !marketReplyMatches(message, 'pokemon')) return false;
         const {currency, page} = scan.waiting;
         if (Number(message.pagina || 0) !== page ||
             (message.moeda && message.moeda !== currency) ||
@@ -2285,6 +2341,7 @@
             });
         }
 
+        state.marketReply = null;
         if (message.temMais === true && page + 1 < scan.maxPages) {
             scan.queue.push({currency, page: page + 1});
         }
@@ -2624,7 +2681,7 @@
             state.diamondStatus = 'disabled';
             return false;
         }
-        if (gameIsLoading() || communityMarketIsOpen()) return false;
+        if (gameIsLoading() || communityMarketIsOpen() || !marketReplyAvailable()) return false;
         if (!state.socket || state.socket.readyState !== 1) return false;
 
         const now = Date.now();
@@ -2678,6 +2735,7 @@
         if (sent) {
             state.diamondPendingCurrency = currency;
             state.diamondPendingAt = Date.now();
+            state.marketReply = { kind: 'diamante', currency, page: 0, sentAt: Date.now() };
             state.nextDiamondCurrency = currency === 'gold' ? 'orb' : 'gold';
             state.diamondStatus = 'scanning · ' + (currency === 'orb' ? 'Gems' : 'Coins');
         }
@@ -2973,27 +3031,9 @@
             state.liveDiamondAverages = message.mediaDiamante;
         }
 
-        if (message.aba === 'vitrine' && state.diamondPendingCurrency) {
-            const lines = Array.isArray(message.linhas) ? message.linhas : [];
-            const expectedCurrency = state.diamondPendingCurrency;
-            const looksLikeDiamondResponse =
-                message.tipo === 'diamante' ||
-                (lines.length > 0 && lines.every(listing =>
-                    listing &&
-                    !listing.ficha &&
-                    listing.itemId == null &&
-                    (!listing.tipo || listing.tipo === 'diamante') &&
-                    (!listing.moeda || listing.moeda === expectedCurrency)
-                )) ||
-                (!lines.length &&
-                    !state.pokemonScan?.waiting &&
-                    message.tipo !== 'pokemon' &&
-                    message.tipo !== 'item');
-
-            if (looksLikeDiamondResponse) {
-                handleDiamondListings(message);
-                return;
-            }
+        if (message.aba === 'vitrine' && marketReplyMatches(message, 'diamante')) {
+            handleDiamondListings(message);
+            return;
         }
 
         if (message.aba === 'itens') {
