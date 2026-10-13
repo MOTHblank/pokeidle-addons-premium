@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/huntatlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.7
+// @version      1.9.8
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.7');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.8');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -420,6 +420,37 @@
             'xp.currentModeled': ' · current modeled {value} trainer XP/h',
             'xp.warmingSession': 'warming up: sustained observations still insufficient',
             'xp.sessionEvidence': '{samples} kills / {minutes} min, wall-clock',
+            'sort.capture': 'Captured/hour (Ultra/Beast)',
+            'sort.shinyCatch': 'Shiny caught/hour (conditional)',
+            'catch.title': 'Catch and shiny planner',
+            'catch.ball': 'Compare with',
+            'catch.ultra': 'Ultra Ball · ×4 (default)',
+            'catch.beast': 'Beast Ball · ×8 (Diamonds)',
+            'catch.lure': 'Simulate Shiny Secret Lure ×2 (hypothetical, not verified active)',
+            'catch.current': 'Compared hunt: {hunt}',
+            'catch.unknown': '— (species rarity or kill rate unavailable)',
+            'catch.percent': '{chance}% per accepted throw',
+            'catch.expected': '{count} captures/h · {balls} accepted balls/capture on average',
+            'catch.seen': 'Shinies seen: {count}/h · shinies caught: {caught}/h',
+            'catch.oneDay': '≥1 shiny caught in 24h: {chance}% (if steady conditions)',
+            'catch.cost': 'Replacement: {coins} Coins per expected capture',
+            'catch.diamondCost': 'Beast requires Diamonds; no Coin cost assumed',
+            'catch.stock': 'Stock: {count} · coverage at observed throw rate: {hours}h',
+            'catch.observed': 'Observed: {throws} accepted throws, {caught} captures, {seen} shiny seen, {shiny} shiny caught; {fraction}% of killed corpses thrown at',
+            'catch.observedBall': 'Selected ball: {throws} accepted · {caught} confirmed captures (small samples are noisy)',
+            'catch.limit': 'Cross-hunt estimate is an upper bound IF every killed body gets one accepted throw. Current-hunt observed throws replace that assumption only after a usable sample. No free retries after failed throws.',
+            'catch.source': 'Wiki-conditional model, unverified server capture formula or active boosts · model coverage {coverage}% · {source}',
+            'catch.shiny': 'Shiny is rolled per eligible accepted throw (1/24,000 base; 1/12,000 with applicable Lure), NOT per kill. Caught shiny needs both rolls to succeed. No guarantee or saleable specimen implied.',
+            'catch.outland': 'Outland shiny capture eligibility unresolved; shiny estimates withheld.',
+            'catch.clamp': 'Beast ×8 does not always double Ultra ×4 after the 10% cap.',
+            'catch.mystic': 'Mystic Arena uses a separate ball table and consumes one ticket per attempt; never included in ordinary hunt odds.',
+            'catch.card': 'Ultra {ultra}% · Beast {beast}% (wiki-conditional)',
+            'catch.levelCap': 'Caught level cap: {level} (wild rewards unchanged)',
+            'catch.cardUnknown': 'Capture chance unavailable (rarity unresolved)',
+            'catch.targetRate': 'Target {captures} captures/h · {shiny} shiny caught/h · mean {hours}h/shiny ({source})',
+            'catch.targetObserved': 'observed throw coverage',
+            'catch.targetCeiling': 'upper bound if all bodies targeted',
+            'catch.shinyMean': 'Mean wait for shiny caught: {hours}h · ≈{throws} accepted attempts/shiny caught',
             'sort.coins': 'Kill Coins/hour',
             'sort.netCoins': 'Net Coins/hour (measured)',
             'econ.title': 'Farming economy · {hunt}',
@@ -675,6 +706,37 @@
             'xp.currentModeled': ' · atual modelado {value} XP de treinador/h',
             'xp.warmingSession': 'aquecendo: ainda faltam medições sustentadas',
             'xp.sessionEvidence': '{samples} abates / {minutes} min, tempo corrido',
+            'sort.capture': 'Capturas/h (Ultra/Beast)',
+            'sort.shinyCatch': 'Shinies capturados/h (condicional)',
+            'catch.title': 'Planejador de capturas e shinies',
+            'catch.ball': 'Comparar usando',
+            'catch.ultra': 'Ultra Ball · ×4 (padrão)',
+            'catch.beast': 'Beast Ball · ×8 (Diamantes)',
+            'catch.lure': 'Simular Shiny Secret Lure ×2 (hipotético; não confirmado ativo)',
+            'catch.current': 'Hunt em análise: {hunt}',
+            'catch.unknown': '— (raridade da espécie ou abates/h indisponíveis)',
+            'catch.percent': '{chance}% por bola aceita',
+            'catch.expected': '{count} capturas/h · {balls} bolas aceitas/captura em média',
+            'catch.seen': 'Shinies vistos: {count}/h · shinies capturados: {caught}/h',
+            'catch.oneDay': '≥1 shiny capturado em 24h: {chance}% (com condições constantes)',
+            'catch.cost': 'Reposição: {coins} Moedas por captura esperada',
+            'catch.diamondCost': 'Beast usa Diamantes; sem inventar custo em Moedas',
+            'catch.stock': 'Estoque: {count} · duração no ritmo observado: {hours}h',
+            'catch.observed': 'Observado: {throws} bolas aceitas, {caught} capturas, {seen} shinies vistos, {shiny} shinies capturados; {fraction}% dos corpos derrotados receberam bola',
+            'catch.observedBall': 'Bola selecionada: {throws} aceitas · {caught} capturas confirmadas (amostras pequenas oscilam)',
+            'catch.limit': 'Outras hunts: previsão é TETO condicional a arremessar uma bola aceita em todo corpo derrotado. Na hunt atual, o ritmo observado substitui essa hipótese apenas após amostra suficiente. Sem repetição grátis após falha.',
+            'catch.source': 'Modelo condicional da wiki, fórmula real/bônus ativos não verificados · cobertura {coverage}% · {source}',
+            'catch.shiny': 'O shiny é sorteado por arremesso aceito elegível (1/24.000 normal; 1/12.000 com Lure aplicável), NÃO por abate. Capturar shiny exige sucesso em ambos os sorteios. Sem garantia de drop ou Pokémon vendável.',
+            'catch.outland': 'Elegibilidade de shiny na Outland não verificada; projeção de shiny omitida.',
+            'catch.clamp': 'Beast ×8 nem sempre dobra a chance da Ultra ×4 após o teto de 10%.',
+            'catch.mystic': 'A Arena Mística usa tabela especial de bolas e consome um ticket por tentativa; não entra nas odds das hunts comuns.',
+            'catch.card': 'Ultra {ultra}% · Beast {beast}% (condicional da wiki)',
+            'catch.levelCap': 'Teto do nível ao capturar: {level} (recompensas do selvagem não mudam)',
+            'catch.cardUnknown': 'Chance de captura indisponível (raridade não verificada)',
+            'catch.targetRate': 'Alvo {captures} capturas/h · {shiny} shinies capturados/h · média {hours}h/shiny ({source})',
+            'catch.targetObserved': 'cobertura medida de arremessos',
+            'catch.targetCeiling': 'teto se todos os corpos receberem bola',
+            'catch.shinyMean': 'Espera média por shiny capturado: {hours}h · ≈{throws} bolas aceitas/shiny capturado',
             'sort.coins': 'Moedas/h por abate',
             'sort.netCoins': 'Moedas líquidas/h (medido)',
             'econ.title': 'Economia da hunt · {hunt}',
@@ -965,6 +1027,10 @@
         npcLootBySpecies: new Map(),
         ballPrices: new Map(),
         itemPrices: new Map(),
+        captureBallRates: new Map(),
+        captureRarities: new Map(),
+        captureBonusEvidence: {},
+        captureChanceEvidence: {seen:0,min:null,max:null},
         inventoryForCosts: new Map(),
         calibrationEvidence: new Map(),
         hunts: [],
@@ -1091,6 +1157,8 @@
             captured: 'all',
             sort: 'xp',
             outlandPreviewTier: 1,
+            captureBall: 'ultra',
+            shinyLurePreview: false,
             sortDirection: 'desc'
         };
     }
@@ -1114,6 +1182,9 @@
             const preview=Number(next.outlandPreviewTier);
             next.outlandPreviewTier=Number.isInteger(preview)&&preview>=1&&
                 preview<=8?preview:1;
+            next.captureBall=['ultra','beast'].includes(next.captureBall)
+                ?next.captureBall:'ultra';
+            next.shinyLurePreview=next.shinyLurePreview===true;
 
             if (typeof next.weakness === 'string') {
                 next.weakness =
@@ -1220,6 +1291,8 @@
                 'xp',
                 'coins',
                 'netCoins',
+                'capture',
+                'shinyCatch',
                 'name',
                 'pokedex',
                 'level',
@@ -1732,6 +1805,7 @@
             sessionToken: state.farmingSessionToken,
             snapshotScope: farmingSnapshotScope(),
             rateWindow: null,
+            captureWindow: null,
             huntSlug,
             signature:
                 leadSignature(
@@ -2807,9 +2881,14 @@
             speciesId: kind === 'morte' ? farmingFinite(event.speciesId ?? event.pokeId) : null,
             mobLevel: kind === 'morte' ? farmingFinite(event.level) : null,
             drops: kind === 'morte' || kind === 'bossMorto' ? drops : [],
-            shinySeen: kind === 'bola' ? event.shiny === true : null,
-            shinyCaught: kind === 'capturado'
-                ? event.pokemon?.shiny === true : null,
+            shinySeen: kind === 'bola' && typeof event.shiny === 'boolean'
+                ? event.shiny : null,
+            shinyCaught: kind === 'capturado' &&
+                typeof event.pokemon?.shiny === 'boolean'
+                ? event.pokemon.shiny : null,
+            chanceRaw: kind === 'bola' ? farmingFinite(event.chance) : null,
+            successFlag: kind === 'bola' && typeof event.sucesso === 'boolean'
+                ? event.sucesso : null,
             // bola is a server-emitted accepted use, not a click/tick.
             evidence: 'observed-server/event'
         };
@@ -2917,6 +2996,8 @@
                 return false;
             }
             corpse.dead = true;
+            corpse.speciesId = receipt.speciesId !== null
+                ? Number(outlandNormalizeSpeciesId(receipt.speciesId)):null;
             ledger.totals.kills++;
             for (const [field, name] of [
                 ['trainerXp', 'trainerXp'], ['pokemonXp', 'pokemonXp'],
@@ -2929,6 +3010,7 @@
                 return false;
             }
             corpse.thrown = true;
+            corpse.ballId=receipt.itemId;
             ledger.totals.acceptedThrows++;
             if (receipt.shinySeen) ledger.totals.shinySeen++;
         } else if (kind === 'capturado') {
@@ -3041,6 +3123,237 @@
 
 
 
+
+
+    // HA MILESTONE E PURE BEGIN — wiki-conditional, not deployed server parity.
+    const CAPTURE_BALLS=Object.freeze([
+        {id:1,name:'Poké',efficiency:1,defaultCoins:5},
+        {id:2,name:'Great',efficiency:2,defaultCoins:20},
+        {id:3,name:'Super',efficiency:3,defaultCoins:50},
+        {id:4,name:'Ultra',efficiency:4,defaultCoins:130},
+        {id:5,name:'Beast',efficiency:8,defaultCoins:null}
+    ]);
+    function captureRarityFromCatalog(meta) {
+        if (!meta) return null;
+        const level=Number(meta.huntLevel);
+        // The high-level economic normalization is upstream's
+        // aplicarEconomiaRegiaoAlta, BEFORE the independent NPC SALE cap.
+        if (Number.isFinite(level) && level>150)
+            return Math.round(12000*(level/150)**.6);
+        const sell=Number(meta.catalogSellValue);
+        const npc=Number(meta.priceNpc);
+        if (sell>0 && sell<=500000) return sell;
+        if (sell>500000 && level>0)
+            return Math.round(12000*(level/150)**.6);
+        if (npc>0 && npc<=500000) return npc;
+        return null; // Never borrow a specimen sale price or RMT listing.
+    }
+    function captureWikiChance(rarity,efficiency,hpFraction=0) {
+        const price=Number(rarity),eff=Number(efficiency),hp=Number(hpFraction);
+        if (!(price>0)||!Number.isFinite(price)||!(eff>0)||
+            !Number.isFinite(eff)||!Number.isFinite(hp)||hp<0||hp>1)
+            return null;
+        const r=Math.log10(Math.max(100,price))-1;
+        const factor=1+r**3/17;
+        return Math.min(.10,Math.max(.003,
+            .0075*eff/factor*(1.4-hp)));
+    }
+    function captureBallCatalog(source) {
+        const rows=Array.isArray(source)?source:
+            source&&typeof source==='object'?
+                Object.entries(source).map(([id,row])=>({
+                    id,...(row&&typeof row==='object'?row:{})
+                })): [];
+        const out=new Map();
+        for(const row of rows.slice(0,16)){
+            const id=Number(row?.id??row?.ballId);
+            const rate=Number(row?.catchRate);
+            const price=Number(row?.priceGold);
+            if(!Number.isInteger(id)||id<1||id>5)continue;
+            // The efficiency is meaningful only when a real catalog supplies
+            // a finite positive catchRate; absent values remain wiki conditional.
+            out.set(id,{efficiency:Number.isFinite(rate)&&rate>0?rate:null,
+                coins:row?.priceGold!==null&&row?.priceGold!==undefined&&
+                    Number.isFinite(price)&&price>=0?price:null,
+                currency:id===5?'diamonds':'coins',source:'observed-client-catalog'});
+        }
+        return out;
+    }
+    function captureMysticChance(ballId,captureBoost=1) {
+        const n=Number(ballId),boost=Number(captureBoost);
+        if(!Number.isInteger(n)||n<1||n>5 || !(boost>0))return null;
+        return Math.min(1,.001*n*boost);
+    }
+    function captureAppend(window,receipt,at,speciesId=null) {
+        if(!receipt||!Number.isFinite(at))return window;
+        const rows=!window||at<window.lastAt||
+            at-window.lastAt>900000?[]:
+                window.rows.filter(row=>row.at>=at-930000);
+        const bucket=Math.floor(at/30000);
+        let row=rows[rows.length-1];
+        if(!row||row.bucket!==bucket){
+            row={at,bucket,kills:0,throws:0,captures:0,shinySeen:0,
+                shinyCaught:0,shinySeenKnown:0,shinyCaughtKnown:0,
+                byBall:{},byBallCaught:{},bySpecies:{}};
+            rows.push(row);
+        }
+        const kind=receipt.kind;
+        if(kind==='morte')row.kills++;
+        if(kind==='bola'){
+            row.throws++;
+            if(receipt.shinySeen!==null)row.shinySeenKnown++;
+            if(receipt.shinySeen===true)row.shinySeen++;
+            const id=receipt.itemId;
+            if(id!==null && Number.isInteger(id)&&id>=1&&id<=5)
+                row.byBall[id]=(row.byBall[id]||0)+1;
+        }
+        if(kind==='capturado'){
+            row.captures++;
+            if(Number.isInteger(receipt.confirmedBallId) &&
+                receipt.confirmedBallId>=1&&receipt.confirmedBallId<=5)
+                row.byBallCaught[receipt.confirmedBallId]=
+                    (row.byBallCaught[receipt.confirmedBallId]||0)+1;
+            if(receipt.shinyCaught!==null)row.shinyCaughtKnown++;
+            if(receipt.shinyCaught===true)row.shinyCaught++;
+        }
+        const species=Number(speciesId);
+        if(Number.isInteger(species)&&species>0 && species<100000){
+            const key=String(species);
+            const target=row.bySpecies[key]??{kills:0,throws:0,captures:0};
+            if(kind==='morte')target.kills++;
+            if(kind==='bola')target.throws++;
+            if(kind==='capturado')target.captures++;
+            if(Object.keys(row.bySpecies).length<80||row.bySpecies[key])
+                row.bySpecies[key]=target;
+        }
+        if(rows.length>33)rows.splice(0,rows.length-33);
+        return {lastAt:at,rows};
+    }
+    function captureObservedWindow(window,start,now) {
+        if(!window||!(now>start)||now-window.lastAt>120000)return null;
+        const rows=window.rows.filter(row=>row.at>=start-30000&&row.at<=now);
+        const sum=key=>rows.reduce((n,row)=>n+row[key],0);
+        const byBall={},byBallCaught={},bySpecies={};
+        for(const row of rows){
+            for(const [id,count] of Object.entries(row.byBall))
+                byBall[id]=(byBall[id]||0)+count;
+            for(const [id,count] of Object.entries(row.byBallCaught))
+                byBallCaught[id]=(byBallCaught[id]||0)+count;
+            for(const [id,counts] of Object.entries(row.bySpecies)){
+                const target=bySpecies[id]??{kills:0,throws:0,captures:0};
+                for(const key of ['kills','throws','captures'])
+                    target[key]+=counts[key];
+                bySpecies[id]=target;
+            }
+        }
+        const kills=sum('kills'),throws=sum('throws'),hours=(now-start)/3600000;
+        if(kills<6||hours<1/60)return null;
+        return {kills,throws,captures:sum('captures'),
+            shinySeen:sum('shinySeenKnown')===throws ?
+                sum('shinySeen'):null,
+            shinyCaught:sum('shinyCaughtKnown')===sum('captures') ?
+                sum('shinyCaught'):null,
+            shinySeenKnown:sum('shinySeenKnown'),
+            shinyCaughtKnown:sum('shinyCaughtKnown'),
+            throwsH:throws/hours,capturesH:sum('captures')/hours,
+            windowMs:now-start,
+            targetableFraction:throws/kills,
+            byBall,byBallCaught,bySpecies,
+            source:'observed-server/accepted-correlated'};
+    }
+    function captureHuntChance(hunt,rarities,efficiency,mix=null,mixMode='kills') {
+        if(!Array.isArray(hunt?.especies)||!hunt.especies.length)
+            return {chance:null,coverage:0,source:'no-spawns'};
+        const measured=mix&&Object.values(mix).reduce((n,x)=>n+(x[mixMode]||0),0)>=30;
+        let total=0,covered=0,weighted=0;
+        for(const row of hunt.especies){
+            const id=Number(outlandNormalizeSpeciesId(row.pokeId));
+            const weight=measured?(mix?.[id]?.[mixMode]??0):
+                Math.max(1,Number(row.pontos)||1);
+            total+=weight;
+            const rarity=rarities.get(id);
+            const chance=captureWikiChance(rarity,efficiency);
+            if(chance!==null){covered+=weight;weighted+=weight*chance;}
+        }
+        return {chance:total>0&&covered===total?weighted/total:null,
+            coverage:total?Math.round(100*covered/total):0,
+            source:measured?'measured-species-mix+wiki-conditional':
+                'spawn-weighted-wiki-conditional'};
+    }
+    function captureForecast(hunt,rarities,killsH,efficiency,options={}) {
+        const base=captureHuntChance(hunt,rarities,efficiency,
+            options.mix,options.mixMode??'kills');
+        const fraction=options.acceptedFraction;
+        const observed=typeof fraction==='number'&&
+            Number.isFinite(fraction)&&fraction>=0&&fraction<=1;
+        const acceptedH=Number.isFinite(killsH)&&killsH>=0 ?
+            killsH*(observed?fraction:1):null;
+        const catchesH=base.chance===null||acceptedH===null?
+            null:acceptedH*base.chance;
+        const shinyEligible=String(hunt?.area||'').toLowerCase()==='outland'
+            ? null : true; // Outland eligibility is not inferred from wiki.
+        const lure=options.hypotheticalLure===true;
+        const shinyP=lure?1/12000:1/24000;
+        return {...base,acceptedH,catchesH,
+            acceptedSource:observed?'observed-corpse-attempt-fraction':
+                'upper-bound-if-every-corpse-targeted',
+            ballsPerCapture:base.chance>0?1/base.chance:null,
+            coinsPerCapture:base.chance>0&&
+                Number.isFinite(options.coinPrice)?options.coinPrice/base.chance:null,
+            diamondsPerCapture:base.chance>0&&
+                Number.isFinite(options.diamondPrice)?
+                    options.diamondPrice/base.chance:null,
+            shinyEligible,shinyP,
+            shinySeenH:shinyEligible&&acceptedH!==null?
+                acceptedH*shinyP:null,
+            shinyCaughtH:shinyEligible&&catchesH!==null?
+                catchesH*shinyP:null,
+            shinyCaught24hChance:shinyEligible&&acceptedH!==null&&
+                base.chance!==null?farmingChanceAtLeastOne(
+                    shinyP*base.chance,24*acceptedH):null,
+            hypotheticalLure:lure};
+    }
+    function captureSpeciesForecast(hunt,speciesId,rarity,efficiency,
+        killsH,options={}) {
+        if(!Array.isArray(hunt?.especies)||!hunt.especies.length ||
+            !Number.isFinite(killsH)||killsH<0)
+            return null;
+        const target=Number(outlandNormalizeSpeciesId(speciesId));
+        let total=0,matches=0;
+        const mix=options.mix;
+        const measured=mix&&Object.values(mix).reduce((n,x)=>n+x.kills,0)>=30;
+        for(const row of hunt.especies){
+            const weight=measured?Number(mix?.[
+                outlandNormalizeSpeciesId(row.pokeId)]?.kills??0):
+                Math.max(1,Number(row.pontos)||1);
+            total+=weight;
+            if(Number(outlandNormalizeSpeciesId(row.pokeId))===target)
+                matches+=weight;
+        }
+        const chance=captureWikiChance(rarity,efficiency);
+        if(!total||!matches||chance===null)return null;
+        const hasMeasuredFraction=typeof options.acceptedFraction==='number' &&
+            Number.isFinite(options.acceptedFraction) &&
+            options.acceptedFraction>=0&&options.acceptedFraction<=1;
+        const fraction=typeof options.acceptedFraction==='number'&&
+            options.acceptedFraction>=0&&options.acceptedFraction<=1?
+                options.acceptedFraction:1;
+        const acceptedH=killsH*(matches/total)*fraction;
+        const catchesH=acceptedH*chance;
+        const eligible=String(hunt.area||'').toLowerCase()==='outland'
+            ?null:true;
+        const shinyP=options.hypotheticalLure?1/12000:1/24000;
+        return {chance,targetFraction:matches/total,acceptedH,catchesH,
+            acceptedSource:hasMeasuredFraction?'observed':'ceiling',
+            shinySeenH:eligible?acceptedH*shinyP:null,
+            shinyCaughtH:eligible?catchesH*shinyP:null,
+            meanHoursShiny:eligible&&catchesH>0?1/(catchesH*shinyP):null,
+            shiny24h:eligible?
+                farmingChanceAtLeastOne(chance*shinyP,24*acceptedH):null,
+            source:measured?'measured-species-mix+wiki':
+                'spawn-weighted-wiki-conditional'};
+    }
+    // HA MILESTONE E PURE END.
 
     // HA MILESTONE D PURE BEGIN — base probabilities; no inferred boosts.
     const RARE_OUTLAND_DROPS = Object.freeze([
@@ -3592,9 +3905,14 @@
                 const key = String(speciesId);
                 record.speciesKills[key] = (record.speciesKills[key] || 0) + 1;
             }
+            if (state.farmingLedger.slots.has(slot) && speciesId)
+                state.farmingLedger.slots.get(slot).speciesId=Number(speciesId);
             recordTargetHp(record, target);
             state.combatTargets.delete(slot);
         }
+        record.captureWindow = captureAppend(record.captureWindow,
+            receipt,now,state.farmingLedger.slots.get(slot)?.speciesId??
+                receipt.speciesId);
         savePerformance();
 
         if (
@@ -3653,8 +3971,10 @@
                 );
             } else {
                 const receipt = normalizeFarmingEvent(event);
-                if (receipt && acceptFarmingEvent(state.farmingLedger, receipt))
+                if (receipt && acceptFarmingEvent(state.farmingLedger, receipt)) {
                     farmTrackUse(receipt);
+                    captureTrackReceipt(receipt);
+                }
             }
         }
     }
@@ -4330,6 +4650,7 @@
             state.pendingOutlandTier = null;
             state.outlandCatalogTiers = null;
             state.xpBonusState = {};
+            state.captureChanceEvidence = {seen:0,min:null,max:null};
             state.calibrationEvidence.clear();
             state.combatTargets.clear();
             state.lastLeadPokemon = null;
@@ -5693,6 +6014,10 @@
                         creature.huntLevel
                     )
                     : previous.huntLevel,
+            captureLevelCeiling:Number.isInteger(Number(
+                creature?.tetoCaptura)) && Number(creature.tetoCaptura)>0
+                ? Number(creature.tetoCaptura)
+                :previous.captureLevelCeiling??null,
             rawLoot: Array.isArray(creature?.loot)
                 ? creature.loot.map(line => ({...line}))
                 : previous.rawLoot ?? null,
@@ -5796,6 +6121,11 @@
             return farmNpcPrice(item, shopIds, special);
         };
         state.npcLootBySpecies.clear();
+        state.captureRarities.clear();
+        for(const [id,meta] of state.speciesCombat) {
+            const rarity=captureRarityFromCatalog(meta);
+            if(rarity!==null)state.captureRarities.set(id,rarity);
+        }
         if (!state.itemsByName.size) return;
         for (const [id, meta] of state.speciesCombat) {
             if (!Array.isArray(meta.rawLoot)) continue;
@@ -5811,8 +6141,10 @@
     function farmApplyRuntimeCatalog(message) {
         const balls = message?.catalogoBolas;
         const items = message?.itensCompraveis;
-        if (balls !== undefined)
+        if (balls !== undefined) {
             state.ballPrices = farmNormalizePrices(balls, 'ball');
+            state.captureBallRates = captureBallCatalog(balls);
+        }
         if (items !== undefined) {
             state.itemPrices = farmNormalizePrices(items, 'item');
             if (state.itemsByName.size) rebuildNpcLootCatalog();
@@ -5836,6 +6168,112 @@
                     state.inventoryForCosts.set(kind+':'+n,count);
             }
         }
+    }
+
+    function captureTrackReceipt(receipt, at=Date.now()) {
+        if(!receipt || !['bola','capturado'].includes(receipt.kind) ||
+            !isHuntHere())return;
+        const record=performanceRecord(state.currentHuntSlug,true);
+        if(!record)return;
+        const species=state.farmingLedger.slots.get(receipt.slot)?.speciesId;
+        const tracked=receipt.kind==='capturado'?
+            {...receipt,confirmedBallId:state.farmingLedger.slots.get(
+                receipt.slot)?.ballId??null}:receipt;
+        record.captureWindow=captureAppend(record.captureWindow,tracked,at,species);
+        if(receipt.kind==='bola' && receipt.chanceRaw!==null){
+            const evidence=state.captureChanceEvidence;
+            evidence.seen++;
+            evidence.min=evidence.min===null?receipt.chanceRaw:
+                Math.min(evidence.min,receipt.chanceRaw);
+            evidence.max=evidence.max===null?receipt.chanceRaw:
+                Math.max(evidence.max,receipt.chanceRaw);
+            // No unit inference: fraction vs percentage and boosted vs
+            // unboosted remain unverified until native capture UI comparison.
+        }
+    }
+
+    function captureObservedForHunt(hunt, now=Date.now()) {
+        if(!hunt||!isHuntHere(hunt.slug))return null;
+        const record=performanceRecord(hunt.slug,false);
+        const rates=observedRates(record,now);
+        if(!rates)return null;
+        return captureObservedWindow(record?.captureWindow,
+            now-rates.windowMs,now);
+    }
+
+    function captureInfoForBall(id) {
+        const standard=CAPTURE_BALLS.find(row=>row.id===id);
+        if(!standard)return null;
+        const runtime=state.captureBallRates.get(id);
+        const catalogPrice=state.ballPrices.get(id);
+        const efficiency=runtime?.efficiency??standard.efficiency;
+        const priceCoins=id===5?null:
+            (runtime?.coins??standard.defaultCoins);
+        return {
+            ...standard,efficiency,
+            coins:priceCoins,diamondPrice:catalogPrice?.diamonds??null,
+            source:runtime?.efficiency?
+                'observed-client-efficiency+wiki-conditional-formula':
+                'wiki-conditional-efficiency',
+            priceSource:runtime?.coins!==null&&runtime?.coins!==undefined?
+                'observed-client':'wiki-reference',
+            stock:state.inventoryForCosts.get('ball:'+id)??null
+        };
+    }
+
+    function capturePlanForHunt(hunt,ballId=4,xp=huntXpEstimate(hunt)) {
+        if(!hunt)return null;
+        const ball=captureInfoForBall(ballId);
+        if(!ball)return null;
+        const observed=captureObservedForHunt(hunt);
+        const mixKills=observed?Object.values(observed.bySpecies)
+            .reduce((sum,row)=>sum+row.kills,0):0;
+        const mixThrows=observed?Object.values(observed.bySpecies)
+            .reduce((sum,row)=>sum+row.throws,0):0;
+        const measuredMix=observed&&mixThrows===observed.throws &&
+            mixThrows>=30 ? observed.bySpecies:null;
+        const fraction=observed&&observed.kills>=6 ?
+            Math.min(1,Math.max(0,observed.throws/observed.kills)):null;
+        const predicted=captureForecast(hunt,state.captureRarities,
+            xp?.killsH??null,ball.efficiency,{
+                mix:measuredMix,mixMode:'throws',
+                acceptedFraction:fraction,
+                coinPrice:ball.coins,
+                diamondPrice:ball.diamondPrice,
+                hypotheticalLure:state.filters.shinyLurePreview
+            });
+        const selectedBallUses=observed?.byBall?.[ball.id]??0;
+        const observedBallH=selectedBallUses>0&&observed?.windowMs>0
+            ?selectedBallUses*3600000/observed.windowMs:null;
+        const stockHours=observedBallH>0&&ball.stock!==null?
+            ball.stock/observedBallH:null;
+        return {...predicted,ball,observed,
+            stockHours,rateSource:xp?.observed?'observed-kills':
+                xp?.source??'unknown'};
+    }
+
+    function capturePlanForSpecies(species,ballId=4,xp=null) {
+        if(!species?.hunt)return null;
+        const hunt=species.hunt;
+        const estimate=xp??huntXpEstimate(hunt);
+        const ball=captureInfoForBall(ballId);
+        if(!ball)return null;
+        const observed=captureObservedForHunt(hunt);
+        const mixKills=observed?Object.values(observed.bySpecies)
+            .reduce((sum,row)=>sum+row.kills,0):0;
+        const mix=observed&&mixKills===observed.kills &&
+            mixKills>=30?observed.bySpecies:null;
+        const target=observed?.bySpecies?.[
+            outlandNormalizeSpeciesId(species.id)];
+        const acceptance=target?.kills>=6?
+            Math.min(1,target.throws/target.kills):
+            observed?Math.min(1,observed.throws/Math.max(1,observed.kills)):null;
+        return captureSpeciesForecast(hunt,species.id,
+            state.captureRarities.get(Number(outlandNormalizeSpeciesId(species.id))),
+            ball.efficiency,estimate?.killsH??null,{
+                mix,acceptedFraction:acceptance,
+                hypotheticalLure:state.filters.shinyLurePreview
+            });
     }
 
     function farmTrackUse(receipt, at=Date.now()) {
@@ -8482,6 +8920,7 @@
 
         // Compute at most one economy estimate per hunt during this sort.
         const economySortCache = new Map();
+        const captureSortCache = new Map();
         const economyFor = hunt => {
             if (!hunt?.slug) return null;
             if (!economySortCache.has(hunt.slug))
@@ -8604,6 +9043,20 @@
                     const bKnown = typeof bv === 'number' && Number.isFinite(bv);
                     comparison = aKnown && bKnown ? (av - bv) * direction
                         : aKnown ? -1 : bKnown ? 1 : 0;
+                } else if (sort === 'capture' || sort === 'shinyCatch') {
+                    const id=state.filters.captureBall==='beast'?5:4;
+                    const key=sort==='capture'?'catchesH':'shinyCaughtH';
+                    const val=species=>{
+                        const cacheKey=String(species.id)+'|'+species.hunt?.slug;
+                        if(!captureSortCache.has(cacheKey))
+                            captureSortCache.set(cacheKey,
+                                capturePlanForSpecies(species,id)?.[key]??null);
+                        return captureSortCache.get(cacheKey);
+                    };
+                    const av=val(a),bv=val(b);
+                    const ak=typeof av==='number'&&Number.isFinite(av);
+                    const bk=typeof bv==='number'&&Number.isFinite(bv);
+                    comparison=ak&&bk?(av-bv)*direction:ak?-1:bk?1:0;
                 } else if (
                     sort === 'npc'
                 ) {
@@ -10763,6 +11216,8 @@
                             <option value="xp">${tr('sort.xp')}</option>
                             <option value="coins">${tr('sort.coins')}</option>
                             <option value="netCoins">${tr('sort.netCoins')}</option>
+                            <option value="capture">${tr('sort.capture')}</option>
+                            <option value="shinyCatch">${tr('sort.shinyCatch')}</option>
                             <option value="name">${tr('sort.name')}</option>
                             <option value="pokedex">${tr('sort.pokedex')}</option>
                             <option value="level">${tr('sort.level')}</option>
@@ -11560,6 +12015,32 @@
                     'xp.baseline'
                 );
 
+        const meta=speciesCombatMeta(species.id);
+        const rarity=captureRarityFromCatalog(meta);
+        const ultraPct=captureWikiChance(rarity,
+            captureInfoForBall(4)?.efficiency??4);
+        const beastPct=captureWikiChance(rarity,
+            captureInfoForBall(5)?.efficiency??8);
+        const catchCard=ultraPct!==null&&beastPct!==null ?
+            tr('catch.card',{ultra:(100*ultraPct).toFixed(2),
+                beast:(100*beastPct).toFixed(2)}):
+            tr('catch.cardUnknown');
+
+        const chosenSpeciesPlan=capturePlanForSpecies(species,
+            state.filters.captureBall==='beast'?5:4,xpInfo);
+        const shinyCard=chosenSpeciesPlan?
+            tr('catch.targetRate',{captures:chosenSpeciesPlan.catchesH.toFixed(2),
+                shiny:chosenSpeciesPlan.shinyCaughtH===null?'—':
+                    chosenSpeciesPlan.shinyCaughtH<.000001 &&
+                    chosenSpeciesPlan.shinyCaughtH>0?
+                        chosenSpeciesPlan.shinyCaughtH.toExponential(2):
+                        chosenSpeciesPlan.shinyCaughtH.toFixed(6),
+                hours:chosenSpeciesPlan.meanHoursShiny===null?'—':
+                    formatRate(chosenSpeciesPlan.meanHoursShiny),
+                source:tr(chosenSpeciesPlan.acceptedSource==='observed'
+                    ?'catch.targetObserved':'catch.targetCeiling')}) :
+            null;
+
         const worldLocation = locationForHunt(hunt);
         const sharedHunts = sharedWorldLocation(hunt);
         const sub =
@@ -11585,6 +12066,11 @@
                         : 'hunt.locked'
                 ),
                 xpLabel,
+                catchCard,
+                shinyCard,
+                meta?.captureLevelCeiling ? tr('catch.levelCap',{
+                    level:Math.min(Number(hunt.nivel)||1,
+                        meta.captureLevelCeiling)}):null,
                 typeof economicInfo.killCoinsH === 'number'
                     ? tr('econ.kill') + ': ' + formatRate(economicInfo.killCoinsH)
                         + ' (' + (economicInfo.killSource === 'observed-server/event'
@@ -12118,6 +12604,99 @@
             '<div class="mha-xp-note">'+escapeHtml(tr('rare.uncertainty'))+'</div>'
         ].join('');
 
+
+        const captureHunt=String(state.filters.search||'').trim()&&results.length?
+            results[0].hunt : current && isUnlocked(current) ?
+            current : best?.hunt??null;
+        const activeCaptureId=state.filters.captureBall==='beast'?5:4;
+        const capXp=captureHunt?huntXpEstimate(captureHunt):null;
+        const ultra=captureHunt?capturePlanForHunt(captureHunt,4,capXp):null;
+        const beast=captureHunt?capturePlanForHunt(captureHunt,5,capXp):null;
+        const chosen=activeCaptureId===5?beast:ultra;
+        const pct=value=>typeof value==='number'&&Number.isFinite(value)
+            ?(100*value).toFixed(3)+'%':tr('catch.unknown');
+        const rate=value=>typeof value==='number'&&Number.isFinite(value)
+            ?value.toFixed(value<1?5:2):tr('catch.unknown');
+        const captureLine=(label,value)=>'<div class="mha-xp-note">'+
+            '<strong>'+escapeHtml(label)+'</strong> · '+
+            escapeHtml(value)+'</div>';
+        const observedCapture=chosen?.observed;
+        const capEvidence=chosen?
+            tr('catch.source',{coverage:chosen.coverage,
+                source:chosen.source}):tr('catch.unknown');
+        const captureHtml=[
+            '<div class="mha-xp-list-title">'+escapeHtml(tr('catch.title'))+'</div>',
+            '<div class="mha-xp-note"><label>'+escapeHtml(tr('catch.ball'))+
+                ' <select data-mha-capture-ball>'+
+                '<option value="ultra" '+(activeCaptureId===4?'selected':'')+'>'+
+                escapeHtml(tr('catch.ultra'))+'</option>'+
+                '<option value="beast" '+(activeCaptureId===5?'selected':'')+'>'+
+                escapeHtml(tr('catch.beast'))+'</option></select></label></div>',
+            '<div class="mha-xp-note"><label><input type="checkbox" '+
+                'data-mha-shiny-lure-preview '+
+                (state.filters.shinyLurePreview?'checked':'')+
+                ' /> '+escapeHtml(tr('catch.lure'))+'</label></div>',
+            captureLine(tr('catch.current',{hunt:captureHunt?.nome||
+                captureHunt?.slug||'?'}),[
+                    'Ultra '+pct(ultra?.chance),
+                    'Beast '+pct(beast?.chance),
+                    chosen?.ball?.source
+                ].filter(Boolean).join(' · ')),
+            chosen ? captureLine(tr('catch.percent',{
+                chance:chosen.chance===null?'—':(100*chosen.chance).toFixed(3)
+            }),tr('catch.expected',{
+                count:rate(chosen.catchesH),
+                balls:rate(chosen.ballsPerCapture)
+            })):'',
+            chosen && chosen.shinyCaughtH>0 ? captureLine(tr('catch.shinyMean',{
+                hours:formatRate(1/chosen.shinyCaughtH),
+                throws:formatRate(1/(chosen.chance*chosen.shinyP))
+            }),tr('catch.limit')):'',
+            chosen ? captureLine(tr('catch.seen',{
+                count:rate(chosen.shinySeenH),
+                caught:rate(chosen.shinyCaughtH)
+            }),tr('catch.oneDay',{
+                chance:chosen.shinyCaught24hChance===null?'—':
+                    (100*chosen.shinyCaught24hChance).toFixed(5)
+            })):'',
+            chosen && chosen.ball.id===4 && chosen.coinsPerCapture!==null ?
+                captureLine(tr('catch.cost',{
+                    coins:formatRate(chosen.coinsPerCapture)}),
+                    chosen.ball.priceSource):'',
+            chosen && chosen.ball.id===5 ?
+                captureLine(tr('catch.diamondCost'),
+                    chosen.diamondsPerCapture!==null?
+                        rate(chosen.diamondsPerCapture)+' Diamonds/capture':
+                        'Diamonds price unknown'):'',
+            chosen && chosen.ball.stock!==null ?
+                captureLine(tr('catch.stock',{count:chosen.ball.stock,
+                    hours:chosen.stockHours===null?'—':
+                        rate(chosen.stockHours)}),
+                    chosen.observed?'observed usage':'usage unknown'):'',
+            observedCapture?.byBall?.[activeCaptureId] ?
+                captureLine(tr('catch.observedBall',{
+                    throws:observedCapture.byBall[activeCaptureId],
+                    caught:observedCapture.byBallCaught[activeCaptureId]??0
+                }),tr('econ.observed')):'',
+            observedCapture ?
+                captureLine(tr('catch.observed',{
+                    throws:observedCapture.throws,
+                    caught:observedCapture.captures,
+                    seen:observedCapture.shinySeen??'—',
+                    shiny:observedCapture.shinyCaught??'—',
+                    fraction:(100*Math.min(1,
+                        observedCapture.targetableFraction)).toFixed(1)
+                }),tr('econ.observed')):'',
+            '<div class="mha-xp-note">'+escapeHtml(capEvidence)+'</div>',
+            '<div class="mha-xp-note">'+escapeHtml(tr('catch.limit'))+'</div>',
+            '<div class="mha-xp-note">'+escapeHtml(tr('catch.shiny'))+'</div>',
+            chosen?.shinyEligible===null ?
+                '<div class="mha-xp-note">'+escapeHtml(tr('catch.outland'))+
+                '</div>':'',
+            '<div class="mha-xp-note">'+escapeHtml(tr('catch.clamp'))+'</div>',
+            '<div class="mha-xp-note">'+escapeHtml(tr('catch.mystic'))+'</div>'
+        ].join('');
+
         const html = `
             <div class="mha-xp-heading">
                 <strong>${escapeHtml(
@@ -12261,6 +12840,7 @@
                     )}
                 </div>
             </div>
+            ${captureHtml}
             ${economyHtml}
             ${rareHtml}
         `;
@@ -12271,6 +12851,17 @@
         if (host.innerHTML === html) return;
         host.innerHTML = html;
 
+        q('[data-mha-capture-ball]',host)?.addEventListener('change',event=>{
+            if(!['ultra','beast'].includes(event.target.value))return;
+            state.filters.captureBall=event.target.value;
+            saveFilters();
+            renderDrawer();
+        });
+        q('[data-mha-shiny-lure-preview]',host)?.addEventListener('change',event=>{
+            state.filters.shinyLurePreview=event.target.checked;
+            saveFilters();
+            renderDrawer();
+        });
         q('[data-mha-outland-preview]',host)?.addEventListener('change',event=>{
             const tier=Number(event.target.value);
             if(Number.isInteger(tier)&&tier>=1&&tier<=8){
@@ -12839,7 +13430,7 @@
             const here = currentHunt();
             const xp = here ? huntXpEstimate(here) : null;
             return {
-                version: '1.9.7',
+                version: '1.9.8',
                 indexes: {
                     locations: state.locationIndexStatus,
                     markerCount: state.locationsBySlug.size,
@@ -12888,6 +13479,31 @@
                                 RARE_OUTLAND_DROPS.some(row=>row.id===id)
                                 || id===RARE_EGG_DROP.id)
                         )
+                    };
+                })(),
+                captureEvidence: (() => {
+                    const here=currentHunt();
+                    const ultra=here?capturePlanForHunt(here,4):null;
+                    const beast=here?capturePlanForHunt(here,5):null;
+                    return {
+                        model:'wiki-conditional',
+                        serverFormulaVerified:false,
+                        rawChanceEvidence:{...state.captureChanceEvidence,
+                            unit:'unknown-not-applied'},
+                        observed:ultra?.observed??null,
+                        ultra:ultra?{
+                            chance:ultra.chance,
+                            catchesH:ultra.catchesH,shinySeenH:ultra.shinySeenH,
+                            shinyCaughtH:ultra.shinyCaughtH,
+                            source:ultra.source,
+                            acceptedSource:ultra.acceptedSource
+                        }:null,
+                        beast:beast?{
+                            chance:beast.chance,
+                            catchesH:beast.catchesH,
+                            shinyCaughtH:beast.shinyCaughtH,
+                            source:beast.source
+                        }:null
                     };
                 })(),
                 farmingEvidence: {
@@ -12976,7 +13592,7 @@
         );
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.7 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.8 experimental loaded'
         );
     }
 
