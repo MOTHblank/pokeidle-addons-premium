@@ -12716,27 +12716,77 @@
             day:refPct(refRare.chance24h),
             none:refPct(refRare.noDrop24h)
         }):tr('reference.unknown');
+        const refCaptureComparison = refCatch ? tr('reference.catchCompare',{
+            before:refPct(chosen.chance),after:refPct(refCatch.catchChance)
+        }) : tr('reference.unknown');
+        const refRareComparison = refRare ? tr('reference.rareCompare',{
+            before:refPct(refRareItem.probability),after:refPct(refRare.chance)
+        }) : tr('reference.unknown');
+        const catchUnchanged=refCatch&&
+            refCatch.catchChance===chosen.chance &&
+            refCatch.shinyChance===(chosen.shinyEligible===null?
+                null:chosen.shinyP);
+        const rareUnchanged=refRare&&
+            refRare.chance===refRareItem.probability;
+        const refCheckGroup=rows=>rows.map(([key,label])=>
+            referenceControl(key,label)).join('');
+        const refNumberGroup=rows=>rows.map(([key,label,min])=>
+            referenceControl(key,label,'number',min)).join('');
         const referenceHtml='<details data-mha-reference '+
             (state.filters.referenceOpen?'open':'')+'><summary>'+
             escapeHtml(tr('reference.title'))+'</summary>'+
-            '<div class="mha-xp-note">'+escapeHtml(tr('reference.note'))+'</div>'+
-            '<div class="mha-xp-note">'+
-            '<label><input type="checkbox" data-mha-reference-setting="referenceEnabled" '+
+            '<p class="mha-xp-note">'+escapeHtml(tr('reference.note'))+'</p>'+
+            '<label class="mha-reference-enable"><input type="checkbox" '+
+            'data-mha-reference-setting="referenceEnabled" '+
             (refActive?'checked':'')+' />'+
-            escapeHtml(tr('reference.enable'))+'</label></div>'+
-            (refActive ? '<div class="mha-xp-note">'+
-                referenceBooleanFields.map(([key,label])=>
-                    referenceControl(key,label)).join(' · ')+
-                '</div><div class="mha-xp-note">'+
-                referenceNumericFields.map(([key,label,min])=>
-                    referenceControl(key,label,'number',min)).join(' · ')+
-                '</div><div class="mha-xp-note"><strong>'+
-                escapeHtml(tr('reference.catchResult'))+'</strong> · '+
-                escapeHtml(refCaptureText)+'</div>'+
-                '<div class="mha-xp-note"><strong>'+
-                escapeHtml(tr('reference.rareResult'))+
-                (refRareItem?' ('+escapeHtml(refRareItem.name)+')':'')+
-                '</strong> · '+escapeHtml(refRareText)+'</div>' : '')+
+            escapeHtml(tr('reference.enable'))+'</label>'+
+            (refActive ?
+                '<div class="mha-reference-group">'+
+                    '<strong>'+escapeHtml(tr('reference.captureGroup'))+'</strong>'+
+                    '<p class="mha-xp-note">'+
+                        escapeHtml(tr('reference.captureHelp'))+'</p>'+
+                    '<div class="mha-reference-controls">'+
+                        refCheckGroup(referenceBooleanFields.slice(0,2))+
+                        refNumberGroup(referenceNumericFields.slice(0,2))+
+                    '</div>'+
+                    '<div class="mha-reference-result"><strong>'+
+                        escapeHtml(tr('reference.catchResult'))+'</strong>'+
+                        '<div>'+escapeHtml(refCaptureComparison)+'</div>'+
+                        '<div>'+escapeHtml(refCaptureText)+'</div>'+
+                        (catchUnchanged?'<div class="mha-xp-note">'+
+                            escapeHtml(tr('reference.unchanged'))+'</div>':'')+
+                    '</div>'+
+                '</div>'+
+                '<div class="mha-reference-group">'+
+                    '<strong>'+escapeHtml(tr('reference.rareGroup'))+'</strong>'+
+                    '<p class="mha-xp-note">'+
+                        escapeHtml(tr('reference.rareHelp'))+'</p>'+
+                    '<div class="mha-reference-controls">'+
+                        refNumberGroup(referenceNumericFields.slice(2,5))+
+                    '</div>'+
+                    '<div class="mha-reference-result"><strong>'+
+                        escapeHtml(tr('reference.rareResult'))+
+                        (refRareItem?' ('+escapeHtml(refRareItem.name)+')':'')+
+                    '</strong><div>'+escapeHtml(refRareComparison)+'</div>'+
+                    '<div>'+escapeHtml(refRareText)+'</div>'+
+                    (rareUnchanged?'<div class="mha-xp-note">'+
+                        escapeHtml(tr('reference.unchanged'))+'</div>':'')+
+                    '</div>'+
+                '</div>'+
+                '<details data-mha-reference-extra '+
+                    (state.filters.referenceAdvancedOpen?'open':'')+'>'+
+                    '<summary>'+escapeHtml(tr('reference.extra'))+'</summary>'+
+                    '<p class="mha-xp-note">'+
+                        escapeHtml(tr('reference.extraHelp'))+'</p>'+
+                    '<div class="mha-reference-controls">'+
+                        refCheckGroup(referenceBooleanFields.slice(2))+
+                        refNumberGroup(referenceNumericFields.slice(5))+
+                    '</div>'+
+                '</details>'+
+                '<p class="mha-xp-note">'+
+                    escapeHtml(tr('reference.unitsHelp'))+' '+
+                    escapeHtml(tr('reference.provenance'))+'</p>'
+                : '')+
             '</details>';
         const html = `
             <div class="mha-xp-heading">
