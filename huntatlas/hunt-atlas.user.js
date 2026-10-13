@@ -3303,8 +3303,15 @@
          * In the delta protocol, a missing key means "unchanged" while an
          * explicit null means "clear it".
          */
+        const beforeFarmingScope = farmingSnapshotScope();
         const farmSnapshot = normalizeFarmingSnapshot(gameState);
         if (farmSnapshot) Object.assign(state.farmingSnapshot, farmSnapshot);
+        if (beforeFarmingScope !== farmingSnapshotScope()) {
+            state.farmingLedger = makeFarmingLedger();
+            state.combatRevision++;
+            state.combatProfileCache = null;
+            state.estimateCache.clear();
+        }
         if (
             Object.prototype.hasOwnProperty.call(
                 gameState,
@@ -3702,7 +3709,10 @@
             // Treat reconnect/account replacement as a new evidence session.
             state.rateGeneration++;
             state.farmingLedger = makeFarmingLedger();
+            state.farmingSnapshot = {};
             state.combatTargets.clear();
+            state.lastLeadPokemon = null;
+            state.activePokemonId = null;
             if (
                 message.tabelaTipos &&
                 typeof message.tabelaTipos ===
@@ -4334,7 +4344,9 @@
                         null;
                     state.rateGeneration++;
                     state.farmingLedger = makeFarmingLedger();
+                    state.farmingSnapshot = {};
                     state.combatTargets.clear();
+                    state.lastLeadPokemon = null;
 
                     if (
                         state.marketFetch ||
