@@ -558,11 +558,11 @@ test('Milestone A: session/day caps account for outstanding unknown orders acros
     const log = [];
     const api = new Function('state','config','localStorage','sessionStorage',
         'ORDER_JOURNAL_KEY','ORDER_SESSION_KEY','normalize','addLog','queueRender',
-        'sanitizeFixedItemRules','sanitizeAnyItemRules','sanitizePokemonBuyRules',
+        'sanitizeFixedItemRules','sanitizeAnyItemRules','sanitizePokemonBuyRules','snatchOutcome',
         source + '\nreturn {orderAccountKey,loadOrderJournal,saveOrderJournal,reserveOrder,settleOrder,'+
         'resolveOrder,unresolvedListing,remainingBudget,orderExposure};')(
         state,config,storage,session,'orders','session',text=>text.toLowerCase(),text=>log.push(text),
-        ()=>{},()=>[],()=>[],()=>[]);
+        ()=>{},()=>[],()=>[],()=>[],()=>{});
     state.orderJournal=api.loadOrderJournal();
     const at=Date.now();
     const order={listingId:77,currency:'gold',sentAt:at,spend:120,qty:2,
