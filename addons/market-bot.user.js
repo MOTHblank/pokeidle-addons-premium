@@ -2069,7 +2069,7 @@
     function pokemonReferenceFor(ficha, currency) {
         const key = pokemonIdentityKey(ficha, currency);
         if (!key) return null;
-        const sales = state.pokemonReference?.version === 2
+        const sales = state.pokemonReference?.version === 3
             ? state.pokemonReference.values?.[key] : null;
         if (!Array.isArray(sales) || !sales.length) return null;
         const requestedSamples = Number(config.minPokemonSamples);
@@ -2090,26 +2090,48 @@
             { name: 'Broad species history only', confidence: 'context',
                 options: { level: false, grade: false }, actionable: false }
         ];
+        const attemptedStages = [];
         for (const stage of stages) {
             const matches = pokemonComparableSales(sales, listing, stage.options);
+            attemptedStages.push({ name: stage.name, matches: matches.length });
             if (matches.length < minSamples) continue;
             const prices = matches.map(sale => sale.price).filter(value => Number.isFinite(value) && value > 0);
             if (prices.length < minSamples) continue;
             const value = median(prices);
             if (!(value > 0)) continue;
+            const low = percentile(prices, 0.25), high = percentile(prices, 0.75);
+            const dated = matches.map(sale => sale.soldAt).filter(at => Number.isFinite(at) && at > 0);
+            const newestSoldAt = dated.length ? Math.max(...dated) : null;
+            const oldestSoldAt = dated.length ? Math.min(...dated) : null;
+            const ageDays = newestSoldAt == null ? null :
+                Math.max(0, Math.floor((Date.now() - newestSoldAt) / 86400000));
+            const dateCoverage = dated.length / matches.length;
+            const dispersion = low > 0 ? high / low : Infinity;
+            const traitCoverage = Object.values(listing.traits || {}).every(flag => flag != null) &&
+                matches.every(sale => Object.values(sale.traits || {}).length === 6 &&
+                    Object.values(sale.traits).every(flag => flag != null));
+            const recent = dateCoverage === 1 && newestSoldAt != null &&
+                Date.now() - newestSoldAt <= POKEMON_HISTORY_FRESH_MS;
+            const gradeMatched = stage.options.grade !== false && listing.score != null;
+            // Incomplete or undated samples remain contextual, never bargain alerts.
+            const actionable = stage.actionable !== false && gradeMatched &&
+                recent && traitCoverage && dispersion <= 1.75;
             return {
-                value,
-                average: prices.reduce((sum, price) => sum + price, 0) / prices.length,
-                low: percentile(prices, 0.25),
-                high: percentile(prices, 0.75),
-                samples: prices.length,
-                key,
-                confidence: stage.confidence,
-                comparison: stage.name,
-                // Broadened context is visible to callers but cannot generate bargain alerts.
-                actionable: stage.actionable !== false && listing.score != null,
-                missingScore: listing.score == null,
-                missingIVs: !listing.ivs
+                value, average: prices.reduce((sum, price) => sum + price, 0) / prices.length,
+                low, high, p10: percentile(prices, 0.1), p90: percentile(prices, 0.9),
+                dispersion, samples: prices.length, bucketSamples: sales.length,
+                key, comparison: stage.name, attemptedStages,
+                confidence: recent && traitCoverage && dispersion <= 1.75
+                    ? stage.confidence : stage.confidence === 'context' ? 'context' : 'low',
+                actionable, missingScore: listing.score == null,
+                missingIVs: !listing.ivs, collectedAt: state.pokemonReference.capturedAt,
+                ageDays, dateCoverage, newestSoldAt, oldestSoldAt, source: 'completed sales',
+                limitations: [
+                    ...(!recent ? ['sale dates missing or stale'] : []),
+                    ...(!traitCoverage ? ['collectible extras unverified'] : []),
+                    ...(dispersion > 1.75 ? ['wide price dispersion'] : []),
+                    ...(stage.confidence === 'context' ? ['broad species comparison'] : [])
+                ]
             };
         }
         return null;
