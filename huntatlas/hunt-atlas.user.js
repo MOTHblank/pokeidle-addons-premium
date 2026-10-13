@@ -454,9 +454,8 @@
             'rank.topFive': 'Top 5 by {metric}',
             'rank.noEvidence': 'No comparable estimate for this metric under the current filters.',
             'rank.rareLabel': 'Rare item for comparison',
-            'rank.value': '{value} · {source}',
+            'rank.value': '{value}',
             'rank.efficiency': '{value} Coins/expected capture · wiki-conditional',
-            'rank.rarePreview': 'Outland tier {tier} preview, not the active tier',
             'rank.invalid': 'Unavailable — insufficient model evidence or not eligible',
             'rank.unboosted': 'Unboosted / not validated against active server buffs',
             'rank.details': 'Hunt details (tap to expand)',
@@ -536,7 +535,7 @@
             'rare.locked': 'Locked: trainer level {level} required',
             'rare.previewOnly': 'Preview only; no change to the active hunt or tier',
             'rare.noCommand': 'In-game activation unavailable until the game reports its current tier',
-            'rare.source': '{source} · {rate} kills/h ({rateSource})',
+            'rare.source': 'Kills/h: {rate}',
             'rare.kills': 'per kill',
             'rare.units': 'Expected items: {value}',
             'rare.mean': 'mean {hours} / item',
@@ -770,9 +769,8 @@
             'rank.topFive': 'Top 5 por {metric}',
             'rank.noEvidence': 'Nenhuma previsão comparável nesta métrica com os filtros atuais.',
             'rank.rareLabel': 'Item raro para comparar',
-            'rank.value': '{value} · {source}',
+            'rank.value': '{value}',
             'rank.efficiency': '{value} Moedas/captura esperada · condicional da wiki',
-            'rank.rarePreview': 'Prévia Outland {tier}, não o tier ativo',
             'rank.invalid': 'Indisponível — dados insuficientes ou não elegível',
             'rank.unboosted': 'Sem bônus / não validado com bônus ativos do servidor',
             'rank.details': 'Detalhes da hunt (clique para abrir)',
@@ -852,7 +850,7 @@
             'rare.locked': 'Bloqueado: requer nível de treinador {level}',
             'rare.previewOnly': 'Apenas prévia; não altera a hunt nem o tier ativo',
             'rare.noCommand': 'Troca no jogo indisponível até o estado informar o tier atual',
-            'rare.source': '{source} · {rate} abates/h ({rateSource})',
+            'rare.source': 'Abates/h: {rate}',
             'rare.kills': 'por abate',
             'rare.units': 'Itens esperados: {value}',
             'rare.mean': 'média {hours} / item',
@@ -11790,10 +11788,6 @@
             tr('econ.loot')+': '+metricRate(economicInfo.npcLootEvH),
             tr('econ.net')+': '+metricRate(economicInfo.netH),
             tr('rank.rare')+': '+formatEventRate(selectedRare?.unitsH),
-            selectedRare?selectedRare.name+' · '+selectedRare.source+
-                ' · '+tr('rank.rarePreview',{
-                    tier:state.filters.outlandPreviewTier}):
-                tr('rank.invalid'),
             tr('rank.capture',{chance:formatProbability(activeChance)}),
             shinyCard??tr('rank.invalid'),
             meta?.captureLevelCeiling?tr('catch.levelCap',{
@@ -12152,11 +12146,10 @@
                                 ].filter(Boolean).join(' · '))}">${escapeHtml(
                                     tr(
                                         'rank.value',{
-                                            value:formatObjectiveValue(row.score,objective),
-                                            source:row.source||tr('rank.unknown')
+                                            value:formatObjectiveValue(row.score,objective)
                                         }
                                     )
-                                )}${row.target?' · '+escapeHtml(row.target):''}${objective==='rare'?' · '+escapeHtml(tr('rank.rarePreview',{tier:state.filters.outlandPreviewTier})):''}${objective==='xp'&&row.xp.incomplete?' · '+escapeHtml(tr('xp.incompleteShort',{percentage:row.xp.coverage})):''}</span>
+                                )}${row.target?' · '+escapeHtml(row.target):''}${objective==='xp'&&row.xp.incomplete?' · '+escapeHtml(tr('xp.incompleteShort',{percentage:row.xp.coverage})):''}</span>
                                 <button
                                     type="button"
                                     class="mha-go ${here ? 'current' : ''}"
@@ -12250,8 +12243,7 @@
                         tr('rare.observed',{count:observed})
                 ].filter(Boolean).join(' · ');
                 return '<div class="mha-xp-note"><strong>'+
-                    escapeHtml(row.name)+'</strong> · '+escapeHtml(descriptions)+
-                    ' · '+escapeHtml(row.source)+'</div>';
+                    escapeHtml(row.name)+'</strong> · '+escapeHtml(descriptions)+'</div>';
             }).join('') :
                 '<div class="mha-xp-note">'+escapeHtml(tr(
                     model?.reason==='unknown-kill-rate'?'rare.noRate':'rare.notEligible'
@@ -12345,9 +12337,7 @@
                     tr('rare.notEligible'))+'</div>',
             previewHunt && tierInfo && outlandModel?
                 '<div class="mha-xp-note">'+escapeHtml(tr('rare.source',{
-                    source:outlandModel.source,
-                    rate:Math.round(outlandModel.killsH??0),
-                    rateSource:outlandModel.rateSource
+                    rate:Math.round(outlandModel.killsH??0)
                 }))+'</div>' + modelRows(outlandModel):'',
             '<div class="mha-xp-note"><strong>'+escapeHtml(tr('rare.egg'))+
                 '</strong> · '+escapeHtml(eggHunt?.nome||tr('rare.notEligible'))+'</div>',
