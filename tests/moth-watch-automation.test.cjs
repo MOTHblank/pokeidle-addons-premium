@@ -939,17 +939,16 @@ function milestoneDSafetyHarness(overrides={}) {
     return {config,confirmations,...fn};
 }
 
-test('Milestone D: unbounded broad buying requires confirmation only on activation', () => {
+test('Milestone D: configured uncapped buying is allowed without a blocking dialog', () => {
     const h=milestoneDSafetyHarness();
     const broad={kind:'any',currency:'gold',buyMax:10000,buyEnabled:true};
     assert.equal(h.broadRuleUnbounded(broad),true);
-    assert.equal(h.confirmUnboundedRule(broad),false);
-    assert.equal(h.confirmations.length,1);
-    assert.match(h.confirmations[0],/no cumulative spending/i);
+    assert.equal(h.confirmUnboundedRule(broad),true);
+    assert.equal(h.confirmations.length,0);
     assert.equal(h.config.maxCoinsPerSession,0,'confirmation must not set or mutate limits');
     assert.equal(h.broadRuleUnbounded({...broad,buyEnabled:false}),false);
     assert.equal(h.confirmUnboundedRule({...broad,buyEnabled:false}),true);
-    assert.equal(h.confirmations.length,1);
+    assert.equal(h.confirmations.length,0);
     const c=milestoneDSafetyHarness({maxCoinsPerDay:90000});
     assert.equal(c.broadRuleUnbounded(broad),false);
     assert.equal(c.confirmUnboundedRule(broad),true);
@@ -958,14 +957,14 @@ test('Milestone D: unbounded broad buying requires confirmation only on activati
     assert.equal(r.broadRuleUnbounded({...broad,maxSpendDay:50000}),false);
 });
 
-test('Milestone D: master activation warns about multiple unbounded categories', () => {
+test('Milestone D: master activation accepts configured uncapped categories', () => {
     const pokemon={kind:'p5',currency:'orb',buyMax:5,buyEnabled:true};
     const any={currency:'gold',buyMax:10000,buyEnabled:true};
     const h=milestoneDSafetyHarness({pokemonBuyRules:[pokemon],
         anyItemRules:[any]});
     assert.equal(h.enabledUnboundedBroadRules().length,2);
-    assert.equal(h.confirmUnboundedMaster(),false);
-    assert.match(h.confirmations[0],/2 broad buying rules/);
+    assert.equal(h.confirmUnboundedMaster(),true);
+    assert.equal(h.confirmations.length,0);
     const c=milestoneDSafetyHarness({pokemonBuyRules:[pokemon],
         anyItemRules:[{...any,buyEnabled:false}],maxGemsPerSession:100});
     assert.equal(c.enabledUnboundedBroadRules().length,0);
@@ -1058,7 +1057,7 @@ test('Milestone D: redacted replay keeps currency and empty-page distinction', (
 });
 
 
-test('Milestone D: removing the final broad-rule cap is explicitly protected', () => {
+test('Milestone D: removing cumulative caps preserves intentional unlimited purchase authorization', () => {
     const capped=milestoneDSafetyHarness({
         maxCoinsPerSession:3000,
         anyItemRules:[{currency:'gold',buyMax:500,buyEnabled:true}]
@@ -1066,8 +1065,8 @@ test('Milestone D: removing the final broad-rule cap is explicitly protected', (
     assert.equal(capped.enabledUnboundedBroadRules().length,0);
     capped.config.maxCoinsPerSession=0;
     assert.equal(capped.enabledUnboundedBroadRules().length,1);
-    assert.equal(capped.confirmRemovingLastBroadCap(),false);
-    assert.match(capped.confirmations[0],/last cumulative protection/);
+    assert.equal(capped.confirmRemovingLastBroadCap(),true);
+    assert.equal(capped.confirmations.length,0);
     assert.match(script,/!previouslyUnbounded\s*&&\s*broadRuleUnbounded\(rule\)/);
     assert.match(script,/oldUnboundedCount\s*=\s*enabledUnboundedBroadRules\(\)\.length/);
     assert.match(script,/config\[key\]\s*=\s*oldValue/);
