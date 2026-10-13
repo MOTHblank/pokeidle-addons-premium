@@ -640,6 +640,31 @@ test('Milestone A: fixture families cover positive, empty, missing and conflicti
     assert.equal(api.marketReplyMatches(fixtures.diamondVitrine.wrongCurrency,'diamante'),false);
 });
 
+test('Explicit-price automation does not require historical-sale sample minimums', () => {
+    const automation = section('    function fixedRuleCandidate(', '    function runScan(force)');
+    const rules = section('    function sanitizeRuleCaps(', '    function emptyBaseline(');
+    const purchase = section('    function tryBuy(', '    function controllerResult(');
+    for (const code of [automation, rules, purchase]) {
+        assert.doesNotMatch(code, /config\.minItemUnits|config\.minPokemonSamples/,
+            'configured buy rules must not depend on valuation thresholds');
+    }
+    assert.match(automation, /price <= rule\.buyMax/);
+    assert.match(automation, /unitPrice > rule\.buyMax/);
+    assert.match(script, /Minimum comparable completed Pokémon sales for read-only price estimates/);
+    assert.match(script, /Does not restrict buying rules/);
+});
+
+test('Price-estimate controls are separate from the automatic buying editor', () => {
+    const source = fs.readFileSync(path.join(__dirname, '..', 'src/mothwatch/ui-render-section.js'), 'utf8');
+    const automation = source.slice(source.indexOf("state.watchView === 'automation') {"),
+        source.indexOf('            } else {\n                content.innerHTML =', source.indexOf("state.watchView === 'automation') {")));
+    assert.doesNotMatch(automation, /minItemUnits|minPokemonSamples/);
+    assert.match(source, /Valuation sample settings \(not buying limits\)/);
+    assert.match(source, /Rules such as “buy any item below 10,000 Coins” never require historical sales/);
+    const events = fs.readFileSync(path.join(__dirname, '..', 'src/mothwatch/ui-events-section.js'), 'utf8');
+    assert.doesNotMatch(events, /key === 'minPokemonSamples'\) ensurePokemonHistory\(true\)/);
+});
+
 test('Unverified orders quarantine only their exact listing, not every unrelated rule', () => {
     const body = section('    function tryBuy(', '    function controllerResult(');
     const runner = section('    function runMarketAutomation(', '    function runScan(force)');
@@ -915,8 +940,8 @@ test('Milestone C: optional session telemetry avoids duplicate NPC sales', () =>
 
 test('Milestone C: independent economy UI cannot start selling automation', () => {
     assert.match(script,/data-moth-view="economy"/);
-    assert.match(script,/Read-only estimates and user-entered holdings/);
-    assert.match(script,/@version\s+0\.6\.5/);
+    assert.match(script,/Read-only fees, market eligibility, and recorded purchase exposure/);
+    assert.match(script,/@version\s+0\.6\.6/);
     assert.doesNotMatch(script,/market\.criar|autoSellRules|sendItemSale/);
 });
 
@@ -996,7 +1021,7 @@ test('Milestone D: diagnostics source is synchronized with standalone userscript
     assert.equal(embedded,source,'module must exactly match generated userscript section');
     const tool=fs.readFileSync(path.join(__dirname,'..','tools','build-mothwatch.cjs'),'utf8');
     assert.match(tool,/--check/);
-    assert.match(script,/@version\s+0\.6\.5/);
+    assert.match(script,/@version\s+0\.6\.6/);
     assert.doesNotMatch(script,/^\s*\/\/\s*@(?:downloadURL|updateURL)/m,
         'private repo must not advertise inaccessible raw auto-update endpoints');
 });
@@ -1127,7 +1152,7 @@ test('MothWatch v0.6.1: source sections match the single distributable userscrip
         const moduleSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'mothwatch', name), 'utf8').trimEnd();
         assert.equal(script.slice(a + begin.length, b), moduleSource, 'generated parity: ' + id);
     }
-    assert.match(script, /@version\s+0\.6\.5/);
+    assert.match(script, /@version\s+0\.6\.6/);
     assert.doesNotMatch(script, /\bimport\s*\(|\brequire\s*\(/,
         'one Violentmonkey userscript must not require runtime module loading');
 });
