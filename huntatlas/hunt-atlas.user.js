@@ -1762,8 +1762,8 @@
         if(n>=1e6)return sign+(n/1e6).toFixed(n>=1e7?0:1)+'m';
         if(n>=1e3)return sign+(n/1e3).toFixed(n>=1e5?0:1)+'k';
         if(n>=100)return sign+Math.round(n).toLocaleString();
-        if(n>=10)return sign+n.toFixed(n%1<.05?0:1);
-        if(n>=1)return sign+n.toFixed(n%1<.005?0:2);
+        if(n>=10)return sign+n.toFixed(1).replace(/0+$/,'').replace(/\.$/,'');
+        if(n>=1)return sign+n.toFixed(2).replace(/0+$/,'').replace(/\.$/,'');
         if(n>=.01)return sign+n.toFixed(3).replace(/0+$/,'').replace(/\.$/,'');
         if(n>=.0001)return sign+n.toFixed(5).replace(/0+$/,'').replace(/\.$/,'');
         if(n>=.000001)return sign+n.toFixed(7).replace(/0+$/,'').replace(/\.$/,'');
@@ -1784,7 +1784,8 @@
     }
     function formatDurationHours(value,portuguese=false) {
         if(typeof value!=='number'||!Number.isFinite(value)||value<0)return '—';
-        if(value>=8760)return formatRate(value/8760)+' '+(portuguese?'anos':'yr');
+        if(value>=8760)return formatRate(value/8760)+' '+
+            (portuguese?(value<2*8760?'ano':'anos'):'yr');
         if(value>=24)return formatRate(value/24)+' d';
         return formatRate(value)+' h';
     }
