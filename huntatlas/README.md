@@ -1,6 +1,6 @@
 # PokéIdle Hunt Atlas
 
-> **Versão experimental 1.9.6.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
+> **Versão experimental 1.9.7.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
 >
 > Não há mapa visual novo. O Atlas continua sendo uma lista pesquisável; o índice `map-markers.json` só adiciona contexto textual de localização para hunts com slug correspondente. O índice `moves-index.json` oferece golpes possíveis por espécie/nível, não uma lista de golpes equipados. Agora o Atlas compara os golpes dos índices com o catálogo mais recente de Pokémon e mostra divergências. Quando o jogo fornece nomes de golpes, o modelo usa **amostras por execução**, sem contar várias vítimas de um ataque em área como vários golpes. Quando o nome não chega, mantém o modelo por tipo. XP/h **medido** continua acima de qualquer projeção. Os índices são opcionais e podem estar desatualizados.
 >
@@ -29,6 +29,15 @@ O Atlas agora calcula **Moedas/h por abate** usando o nível da hunt e o teto re
 No painel de XP/h aparece também a **Economia da hunt**, com quatro números separados: Moedas/h pelos abates, **valor esperado** de loot ordinário vendável ao NPC, Moedas/h **já realizadas** (abates + venda automática confirmada) e **líquido após custo de reposição dos itens consumidos**. O EV dos drops não é somado à renda realizada; itens guardados ou anúncios no mercado não viram Moedas recebidas. Custos dependem dos preços apresentados pelo jogo; itens sem preço conhecido tornam o líquido **indisponível**, e Diamantes ficam em sua própria moeda. Com estoque conhecido há estimativa de duração.
 
 Os drops NPC são calculados de um catálogo reconstruído com regras compartilhadas upstream, **não** de uma leitura certificada dos drops finais do servidor; quando a cobertura é incompleta o valor fica **—**. O painel e os testes estão prontos, mas a validação no jogo ainda é necessária. Veja [o contrato de economia e os limites](../docs/HUNTATLAS_MILESTONE_C.md). Não foram adicionados pedidos periódicos à loja nem venda automática.
+
+### Outland e raros (v1.9.7 · Marco D)
+
+- O seletor **Comparar Outland 1–8** é apenas uma **prévia** e funciona mesmo quando sua conta está em outra hunt. O tier ativo é mostrado separadamente, somente quando recebido do jogo. A prévia não altera a localização, o tier ou as regras da hunt atual; tiers bloqueados informam o nível necessário.
+- **Usar este tier no jogo** aparece somente se o estado do jogo informou o tier ativo, o novo tier está desbloqueado e há conexão. O Atlas envia o comando nativo `outland.tier`, mas **só considera a troca confirmada quando um estado posterior mostra o novo tier**; caso contrário a solicitação expira. O protocolo/cooldown do servidor ainda requer confirmação em uma sessão real.
+- Boss Token, Fragmento de Chave, Fragmento de Shiny Stone e Fragmento de Bicicleta têm previsão individual de **chance por abate, itens/h, horas médias por item e por dez fragmentos, e chance de ≥1 em 1h/24h**. O fragmento de Bicicleta permanece **reportado pela wiki / não confirmado no servidor**.
+- O **Fragmento de Ovo Shiny** aparece somente nas hunts elegíveis de Unova para frente, com os 30 degraus fixos de nível. O custo de 10 fragmentos e as 168h adicionais de incubação aparecem em separado. **Outland nunca recebe o Ovo Shiny**.
+- Probabilidades são **sem bônus não confirmados** e indicam expectativas, **não garantias**. Drops efetivamente vistos nesta sessão aparecem separados da previsão, sem confundir tiers. Preços de mercado ficam **—** na ausência de vendas concluídas verificadas; nada é comprado/vendido.
+- Detalhes e limitações: [Marco D](../docs/HUNTATLAS_MILESTONE_D.md).
 
 ### 🎮 Correio Maluco — minigame experimental (1.9.3)
 
@@ -135,6 +144,15 @@ Hunt Atlas now estimates **kill Coins/hour** with the proper level-25,000 cap an
 The XP details include four distinct measures: kill Coins/h, ordinary NPC-resellable **loot expected value/h**, **realized** Coins/h (native kill receipts and one occurrence of auto NPC resale), and **net Coins/h** after replacement cost of actually consumed supplies. Unsold drops and potential listings are never counted as already realized Coins. Costs require explicit game catalog prices; unknown prices leave net unavailable, and Diamonds remain separate. When inventory quantity is known, the panel estimates remaining stock coverage.
 
 Ordinary loot is derived from a **reconstructed shared-upstream catalog**, not a server-certified final loot table. Incomplete NPC eligibility or price coverage yields **—**, not a made-up number. See the [economy contract and live-validation limits](../docs/HUNTATLAS_MILESTONE_C.md). No extra continuous shop polling or automatic selling was added.
+
+### Outland and rare drops (v1.9.7 · Milestone D)
+
+- **Compare Outland 1–8** is a **read-only preview**, even while hunting elsewhere. The active in-game tier is separate and shown only if explicitly reported by game state. Locked tiers disclose their trainer-level gate, without phantom maps.
+- **Use this tier in game** appears only when the game exposes its current tier, you have the required level, and the socket is connected. Atlas sends the documented native `outland.tier` command but **does not claim success** until a subsequent game-state update confirms the tier. Real-server protocol/cooldown behavior still needs owner-led verification.
+- Bronze Boss Token, Key Fragment, Shiny Stone Fragment and Bicycle Fragment each show **per-kill %, units/hour, mean hours for one/ten fragments and chance of ≥1 within 1h/24h**. The Bicycle drop hook remains **wiki-reported and server-unverified**.
+- **Shiny Egg Fragments** follow the exact fixed 30-level ladder in eligible non-Outland hunts. Ten fragments craft an egg; a separate 168-hour incubation follows. Outland never receives these egg drops.
+- All probabilities are **unboosted expectations, not guarantees**. Real observed drops remain separate from projections, and another preview tier cannot borrow the active tier's drop totals. Market prices show **—** until verified completed-sale evidence exists; no buying/selling is added.
+- See the [Milestone D contract](../docs/HUNTATLAS_MILESTONE_D.md) for evidence and limitations.
 
 ### 🎮 Parcel Panic — experimental mini-game (1.9.3)
 
