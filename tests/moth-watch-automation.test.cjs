@@ -109,13 +109,14 @@ test('Multiple fixed rules are checked fairly, including after an unaffordable r
         'automationDetail', 'fixedRuleCandidate', 'purchaseQuantity', 'tryBuy',
         'hasAnyBuyingRules', 'activeAnyItemRules', 'activePokemonRules',
         'anyItemRuleTargets', 'anyItemRuleCandidate', 'pokemonRuleCandidate',
+        'snatchCriticalWindow',
         section('    function runMarketAutomation(', '    function runScan(force)') + '\nreturn runMarketAutomation;')(
         config, state, () => false, () => null, () => false, () => false, v => v,
         id => { requested.push(id); }, rule => ({ listingId: rule.itemId, name: String(rule.itemId) }),
         candidate => candidate.listingId === 106 ? 0 : 1,
         candidate => { bought.push(candidate.listingId); return true; },
         () => config.enabled && config.fixedRulesEnabled,
-        () => [], () => [], () => [], () => null, () => null
+        () => [], () => [], () => [], () => null, () => null, () => false
     );
     fn();
     assert.deepEqual(requested, [106, 107]);
@@ -474,14 +475,15 @@ test('Automated Pokémon orders require master permission and remain serialized'
         'hasAnyBuyingRules','sanitizeFixedItemRules','activeAnyItemRules',
         'activePokemonRules','anyItemRuleTargets','automationDetail',
         'fixedRuleCandidate','anyItemRuleCandidate','pokemonRuleCandidate',
-        'purchaseQuantity','tryBuy',
+        'purchaseQuantity','tryBuy','snatchCriticalWindow',
         section('    function runMarketAutomation(', '    function runScan(force)') +
         '\nreturn runMarketAutomation;')(
         config,state,()=>false,()=>null,()=>false,()=>false,
         ()=>config.enabled && config.fixedRulesEnabled,
         ()=>[],()=>[],()=>config.pokemonBuyRules,()=>[],()=>{},
         ()=>null,()=>null,()=>candidate,()=>1,
-        item=>{submitted.push(item.listingId);state.pendingBuy=item;return true;}
+        item=>{submitted.push(item.listingId);state.pendingBuy=item;return true;},
+        ()=>false
     );
     runner();
     assert.deepEqual(submitted,[]);
@@ -671,7 +673,8 @@ test('Unverified orders quarantine only their exact listing, not every unrelated
     assert.doesNotMatch(body, /unverifiedOrdersExist\(\)/);
     assert.doesNotMatch(runner, /unverifiedOrdersExist\(\)/);
     assert.doesNotMatch(runner, /q\('#modal \.cm-folha'\)/);
-    assert.match(runner, /communityMarketIsOpen\(\)/);
+    assert.doesNotMatch(runner, /if \(communityMarketIsOpen\(\) \|\| state\.pendingBuy/);
+    assert.match(runner, /snatchCriticalWindow\(\)/);
     assert.match(script, /!unresolvedListing\(id\)/);
     assert.match(script, /unresolvedListing\(candidate\.listingId\)/);
 });
