@@ -3182,11 +3182,28 @@
         return Object.keys(result).length ? result : null;
     }
 
+    function xpBonusTimeScope(snapshot, now) {
+        const defined = [];
+        if (!snapshot || typeof snapshot !== 'object') return 'unknown';
+        for (const [name,value] of Object.entries(snapshot)) {
+            if (!value || typeof value !== 'object') continue;
+            const at = value.expiresAt ?? value.until;
+            // Only plausible Unix millisecond timestamps have interpretable
+            // expiration semantics. Unknown protocol units stay unverified.
+            if (typeof at === 'number' && at > 1400000000000 &&
+                at < 4100000000000) defined.push([
+                    name, now >= at ? 'expired' : 'active'
+                ]);
+        }
+        return JSON.stringify(defined.sort((a,b)=>a[0].localeCompare(b[0])));
+    }
+
     function xpBonusScope(snapshot) {
         if (!snapshot || typeof snapshot !== 'object') return 'unknown';
         // Fixed ordering means a delta with identical semantics won't reset data.
         return JSON.stringify(Object.keys(snapshot).sort()
-            .map(key => [key, snapshot[key]]));
+            .map(key => [key, snapshot[key]])) +
+            '|' + xpBonusTimeScope(snapshot, Date.now());
     }
 
     function observeXpTransition(record, channel, xp, base, at) {
@@ -6580,7 +6597,8 @@
                 leadSignature() ||
                     '',
                 state.combatRevision,
-                state.combatCatalogStatus
+                state.combatCatalogStatus,
+                farmingSnapshotScope()
             ].join('|');
 
         if (
@@ -7273,7 +7291,8 @@
                 leadSignature() ||
                     '',
                 state.combatRevision,
-                state.combatCatalogStatus
+                state.combatCatalogStatus,
+                farmingSnapshotScope()
             ].join('|');
 
         if (
