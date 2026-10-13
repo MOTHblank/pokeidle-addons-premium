@@ -361,7 +361,7 @@
                         setAutomationNotice(tr('Rule-based buying is on. No other purchase switches are required. Spending safeguards still apply.'), 'ok');
                     }
                 }
-                if (key === 'pokemonHistoryPages' || key === 'minPokemonSamples') ensurePokemonHistory(true);
+                if (key === 'pokemonHistoryPages') ensurePokemonHistory(true);
                 // Spending switches and numeric fields do not need a new market scan.
                 // Only changes to scanning conditions should request fresh data.
                 if (['scanItems', 'scanPokemon', 'scanDiamonds', 'scanSeconds', 'watchPercent'].includes(key)) {
