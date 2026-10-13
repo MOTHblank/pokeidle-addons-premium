@@ -420,6 +420,31 @@
             'xp.currentModeled': ' · current modeled {value} trainer XP/h',
             'xp.warmingSession': 'warming up: sustained observations still insufficient',
             'xp.sessionEvidence': '{samples} kills / {minutes} min, wall-clock',
+            'sort.capture': 'Captured/hour (Ultra/Beast)',
+            'sort.shinyCatch': 'Shiny caught/hour (conditional)',
+            'catch.title': 'Catch and shiny planner',
+            'catch.ball': 'Compare with',
+            'catch.ultra': 'Ultra Ball · ×4 (default)',
+            'catch.beast': 'Beast Ball · ×8 (Diamonds)',
+            'catch.lure': 'Simulate Shiny Secret Lure ×2 (hypothetical, not verified active)',
+            'catch.current': 'Current hunt: {hunt}',
+            'catch.unknown': '— (species rarity or kill rate unavailable)',
+            'catch.percent': '{chance}% per accepted throw',
+            'catch.expected': '{count} captures/h · {balls} accepted balls/capture on average',
+            'catch.seen': 'Shinies seen: {count}/h · shinies caught: {caught}/h',
+            'catch.oneDay': '≥1 shiny caught in 24h: {chance}% (if steady conditions)',
+            'catch.cost': 'Replacement: {coins} Coins per expected capture',
+            'catch.diamondCost': 'Beast requires Diamonds; no Coin cost assumed',
+            'catch.stock': 'Stock: {count} · coverage at observed throw rate: {hours}h',
+            'catch.observed': 'Observed: {throws} accepted throws, {caught} captures, {seen} shiny seen, {shiny} shiny caught; {fraction}% of killed corpses thrown at',
+            'catch.limit': 'Cross-hunt estimate is an upper bound IF every killed body gets one accepted throw. Current-hunt observed throws replace that assumption only after a usable sample. No free retries after failed throws.',
+            'catch.source': 'Wiki-conditional model, unverified server capture formula or active boosts · model coverage {coverage}% · {source}',
+            'catch.shiny': 'Shiny is rolled per eligible accepted throw (1/24,000 base; 1/12,000 with applicable Lure), NOT per kill. Caught shiny needs both rolls to succeed. No guarantee or saleable specimen implied.',
+            'catch.outland': 'Outland shiny capture eligibility unresolved; shiny estimates withheld.',
+            'catch.clamp': 'Beast ×8 does not always double Ultra ×4 after the 10% cap.',
+            'catch.mystic': 'Mystic Arena uses a separate ball table and consumes one ticket per attempt; never included in ordinary hunt odds.',
+            'catch.card': 'Ultra {ultra}% · Beast {beast}% (wiki-conditional)',
+            'catch.cardUnknown': 'Capture chance unavailable (rarity unresolved)',
             'sort.coins': 'Kill Coins/hour',
             'sort.netCoins': 'Net Coins/hour (measured)',
             'econ.title': 'Farming economy · {hunt}',
@@ -675,6 +700,31 @@
             'xp.currentModeled': ' · atual modelado {value} XP de treinador/h',
             'xp.warmingSession': 'aquecendo: ainda faltam medições sustentadas',
             'xp.sessionEvidence': '{samples} abates / {minutes} min, tempo corrido',
+            'sort.capture': 'Capturas/h (Ultra/Beast)',
+            'sort.shinyCatch': 'Shinies capturados/h (condicional)',
+            'catch.title': 'Planejador de capturas e shinies',
+            'catch.ball': 'Comparar usando',
+            'catch.ultra': 'Ultra Ball · ×4 (padrão)',
+            'catch.beast': 'Beast Ball · ×8 (Diamantes)',
+            'catch.lure': 'Simular Shiny Secret Lure ×2 (hipotético; não confirmado ativo)',
+            'catch.current': 'Hunt em análise: {hunt}',
+            'catch.unknown': '— (raridade da espécie ou abates/h indisponíveis)',
+            'catch.percent': '{chance}% por bola aceita',
+            'catch.expected': '{count} capturas/h · {balls} bolas aceitas/captura em média',
+            'catch.seen': 'Shinies vistos: {count}/h · shinies capturados: {caught}/h',
+            'catch.oneDay': '≥1 shiny capturado em 24h: {chance}% (com condições constantes)',
+            'catch.cost': 'Reposição: {coins} Moedas por captura esperada',
+            'catch.diamondCost': 'Beast usa Diamantes; sem inventar custo em Moedas',
+            'catch.stock': 'Estoque: {count} · duração no ritmo observado: {hours}h',
+            'catch.observed': 'Observado: {throws} bolas aceitas, {caught} capturas, {seen} shinies vistos, {shiny} shinies capturados; {fraction}% dos corpos derrotados receberam bola',
+            'catch.limit': 'Outras hunts: previsão é TETO condicional a arremessar uma bola aceita em todo corpo derrotado. Na hunt atual, o ritmo observado substitui essa hipótese apenas após amostra suficiente. Sem repetição grátis após falha.',
+            'catch.source': 'Modelo condicional da wiki, fórmula real/bônus ativos não verificados · cobertura {coverage}% · {source}',
+            'catch.shiny': 'O shiny é sorteado por arremesso aceito elegível (1/24.000 normal; 1/12.000 com Lure aplicável), NÃO por abate. Capturar shiny exige sucesso em ambos os sorteios. Sem garantia de drop ou Pokémon vendável.',
+            'catch.outland': 'Elegibilidade de shiny na Outland não verificada; projeção de shiny omitida.',
+            'catch.clamp': 'Beast ×8 nem sempre dobra a chance da Ultra ×4 após o teto de 10%.',
+            'catch.mystic': 'A Arena Mística usa tabela especial de bolas e consome um ticket por tentativa; não entra nas odds das hunts comuns.',
+            'catch.card': 'Ultra {ultra}% · Beast {beast}% (condicional da wiki)',
+            'catch.cardUnknown': 'Chance de captura indisponível (raridade não verificada)',
             'sort.coins': 'Moedas/h por abate',
             'sort.netCoins': 'Moedas líquidas/h (medido)',
             'econ.title': 'Economia da hunt · {hunt}',
@@ -1229,6 +1279,8 @@
                 'xp',
                 'coins',
                 'netCoins',
+                'capture',
+                'shinyCatch',
                 'name',
                 'pokedex',
                 'level',
@@ -8879,6 +8931,17 @@
                     const bKnown = typeof bv === 'number' && Number.isFinite(bv);
                     comparison = aKnown && bKnown ? (av - bv) * direction
                         : aKnown ? -1 : bKnown ? 1 : 0;
+                } else if (sort === 'capture' || sort === 'shinyCatch') {
+                    const id=state.filters.captureBall==='beast'?5:4;
+                    const key=sort==='capture'?'catchesH':'shinyCaughtH';
+                    const val=species=>{
+                        const estimate=huntXpEstimate(species.hunt);
+                        return capturePlanForHunt(species.hunt,id,estimate)?.[key];
+                    };
+                    const av=val(a),bv=val(b);
+                    const ak=typeof av==='number'&&Number.isFinite(av);
+                    const bk=typeof bv==='number'&&Number.isFinite(bv);
+                    comparison=ak&&bk?(av-bv)*direction:ak?-1:bk?1:0;
                 } else if (
                     sort === 'npc'
                 ) {
@@ -11038,6 +11101,8 @@
                             <option value="xp">${tr('sort.xp')}</option>
                             <option value="coins">${tr('sort.coins')}</option>
                             <option value="netCoins">${tr('sort.netCoins')}</option>
+                            <option value="capture">${tr('sort.capture')}</option>
+                            <option value="shinyCatch">${tr('sort.shinyCatch')}</option>
                             <option value="name">${tr('sort.name')}</option>
                             <option value="pokedex">${tr('sort.pokedex')}</option>
                             <option value="level">${tr('sort.level')}</option>
@@ -11835,6 +11900,17 @@
                     'xp.baseline'
                 );
 
+        const meta=speciesCombatMeta(species.id);
+        const rarity=captureRarityFromCatalog(meta);
+        const ultraPct=captureWikiChance(rarity,
+            captureInfoForBall(4)?.efficiency??4);
+        const beastPct=captureWikiChance(rarity,
+            captureInfoForBall(5)?.efficiency??8);
+        const catchCard=ultraPct!==null&&beastPct!==null ?
+            tr('catch.card',{ultra:(100*ultraPct).toFixed(2),
+                beast:(100*beastPct).toFixed(2)}):
+            tr('catch.cardUnknown');
+
         const worldLocation = locationForHunt(hunt);
         const sharedHunts = sharedWorldLocation(hunt);
         const sub =
@@ -11860,6 +11936,7 @@
                         : 'hunt.locked'
                 ),
                 xpLabel,
+                catchCard,
                 typeof economicInfo.killCoinsH === 'number'
                     ? tr('econ.kill') + ': ' + formatRate(economicInfo.killCoinsH)
                         + ' (' + (economicInfo.killSource === 'observed-server/event'
