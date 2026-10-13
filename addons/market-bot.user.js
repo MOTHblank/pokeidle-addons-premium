@@ -3448,10 +3448,13 @@
             isOwnListing(offer)) return;
         const key = snatchKey(kind,currency,id);
         const manual = state.snatchManual.get(key);
-        const rule = snatchMatchingRule(kind,currency,itemId,offer);
         const until = Number(offer.compravelEm);
         const held = Number.isFinite(until) && until > serverNow();
-        if (!manual && (!rule || !held && !state.snatchObserved.has(key))) return;
+        // Most listings are never targeted. Avoid per-offer rule matching
+        // and sanitization for unheld, unmarked, untracked rows.
+        if (!manual && !held && !state.snatchObserved.has(key)) return;
+        const rule = snatchMatchingRule(kind,currency,itemId,offer);
+        if (!manual && !rule && !state.snatchObserved.has(key)) return;
         if (!state.snatchObserved.has(key) && state.snatchObserved.size >= SNATCH_LIMIT) {
             const disposable = [...state.snatchObserved.keys()].find(k=>!state.snatchManual.has(k));
             if (!disposable) return;
@@ -3598,6 +3601,10 @@
                 continue;
             }
             if (now < entry.retryAt || Number(state.attemptedListings.get(c.listingId)||0)>now) continue;
+            if (Number(state.rateLimitedUntil||0)>now) {
+                entry.retryAt = Number(state.rateLimitedUntil);
+                continue;
+            }
             if (entry.attempts >= SNATCH_ATTEMPT_LIMIT) { snatchStop(key,'attempt limit'); continue; }
             if (entry.ruleId && !manual && (!rule || !currentRuleMatches(rule,c,c.price))) {
                 state.snatchObserved.delete(key); continue;
@@ -3641,6 +3648,9 @@
             }
             entry.retryAt = Date.now() + SNATCH_RETRY_MS;
             state.attemptedListings.set(listingId,entry.retryAt);
+            // First retry does not wait for a market scan. Later selective
+            // refreshes can establish that the listing disappeared.
+            snatchRefresh(entry,Date.now());
         }
         snatchSchedule();
     }
