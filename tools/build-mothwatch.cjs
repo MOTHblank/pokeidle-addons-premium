@@ -15,6 +15,7 @@ const parts=[
   ['ITEM_SCANNER','item-scanner-section.js'],
   ['POKEMON_SCANNER','pokemon-scanner-section.js'],
   ['AUTO_SCANNER','automation-scanner-section.js'],
+  ['SNATCH','snatch-section.js'],
   ['SOCKET','socket-section.js'],
   ['UI_STYLE','ui-style-section.js'],
   ['UI_BROWSER','ui-browser-section.js'],
