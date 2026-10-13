@@ -545,6 +545,8 @@ test('Milestone A: stale/missing/held/self/unverified quotes fail closed', () =>
     assert.equal(check({...valid,kind:'pokemon',ficha:{shiny:undefined,potencia:5}},false),false);
     unresolved=true;
     assert.equal(check(valid,true),false);
+    assert.equal(check(valid,true,true),true,
+        'armed Snatch may retry a freshly observed listing after an ambiguous acknowledgement');
 });
 
 test('Milestone A: session/day caps account for outstanding unknown orders across reload', () => {
@@ -944,7 +946,7 @@ test('Milestone C: optional session telemetry avoids duplicate NPC sales', () =>
 test('Milestone C: independent economy UI cannot start selling automation', () => {
     assert.match(script,/data-moth-view="economy"/);
     assert.match(script,/Read-only fees, market eligibility, and recorded purchase exposure/);
-    assert.match(script,/@version\s+0\.6\.10/);
+    assert.match(script,/@version\s+0\.6\.11/);
     assert.doesNotMatch(script,/market\.criar|autoSellRules|sendItemSale/);
 });
 
@@ -1024,7 +1026,7 @@ test('Milestone D: diagnostics source is synchronized with standalone userscript
     assert.equal(embedded,source,'module must exactly match generated userscript section');
     const tool=fs.readFileSync(path.join(__dirname,'..','build.cjs'),'utf8');
     assert.match(tool,/--check/);
-    assert.match(script,/@version\s+0\.6\.10/);
+    assert.match(script,/@version\s+0\.6\.11/);
     assert.doesNotMatch(script,/^\s*\/\/\s*@(?:downloadURL|updateURL)/m,
         'private repo must not advertise inaccessible raw auto-update endpoints');
 });
@@ -1155,7 +1157,7 @@ test('MothWatch v0.6.1: source sections match the single distributable userscrip
         const moduleSource = fs.readFileSync(path.join(__dirname, '..', 'src', name), 'utf8').trimEnd();
         assert.equal(script.slice(a + begin.length, b), moduleSource, 'generated parity: ' + id);
     }
-    assert.match(script, /@version\s+0\.6\.10/);
+    assert.match(script, /@version\s+0\.6\.11/);
     assert.doesNotMatch(script, /\bimport\s*\(|\brequire\s*\(/,
         'one Violentmonkey userscript must not require runtime module loading');
 });
@@ -1338,7 +1340,7 @@ test('Snatch: verified two-minute hold is prearmed; first buy needs no market sc
     assert.equal(h.purchaseCalls.length,1,'unknown result blocks duplicate');
 });
 
-test('Snatch: explicit refused order releases 400ms retry; success removes target', () => {
+test('Snatch: confirmed item purchase does not disarm a listing without new stock evidence', () => {
     const h=heldSnatchHarness();
     h.setServer(h.candidate.retainedUntil);
     h.api.snatchTick();
@@ -1352,9 +1354,11 @@ test('Snatch: explicit refused order releases 400ms retry; success removes targe
     h.state.attemptedListings.delete(789);
     h.api.snatchTick();
     assert.equal(h.purchaseCalls.length,2,'retry must not wait for market refresh');
-    h.api.snatchOutcome(789,'confirmed');
-    assert.equal(h.state.snatchObserved.has(h.key),false);
-    assert.equal(h.state.snatchManual.has(h.key),false);
+    h.api.snatchOutcome(789,'confirmed',{qty:1});
+    assert.equal(h.state.snatchObserved.has(h.key),true,
+        'a successful item order cannot prove the seller has no remaining stock');
+    assert.equal(h.state.snatchManual.has(h.key),true);
+    assert.equal(h.state.snatchObserved.get(h.key).awaitingRefresh,true);
 });
 
 test('Snatch: stale pre-release quotes fail closed and server backoff is observed', () => {
@@ -1386,8 +1390,8 @@ test('Snatch UX: held, pending, paused, unknown and disconnected are distinct', 
     h.state.pendingBuy=null;
     h.setUnknown(true);
     status=h.api.snatchDisplayStatus(target,observed);
-    assert.equal(status.tone,'warning');
-    assert.match(status.text,/unverified purchase/);
+    assert.notEqual(status.tone,'warning',
+        'a Snatch retry must not be represented as permanently blocked by an unknown outcome');
     h.setUnknown(false);
     h.config.purchasesPaused=true;
     assert.match(h.api.snatchDisplayStatus(target,observed).text,/paused/);
@@ -1455,7 +1459,8 @@ test('Snatch hardening: progressive acknowledged-refusal retries and protected r
     assert.doesNotMatch(source,/SNATCH_ATTEMPT_LIMIT/);
     assert.match(source,/releaseAt-now < 1200/);
     assert.match(source,/snatchRetryDelay\(entry\.attempts\)/);
-    assert.match(source,/rule target expired/);
+    assert.doesNotMatch(source,/rule target expired/,
+        'a rule target with stock must not expire 30 minutes after unlock');
 });
 
 
@@ -1544,8 +1549,9 @@ test('Snatch: repeated server refusals generate multiple post-release orders', (
     }
     h.api.snatchTick();
     assert.equal(h.purchaseCalls.length,5,'snatch remains armed after several losses');
-    h.api.snatchOutcome(789,'confirmed');
-    assert.equal(h.state.snatchObserved.has(h.key),false);
+    h.api.snatchOutcome(789,'confirmed',{qty:1});
+    assert.equal(h.state.snatchObserved.has(h.key),true,
+        'the target remains armed until refreshed evidence shows stock is exhausted');
 });
 
 // A released Snatch must not go to sleep for 10 seconds behind an unrelated
@@ -1597,9 +1603,9 @@ test('Snatch: retries repeatedly after release before any acknowledgement', () =
     h.api.snatchOutcome(789,'unknown');
     assert.equal(h.state.snatchObserved.has(h.key),true,
         'missing acknowledgement is not evidence that the listing sold');
-    h.api.snatchOutcome(789,'confirmed');
-    assert.equal(h.state.snatchObserved.has(h.key),false,
-        'a server-confirmed purchase immediately disarms the Snatch');
+    h.api.snatchOutcome(789,'confirmed',{qty:1});
+    assert.equal(h.state.snatchObserved.has(h.key),true,
+        'a server-confirmed purchase does not mean all item stock is gone');
 });
 
 test('Snatch: multiple pending orders respect bounded same-listing burst', () => {
@@ -1712,4 +1718,81 @@ test('Snatch timer respects blocked-listing deadlines rather than busy-spinning'
     now+=400;server+=400;
     schedule();
     assert.equal(timers.at(-1),35,'the eligible listing can now be retried promptly');
+});
+
+
+test('Snatch: bulk request buys all quoted available units then keeps checking remaining stock', () => {
+    const h=heldSnatchHarness();
+    h.candidate.qty=200;
+    h.setServer(h.candidate.retainedUntil);
+    h.api.snatchTick();
+    assert.equal(h.purchaseCalls[0].qty,200,
+        'Snatch should ask for the full 200-unit listing, not a single unit');
+    h.api.snatchOutcome(789,'confirmed',{qty:75});
+    const entry=h.state.snatchObserved.get(h.key);
+    assert.equal(entry.confirmedUnits,75);
+    assert.equal(entry.awaitingRefresh,false);
+    entry.retryAt=0;h.state.attemptedListings.delete(789);
+    h.api.snatchTick();
+    assert.equal(h.purchaseCalls.at(-1).qty,125,
+        'a partial confirmed purchase keeps trying to acquire remaining units');
+    h.api.snatchOutcome(789,'confirmed',{qty:125});
+    assert.equal(entry.awaitingRefresh,true,
+        'quoted stock exhaustion triggers a refresh rather than deleting Snatch');
+    assert.equal(h.state.snatchManual.has(h.key),true);
+});
+
+test('Snatch: missing truncated market rows must not cancel an armed listing', () => {
+    const h=heldSnatchHarness();
+    const testMissing=new Function('state',
+        section('    function snatchConfirmItemListingSet(', '    function snatchEnhanceNativeMarket(') +
+        '\nreturn snatchConfirmItemListingSet;')(h.state);
+    for(let i=0;i<5;i++)testMissing(106,'gold',[{id:999,preco:1,qtd:1}]);
+    assert.equal(h.state.snatchObserved.has(h.key),true,
+        'absence from a small sampled listing page is not proof the server sold this listing');
+    assert.equal(h.state.snatchObserved.get(h.key).missing,5);
+});
+
+test('Direct inventory Buy sends a full-quantity market order without opportunity qualification', () => {
+    const segment=section("            const direct = target.closest('[data-moth-offer-buy]');",
+        "            const buy = target.closest('[data-moth-buy]');");
+    const now=Date.now(), captured=[],logs=[],requests=[];
+    const offer={id:789,itemId:106,preco:19739,qtd:200,vendedor:'ALZTH'};
+    const detail={offers:[offer],updatedAt:now};
+    const state={itemOfferDetails:new Map([['106:gold',detail]]),
+        lastDetailRequest:new Map()};
+    const target={closest:selector=>selector==='[data-moth-offer-buy]'?{
+        dataset:{mothOfferBuy:'789',mothOfferItem:'106',mothOfferCurrency:'gold'}
+    }:null};
+    const click=new Function('target','state','Date','QUOTE_MAX_AGE_MS',
+        'isOwnListing','retentionUntil','serverNow','queueItemDetail',
+        'addLog','catalogName','tryBuy','queueRender',
+        segment+'\nreturn null;');
+    const env=[target,state,Date,30000,()=>false,()=>0,()=>now,
+        (...args)=>requests.push(args),msg=>logs.push(msg),
+        ()=> 'Cocoon Stone',(candidate,manual)=>{captured.push({candidate,manual});return true;},
+        ()=>{}];
+    click(...env);
+    assert.equal(captured.length,1);
+    assert.equal(captured[0].manual,true);
+    assert.equal(captured[0].candidate.qty,200);
+    assert.equal(captured[0].candidate.price,19739);
+    assert.equal(captured[0].candidate.listingId,789);
+    assert.equal(requests.length,0);
+    const inventory=section('    function renderItemInventory(', '    function pokemonRulePreview(');
+    assert.match(inventory,/data-moth-offer-buy/);
+    assert.doesNotMatch(inventory,/candidate && !own/,
+        'an available inventory listing must not require an opportunity candidate to show Buy');
+    detail.updatedAt=now-31000;
+    click(...env);
+    assert.equal(captured.length,1,'a stale quote must refresh before sending');
+    assert.deepEqual(requests.at(-1),[106,'gold']);
+});
+
+test('Opportunities show Snatch only while held, never instead of ordinary Buy', () => {
+    const src=section('    function renderCandidate(', '    function updateCandidateRows(');
+    assert.match(src,/&& retainedSeconds\s*\n\s*\? snatchButton/);
+    assert.match(src,/data-moth-buy/);
+    assert.doesNotMatch(src,/const canBuy = !state\.pendingBuy &&/,
+        'unrelated pending buys should not disable an available opportunity');
 });
