@@ -415,6 +415,10 @@
         "Maximum Gems per purchase": "Máximo de gemas por compra",
         "0 = no extra cap": "0 = sem limite adicional",
         "Valuation sample settings (not buying limits)": "Amostragem de preços (não limita compras)",
+        "Minimum sold item units used to label confidence in read-only price suggestions. Does not restrict buying rules.": "Unidades vendidas usadas para classificar a confiança das sugestões de preço. Não limita nenhuma regra de compra.",
+        "Minimum comparable completed Pokémon sales for read-only price estimates. Does not restrict buying rules.": "Vendas comparáveis usadas nas estimativas de preço de Pokémon. Não limita nenhuma regra de compra.",
+        "Optional spending limits": "Limites de gastos opcionais",
+        "Your explicit price rules decide which listings to buy. A cumulative limit of 0 adds no cap.": "Suas regras de preço determinam quais anúncios comprar. Limites acumulados em 0 não acrescentam restrições.",
         "Sold item units for estimate confidence": "Unidades vendidas para estimar confiança",
         "Comparable Pokémon sales for price estimates": "Vendas comparáveis para estimar preço",
         "Pokémon history pages": "Páginas do histórico de Pokémon",
@@ -5910,9 +5914,9 @@
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Automation status')) + '</h4><span>' +
                     escapeHtml(tr('Review the systems that can place market orders, then set spending safeguards and advanced monitoring.')) + '</span></div>' +
                     automationNoticeHtml() + automationStatusPanelHtml() +
-                    '<section class="moth-mw-settings-card moth-mw-budget-card"><h4>' + escapeHtml(tr('Spending safeguards')) + '</h4>' +
-                    '<p class="moth-mw-budget-warning">' +
-                    escapeHtml(tr('Automatic buying may use your entire available balance when reserves and spending limits are set to zero.')) +
+                    '<section class="moth-mw-settings-card moth-mw-budget-card"><h4>' + escapeHtml(tr('Optional spending limits')) + '</h4>' +
+                    '<p class="moth-mw-rule-hint">' +
+                    escapeHtml(tr('Your explicit price rules decide which listings to buy. A cumulative limit of 0 adds no cap.')) +
                     '</p><div class="moth-mw-config">' +
                     configField('Keep Coins in reserve', 'goldReserve', 'number', '') +
                     configField('Keep Gems in reserve', 'gemReserve', 'number', '') +
