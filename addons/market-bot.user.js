@@ -5262,6 +5262,9 @@
                 }
                 const rule = {id: newAutomationRuleId(type), currency, buyMax, buyEnabled: true};
                 if (pokemon) rule.kind = kind;
+                if (config.fixedRulesEnabled && !confirmUnboundedRule(rule)) {
+                    setAutomationNotice(tr('Activation cancelled; no settings changed.'), 'warn'); return;
+                }
                 rules.push(rule);
                 config[key] = rules; saveConfig();
                 setAutomationNotice(tr(config.fixedRulesEnabled ? 'Rule added: {name}.' :
@@ -5392,7 +5395,14 @@
                         renderWatch(true); return;
                     }
                     rule.buyMax = max;
-                } else if (field === 'buyEnabled') rule.buyEnabled = target.checked;
+                } else if (field === 'buyEnabled') {
+                    if (target.checked && !rule.buyEnabled &&
+                        config.fixedRulesEnabled && !confirmUnboundedRule({...rule, buyEnabled: true})) {
+                        setAutomationNotice(tr('Activation cancelled; no settings changed.'), 'warn');
+                        renderWatch(true); return;
+                    }
+                    rule.buyEnabled = target.checked;
+                }
                 else if (field === 'currency') {
                     const currency = target.value === 'orb' ? 'orb' : 'gold';
                     if (type === 'pokemon' && rule.kind === 'shiny' && currency !== 'orb') {
@@ -5441,7 +5451,14 @@
             if (target.matches('[data-moth-cfg]')) {
                 const key = target.dataset.mothCfg;
                 if (!(key in DEFAULTS)) return;
-                config[key] = target.type === 'checkbox' ? target.checked : normalizedConfigValue(key, target.value);
+                const nextValue = target.type === 'checkbox' ? target.checked :
+                    normalizedConfigValue(key, target.value);
+                if (key === 'fixedRulesEnabled' && nextValue && !config.fixedRulesEnabled &&
+                    !confirmUnboundedMaster()) {
+                    setAutomationNotice(tr('Activation cancelled; no settings changed.'), 'warn');
+                    renderWatch(true); return;
+                }
+                config[key] = nextValue;
                 if (target.matches('input[type="range"]')) {
                     const output = q('[data-moth-cfg-value="' + key + '"]', panel);
                     if (output) output.textContent = config[key] + '%';
