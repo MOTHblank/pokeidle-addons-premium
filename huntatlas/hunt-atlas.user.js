@@ -12356,8 +12356,8 @@
         const rate=value=>typeof value==='number'&&Number.isFinite(value)
             ?formatRate(value):tr('catch.unknown');
         const captureLine=(label,value)=>'<div class="mha-xp-note">'+
-            '<strong>'+escapeHtml(label)+'</strong> · '+
-            escapeHtml(value)+'</div>';
+            '<strong>'+escapeHtml(label)+'</strong>'+
+            (value?' · '+escapeHtml(value):'')+'</div>';
         const observedCapture=chosen?.observed;
         const capEvidence=chosen?
             tr('catch.source',{coverage:chosen.coverage}):tr('catch.unknown');
@@ -12396,8 +12396,7 @@
             })):'',
             chosen && chosen.ball.id===4 && chosen.coinsPerCapture!==null ?
                 captureLine(tr('catch.cost',{
-                    coins:formatRate(chosen.coinsPerCapture)}),
-                    chosen.ball.priceSource):'',
+                    coins:formatRate(chosen.coinsPerCapture)})):'',
             chosen && chosen.ball.id===5 ?
                 captureLine(tr('catch.diamondCost'),
                     chosen.diamondsPerCapture!==null?
@@ -12406,8 +12405,7 @@
             chosen && chosen.ball.stock!==null ?
                 captureLine(tr('catch.stock',{count:chosen.ball.stock,
                     hours:chosen.stockHours===null?'—':
-                        rate(chosen.stockHours)}),
-                    chosen.observed?'observed usage':'usage unknown'):'',
+                        rate(chosen.stockHours)})):'',
             observedCapture?.byBall?.[activeCaptureId] ?
                 captureLine(tr('catch.observedBall',{
                     throws:observedCapture.byBall[activeCaptureId],
