@@ -1,18 +1,18 @@
 # PokéIdle Addons Premium
 
-Moth Watch **v0.5.0** lives in this repository. The standard `pokeidle-addons` controller does not install or update it automatically.
+Moth Watch **v0.6.0** lives in this repository. The standard `pokeidle-addons` controller does not install or update it automatically.
 
 ## Development roadmap
 
-See [**Moth Watch roadmap**](docs/MOTHWATCH_ROADMAP.md) for the prioritized, 20-task implementation queue: purchase safety and protocol validation first, Pokémon pricing second, economy analysis third, and UI/distribution improvements throughout. The roadmap explicitly separates implemented v0.5.0 behavior from proposed work and unverified live-server assumptions.
+See [**Moth Watch roadmap**](docs/MOTHWATCH_ROADMAP.md) for the prioritized, 20-task implementation queue: purchase safety and protocol validation first, Pokémon pricing second, economy analysis third, and UI/distribution improvements throughout. The roadmap explicitly separates implemented v0.6.0 behavior from proposed work and unverified live-server assumptions.
 
 ## Moth Watch installation
 
-Install [Violentmonkey](https://addons.mozilla.org/firefox/addon/violentmonkey/) in the desired Firefox profile. While signed in with access to this **private** repository, open [Moth Watch source](addons/market-bot.user.js), copy the script into Violentmonkey, and save. Do not keep an old Moth Watch copy enabled alongside it. The script contains premium `@updateURL` and `@downloadURL` metadata, but private GitHub raw endpoints might not be accessible to a userscript manager; manual updates may be necessary.
+Install [Violentmonkey](https://addons.mozilla.org/firefox/addon/violentmonkey/) in the desired Firefox profile. While signed in with access to this **private** repository, open [Moth Watch source](addons/market-bot.user.js), copy the script into Violentmonkey, and save. Do not keep an old Moth Watch copy enabled alongside it. The private userscript intentionally **does not** advertise `@updateURL` or `@downloadURL`: unauthenticated raw GitHub links cannot reliably update private scripts. Edit your existing Violentmonkey script manually, replacing its code with the new release. Authorized users may also run **Actions → Private MothWatch userscript package → Run workflow** and download its private artifact; that remains a manual upgrade, not an authenticated auto-updater. See [private installation and upgrade instructions](docs/MOTHWATCH_MILESTONE_D_RELEASE.md).
 
 The script preserves its existing local settings keys. **Automated buying stays disabled for new profiles**. Each purchase rule can be individually toggled, but no rule will place an order until the master **Enable rule-based buying** switch is turned on.
 
-## Rule-based purchases (v0.3.1)
+## Rule-based purchases (introduced in v0.3.1, hardened in v0.6.0)
 
 Three groups are available in **Moth Watch → Automation**:
 
@@ -37,6 +37,16 @@ The read-only calculator reproduces the shared marginal Pokémon Gem commission 
 An optional versioned `MOTH_ECONOMY_TELEMETRY_V1` session snapshot can report observed hunt Coins, NPC auto-sales, item-replacement costs, rare drops and modeled rare-drop units/h **without another polling loop**; without such a producer the farm profit remains unknown. Its inclusion flag prevents counting NPC auto-sales twice. All expected drops remain modeled and separate from realized funds.
 
 See [Milestone C economy contract](docs/MOTHWATCH_MILESTONE_C_ECONOMY.md) for source requirements, formulas, privacy and remaining live-field limitations.
+
+## Operator safety, diagnostics and release process (v0.6.0)
+
+Newly activating an **uncapped Any item / Any Pokémon / Shiny / P5** rule, or enabling the master switch for such configured rules, prompts for confirmation; declining does not change the existing settings. The automation tab explains per-unit versus per-Pokémon price caps, currency, scan coverage and cumulative spending limitations. Existing stored permissions remain unchanged on upgrade.
+
+In **Activity & references**, an explicit **Start diagnostics** toggle collects only a bounded, redacted sample of protocol field names, family/counts and timing in memory. Nothing is uploaded or stored as a raw market packet; use **Copy sanitized report** after reproducing an issue. The report is not an authoritative record of transaction settlement.
+
+The single distributable file is now compiled from testable source sections under `src/mothwatch/` with `node tools/build-mothwatch.cjs`; CI verifies module parity and syntax. The owner can run a manual private GitHub Actions package workflow to obtain the single script without public distribution.
+
+See [Milestone D operator/release guide](docs/MOTHWATCH_MILESTONE_D_RELEASE.md). Automated selling remains absent, and live-browser, private-update and 24-hour resource verification remain user-led.
 
 ## Pokémon valuation
 
