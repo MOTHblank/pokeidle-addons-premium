@@ -946,7 +946,7 @@ test('Milestone C: optional session telemetry avoids duplicate NPC sales', () =>
 test('Milestone C: independent economy UI cannot start selling automation', () => {
     assert.match(script,/data-moth-view="economy"/);
     assert.match(script,/Read-only fees, market eligibility, and recorded purchase exposure/);
-    assert.match(script,/@version\s+0\.6\.11/);
+    assert.match(script,/@version\s+0\.6\.12/);
     assert.doesNotMatch(script,/market\.criar|autoSellRules|sendItemSale/);
 });
 
@@ -1026,7 +1026,7 @@ test('Milestone D: diagnostics source is synchronized with standalone userscript
     assert.equal(embedded,source,'module must exactly match generated userscript section');
     const tool=fs.readFileSync(path.join(__dirname,'..','build.cjs'),'utf8');
     assert.match(tool,/--check/);
-    assert.match(script,/@version\s+0\.6\.11/);
+    assert.match(script,/@version\s+0\.6\.12/);
     assert.doesNotMatch(script,/^\s*\/\/\s*@(?:downloadURL|updateURL)/m,
         'private repo must not advertise inaccessible raw auto-update endpoints');
 });
@@ -1157,7 +1157,7 @@ test('MothWatch v0.6.1: source sections match the single distributable userscrip
         const moduleSource = fs.readFileSync(path.join(__dirname, '..', 'src', name), 'utf8').trimEnd();
         assert.equal(script.slice(a + begin.length, b), moduleSource, 'generated parity: ' + id);
     }
-    assert.match(script, /@version\s+0\.6\.11/);
+    assert.match(script, /@version\s+0\.6\.12/);
     assert.doesNotMatch(script, /\bimport\s*\(|\brequire\s*\(/,
         'one Violentmonkey userscript must not require runtime module loading');
 });
@@ -1808,4 +1808,101 @@ test('Snatch: manually armed listings do not expire at a fixed half-hour deadlin
     assert.equal(h.state.snatchManual.has(h.key),true);
     const source=fs.readFileSync(path.join(__dirname,'..','src','snatch-section.js'),'utf8');
     assert.doesNotMatch(source,/snatchStop\(key,\s*'expired'\)/);
+});
+
+
+test('marketComprado: exact listing IDs resolve even with simultaneous purchases', () => {
+    const src=section('    function resolvePurchaseAcknowledgement(', '    function currentRuleMatches(');
+    const seen=[];
+    const state={
+        pendingBuys:new Map([
+            [301,[{listingId:301,order:{status:'submitted'}}]],
+            [302,[{listingId:302,order:{status:'submitted'}}]]
+        ]),
+        orderJournal:{orders:[]}
+    };
+    const ack=new Function('state','resolveOrder',src+
+        '\nreturn resolvePurchaseAcknowledgement;')(state,(id,status,receipt)=>{
+        seen.push({id,status,receipt});return id===302;
+    });
+    const exact={k:'marketComprado',anuncio:{id:302},descricao:'Item purchased'};
+    assert.equal(ack(exact),true);
+    assert.deepEqual(seen,[{id:302,status:'confirmed',receipt:exact}]);
+    seen.length=0;
+    assert.equal(ack({k:'marketComprado',listingId:999}),false,
+        'an explicit foreign listing ID must never be redirected to a pending order');
+    assert.deepEqual(seen.map(v=>v.id),[999]);
+    seen.length=0;
+    assert.equal(ack({k:'marketComprado',listingId:0}),false,
+        'an invalid explicit identity is not permission for an ID-less fallback');
+    assert.equal(seen.length,0);
+    assert.equal(ack({k:'marketCompradoLote'}),false,
+        'bulk-purchase acknowledgements are a separate untouched protocol');
+});
+
+test('marketComprado: native ID-less acknowledgement resolves a single pending listing', () => {
+    const src=section('    function resolvePurchaseAcknowledgement(', '    function currentRuleMatches(');
+    const captured=[];
+    const state={
+        pendingBuys:new Map([[789,[{listingId:789,order:{status:'submitted'}}]]]),
+        orderJournal:{orders:[]}
+    };
+    const ack=new Function('state','resolveOrder',src+
+        '\nreturn resolvePurchaseAcknowledgement;')(state,(id,status,receipt)=>{
+        captured.push({id,status,receipt});return true;
+    });
+    const idless=protocolFixtures.acknowledgement.missingListingId.ev[0];
+    assert.equal(ack(idless),true,
+        'the upstream game does not require a listing ID on marketComprado');
+    assert.deepEqual(captured,[{id:789,status:'confirmed',receipt:idless}]);
+    captured.length=0;
+    state.pendingBuys.set(789,[
+        {listingId:789,order:{status:'submitted'}},
+        {listingId:789,order:{status:'submitted'}},
+        {listingId:789,order:{status:'submitted'}}
+    ]);
+    assert.equal(ack(idless),true,
+        'several Snatch sends for the same listing still identify one unique listing');
+    assert.equal(captured.length,1);
+    state.pendingBuys.set(790,[{listingId:790,order:{status:'submitted'}}]);
+    captured.length=0;
+    assert.equal(ack(idless),false,
+        'ID-less event must never randomly confirm one of two unrelated listings');
+    assert.equal(captured.length,0);
+    state.pendingBuys.delete(790);
+    state.orderJournal.orders=[{listingId:777,status:'unknown',sentAt:Date.now()-3500}];
+    assert.equal(ack(idless),false,
+        'a recently timed-out attempt could also be the source of the acknowledgement');
+    assert.equal(captured.length,0);
+});
+
+test('marketComprado: a uniquely attributable late ID-less acknowledgement clears unknown', () => {
+    const src=section('    function resolvePurchaseAcknowledgement(', '    function currentRuleMatches(');
+    const now=Date.now(),settled=[];
+    const state={pendingBuys:new Map(),orderJournal:{
+        orders:[{listingId:111,status:'unknown',sentAt:now-6500}]
+    }};
+    const ack=new Function('state','resolveOrder',src+
+        '\nreturn resolvePurchaseAcknowledgement;')(state,(id,status)=>{
+        settled.push({id,status});return true;
+    });
+    assert.equal(ack({k:'marketComprado',descricao:'Purchased'}),true);
+    assert.deepEqual(settled,[{id:111,status:'confirmed'}]);
+    settled.length=0;
+    state.orderJournal.orders.push({listingId:222,status:'confirmed',sentAt:now-3000});
+    assert.equal(ack({k:'marketComprado'}),false,
+        'recent second purchase means an ID-less result cannot be attributed');
+    state.orderJournal.orders[1].sentAt=now-40000;
+    state.orderJournal.orders[0].sentAt=now-40000;
+    assert.equal(ack({k:'marketComprado'}),false,
+        'very late unlabelled acknowledgements should not be guessed');
+    assert.equal(settled.length,0);
+});
+
+test('marketComprado: websocket routes exactly the ordinary buy event through acknowledgement matcher', () => {
+    const code=section('    function handleProtocolObject(', '    function handleProtocolData(');
+    assert.match(code,/event\?\.k === 'marketComprado'[\s\S]*?resolvePurchaseAcknowledgement\(event\)/);
+    assert.doesNotMatch(code,/event\?\.k === 'marketCompradoLote'/);
+    assert.match(code,/listingId > 0 && resolveOrder\(listingId, 'refused'\)/,
+        'unrelated ID-less errors must not refuse an arbitrary purchase');
 });
