@@ -2590,6 +2590,8 @@
     function farmingChanceAtLeastOne(probability, rolls) {
         const p = Number(probability), n = Number(rolls);
         if (!(p >= 0 && p <= 1) || !(n >= 0 && Number.isFinite(n))) return null;
+        if (n === 0 || p === 0) return 0;
+        if (p === 1) return 1;
         return -Math.expm1(n * Math.log1p(-p));
     }
 
@@ -2687,6 +2689,23 @@
         return {kind, fields, recognized: Boolean(normalized),
             missingSlot: Boolean(normalized && !normalized.slot),
             source: 'observed-server/event', schema: 1};
+    }
+
+    function recordFarmingEvidence(ledger, event) {
+        if (!ledger) return;
+        const detail = farmingEventEvidence(event);
+        const kind = detail.kind;
+        if (!['morte', 'bola', 'capturado', 'cura', 'revive',
+            'bossMorto', 'compra'].includes(kind)) return;
+        let row = ledger.fieldPresence.get(kind);
+        if (!row) {
+            row = {seen: 0, malformed: 0, noSlot: 0, keys: {}};
+            ledger.fieldPresence.set(kind, row);
+        }
+        row.seen++;
+        if (!detail.recognized) row.malformed++;
+        if (detail.missingSlot) row.noSlot++;
+        for (const key of detail.fields) row.keys[key] = (row.keys[key] || 0) + 1;
     }
 
     function makeFarmingLedger() {
@@ -2964,6 +2983,7 @@
             const event of
             events
         ) {
+            recordFarmingEvidence(state.farmingLedger, event);
             if (
                 event?.k ===
                     'spawn'
@@ -6700,7 +6720,7 @@
                     true,
                 source:
                     'measured',
-                confidence: 'high',
+                confidence: observed.confidence,
                 samples: observed.samples,
                 windowMs: observed.windowMs,
                 denominator: observed.denominator
