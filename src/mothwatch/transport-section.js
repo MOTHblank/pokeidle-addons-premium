@@ -20,7 +20,8 @@
     }
 
     function sendBackground(payload) {
-        if (backgroundDelayMs() > 0) return false;
+        // Reserve the shared WebSocket during the contested unlock window.
+        if (snatchCriticalWindow() || backgroundDelayMs() > 0) return false;
         const sent = send(payload);
         if (sent) diagnosticOutbound(payload);
         return sent;
