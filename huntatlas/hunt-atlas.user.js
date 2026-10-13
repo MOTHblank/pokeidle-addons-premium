@@ -13594,7 +13594,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.14 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.15 experimental loaded'
         );
     }
 
