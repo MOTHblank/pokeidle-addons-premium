@@ -111,6 +111,7 @@
         anyItemScanCursor: 0,
         anyItemTargetsCache: null,
         pokemonAutoOffers: new Map(),
+        pokemonEvidenceMemo: null,
         liveDiamondAverages: null,
         diamondStatus: 'waiting',
         diamondPendingCurrency: null,
@@ -426,6 +427,17 @@
         "Asking/reference ratio: {percent}%": "Preço pedido/referência: {percent}%",
         "Asking/reference ratio unavailable": "Relação preço/referência indisponível",
         "Price unverified": "Preço não verificado",
+        "History fetched: {date}": "Histórico consultado: {date}",
+        "legendary": "lendário",
+        "mythical": "mítico",
+        "mega": "mega",
+        "tmElemental": "TM elemental",
+        "tmAoe": "TM em área",
+        "held": "item equipado",
+        "sale dates missing or stale": "datas de venda ausentes ou antigas",
+        "collectible extras unverified": "características especiais não verificadas",
+        "wide price dispersion": "alta dispersão de preços",
+        "broad species comparison": "comparação geral da espécie",
         "No verified completed-sale reference": "Sem referência de venda concluída verificada",
         "Rule preview (not permission): {preview}": "Prévia das regras (não é autorização): {preview}",
         "No matching configured Pokémon rule": "Nenhuma regra de Pokémon correspondente",
@@ -3899,7 +3911,7 @@
         const price = Number(listing?.preco);
         const iv = facts.ivs;
         const flags = Object.entries(facts.traits).filter(([, flag]) => flag === true)
-            .map(([name]) => name);
+            .map(([name]) => tr(name));
         const unverifiedExtras = Object.values(facts.traits).some(value => value === null);
         const dateLabel = ref?.ageDays == null ? tr('Sale dates unverified')
             : tr('Newest comparable sale: {days} days ago', { days: ref.ageDays });
@@ -3949,7 +3961,10 @@
             '<p>' + escapeHtml(tr('Collectibles: {flags}', {
                 flags: flags.length ? flags.join(', ') : tr('No confirmed flags')
             })) + (unverifiedExtras ? ' · ' + escapeHtml(tr('Other collectible flags unverified')) : '') + '</p>' +
-            '<p><b>' + escapeHtml(sourceLabel) + '</b> · ' + escapeHtml(dateLabel) + '</p>' +
+            '<p><b>' + escapeHtml(sourceLabel) + '</b> · ' + escapeHtml(dateLabel) +
+            (ref?.collectedAt ? ' · ' + escapeHtml(tr('History fetched: {date}', {
+                date: new Date(ref.collectedAt).toLocaleString(currentLocale())
+            })) : '') + '</p>' +
             '<p>' + escapeHtml(priceLabel) + ' · ' + escapeHtml(percent) + '</p>' +
             '<p>' + escapeHtml(tr('Comparison: {stage}', {
                 stage: ref?.comparison ? tr(ref.comparison) : tr('None')
@@ -3961,6 +3976,16 @@
     }
 
     function renderPokemonPriceEvidence() {
+        const signature = JSON.stringify({
+            language: currentLocale(),
+            history: state.pokemonReference?.capturedAt,
+            pages: ['gold','orb'].map(c => state.pokemonAutoOffers.get(c)?.updatedAt || 0),
+            rules: config.pokemonBuyRules, enabled: config.enabled,
+            fixed: config.fixedRulesEnabled, paused: config.purchasesPaused,
+            pending: !!state.pendingBuy, unknown: unverifiedOrdersExist()
+        });
+        if (state.pokemonEvidenceMemo?.signature === signature &&
+            Date.now() - state.pokemonEvidenceMemo.at < 2000) return state.pokemonEvidenceMemo.html;
         const offers = [];
         for (const currency of ['gold', 'orb']) {
             const record = state.pokemonAutoOffers.get(currency);
@@ -3976,6 +4001,8 @@
             escapeHtml(tr('This is a bounded market sample, not every listing. Completed-sale evidence cannot authorize a purchase.')) +
             '</p>' + offers.slice(0, 60).map(({currency, offer, updatedAt}) =>
             pokemonEvidenceCard(offer, currency, updatedAt)).join('');
+        state.pokemonEvidenceMemo = { signature, at: Date.now(), html };
+        return html;
     }
 
     function renderCandidate(candidate) {
