@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.6.7
+// @version      0.6.8
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -14,7 +14,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.7');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.8');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -38,7 +38,7 @@
     const ECONOMY_TELEMETRY_FRESH_MS = 10 * 60000;
     const POKEMON_SALE_WINDOW_MS = 90 * 86400000;
     const POKEMON_HISTORY_FRESH_MS = 30 * 86400000;
-    const BACKGROUND_MIN_GAP_MS = 3000;
+    const BACKGROUND_MIN_GAP_MS = 2000;
     const BACKGROUND_SCAN_WITH_RULES_MS = 15000;
     const RULE_DETAIL_REFRESH_MS = 30000;
     const RATE_LIMIT_BACKOFF_MS = 15000;
@@ -3125,6 +3125,15 @@
             }
         }
         queueRender();
+        if (status !== 'unknown' && hasAnyBuyingRules() && !config.purchasesPaused) {
+            // Do not wait for the next one-second scanner tick after a server
+            // acknowledgement. Give any just-unlocked Snatch the first chance,
+            // then immediately buy the next distinct eligible listing.
+            setTimeout(() => {
+                if (state.snatchObserved?.size) snatchTick();
+                if (!state.pendingBuy) runMarketAutomation(true);
+            }, 0);
+        }
     }
 
     function requestItemSummary(forceForAutomation = false) {
@@ -3346,7 +3355,7 @@
         return best;
     }
 
-    function runMarketAutomation() {
+    function runMarketAutomation(justSettled = false) {
         if (!hasAnyBuyingRules() || gameIsLoading()) {
             state.ruleItemKeys.clear();
             return;
@@ -3358,7 +3367,7 @@
         // Only background requests that could repaint it are restricted.
         if (state.pendingBuy || config.purchasesPaused) return;
         const now = Date.now();
-        if (now - Number(state.automationLastRunAt || 0) < 1000) return;
+        if (!justSettled && now - Number(state.automationLastRunAt || 0) < 250) return;
         state.automationLastRunAt = now;
         const fixed = sanitizeFixedItemRules(config.fixedItemRules)
             .filter(rule => rule.buyEnabled && rule.buyMax > 0);
@@ -3380,9 +3389,8 @@
                 automationDetail(target.itemId, target.currency);
             }
         }
-        // Reserve the single purchase slot for an armed release; do not send
-        // a routine buy that could still be pending when a snatch unlocks.
-        if (snatchCriticalWindow()) return;
+        // Ordinary buying is not paused by Snatch's short background-traffic
+        // quiet window. A due Snatch gets priority after each acknowledged buy.
         // Serialized purchases share balances, reserves, caps and cooldowns.
         for (const rule of fixed) {
             const candidate = fixedRuleCandidate(rule);
@@ -3685,9 +3693,13 @@
                 !state.pokemonScan?.waiting) startPokemonScan();
         }
         if (!state.orderJournal?.accountKey || !config.enabled || config.purchasesPaused ||
-            !state.gameSocket || state.gameSocket.readyState !== 1 ||
-            state.pendingBuy || gameIsLoading()) {
+            !state.gameSocket || state.gameSocket.readyState !== 1 || gameIsLoading()) {
             snatchSchedule(10000); return;
+        }
+        if (state.pendingBuy) {
+            // An unrelated purchase may settle around this target's unlock.
+            // Wake promptly when its outcome becomes known; never sleep 10s.
+            snatchSchedule(250); return;
         }
         const server = serverNow();
         const entries = [...state.snatchObserved.entries()].sort((a,b)=>
@@ -3751,8 +3763,8 @@
             if ((state.snatchManual.has(snatchKey(entry.candidate.kind,
                     entry.candidate.currency,entry.candidate.listingId)) ||
                 activeRuleById(entry.ruleId)) &&
-                entry.releaseAt > 0 && entry.releaseAt-now < 5500 &&
-                entry.releaseAt-now > -10000 &&
+                entry.releaseAt > 0 && entry.releaseAt-now < 1200 &&
+                entry.releaseAt-now > -1500 &&
                 (!state.pendingBuy || state.pendingBuy.listingId === entry.candidate.listingId)) return true;
         }
         return false;

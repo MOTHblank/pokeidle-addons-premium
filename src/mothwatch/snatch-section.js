@@ -231,9 +231,13 @@
                 !state.pokemonScan?.waiting) startPokemonScan();
         }
         if (!state.orderJournal?.accountKey || !config.enabled || config.purchasesPaused ||
-            !state.gameSocket || state.gameSocket.readyState !== 1 ||
-            state.pendingBuy || gameIsLoading()) {
+            !state.gameSocket || state.gameSocket.readyState !== 1 || gameIsLoading()) {
             snatchSchedule(10000); return;
+        }
+        if (state.pendingBuy) {
+            // An unrelated purchase may settle around this target's unlock.
+            // Wake promptly when its outcome becomes known; never sleep 10s.
+            snatchSchedule(250); return;
         }
         const server = serverNow();
         const entries = [...state.snatchObserved.entries()].sort((a,b)=>
@@ -297,8 +301,8 @@
             if ((state.snatchManual.has(snatchKey(entry.candidate.kind,
                     entry.candidate.currency,entry.candidate.listingId)) ||
                 activeRuleById(entry.ruleId)) &&
-                entry.releaseAt > 0 && entry.releaseAt-now < 5500 &&
-                entry.releaseAt-now > -10000 &&
+                entry.releaseAt > 0 && entry.releaseAt-now < 1200 &&
+                entry.releaseAt-now > -1500 &&
                 (!state.pendingBuy || state.pendingBuy.listingId === entry.candidate.listingId)) return true;
         }
         return false;

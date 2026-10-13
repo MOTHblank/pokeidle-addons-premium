@@ -674,7 +674,7 @@ test('Unverified orders quarantine only their exact listing, not every unrelated
     assert.doesNotMatch(runner, /unverifiedOrdersExist\(\)/);
     assert.doesNotMatch(runner, /q\('#modal \.cm-folha'\)/);
     assert.doesNotMatch(runner, /if \(communityMarketIsOpen\(\) \|\| state\.pendingBuy/);
-    assert.match(runner, /snatchCriticalWindow\(\)/);
+    assert.doesNotMatch(runner, /snatchCriticalWindow\(\)/);
     assert.match(script, /!unresolvedListing\(id\)/);
     assert.match(script, /unresolvedListing\(candidate\.listingId\)/);
 });
@@ -944,7 +944,7 @@ test('Milestone C: optional session telemetry avoids duplicate NPC sales', () =>
 test('Milestone C: independent economy UI cannot start selling automation', () => {
     assert.match(script,/data-moth-view="economy"/);
     assert.match(script,/Read-only fees, market eligibility, and recorded purchase exposure/);
-    assert.match(script,/@version\s+0\.6\.7/);
+    assert.match(script,/@version\s+0\.6\.8/);
     assert.doesNotMatch(script,/market\.criar|autoSellRules|sendItemSale/);
 });
 
@@ -1024,7 +1024,7 @@ test('Milestone D: diagnostics source is synchronized with standalone userscript
     assert.equal(embedded,source,'module must exactly match generated userscript section');
     const tool=fs.readFileSync(path.join(__dirname,'..','tools','build-mothwatch.cjs'),'utf8');
     assert.match(tool,/--check/);
-    assert.match(script,/@version\s+0\.6\.7/);
+    assert.match(script,/@version\s+0\.6\.8/);
     assert.doesNotMatch(script,/^\s*\/\/\s*@(?:downloadURL|updateURL)/m,
         'private repo must not advertise inaccessible raw auto-update endpoints');
 });
@@ -1155,7 +1155,7 @@ test('MothWatch v0.6.1: source sections match the single distributable userscrip
         const moduleSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'mothwatch', name), 'utf8').trimEnd();
         assert.equal(script.slice(a + begin.length, b), moduleSource, 'generated parity: ' + id);
     }
-    assert.match(script, /@version\s+0\.6\.7/);
+    assert.match(script, /@version\s+0\.6\.8/);
     assert.doesNotMatch(script, /\bimport\s*\(|\brequire\s*\(/,
         'one Violentmonkey userscript must not require runtime module loading');
 });
@@ -1453,7 +1453,7 @@ test('Snatch hardening: progressive acknowledged-refusal retries and protected r
     const retry=new Function('SNATCH_RETRY_MS',body+'\nreturn snatchRetryDelay;')(400);
     assert.deepEqual([0,29,30,89,90,250].map(retry),[400,400,1500,1500,5000,5000]);
     assert.doesNotMatch(source,/SNATCH_ATTEMPT_LIMIT/);
-    assert.match(source,/releaseAt-now < 3200/);
+    assert.match(source,/releaseAt-now < 1200/);
     assert.match(source,/snatchRetryDelay\(entry\.attempts\)/);
     assert.match(source,/rule target expired/);
 });
@@ -1478,7 +1478,7 @@ test('Throughput: native browsing does not suspend buys, but snatch release wins
     assert.equal(bought,1,'native community-market modal must not disable rule buys');
     critical=true;state.automationLastRunAt=0;
     run();
-    assert.equal(bought,1,'snatch critical window reserves the purchase slot');
+    assert.equal(bought,2,'ordinary buys must continue despite the Snatch quiet window');
 });
 
 test('Throughput: verified broad-rule details survive target rotation', () => {
@@ -1546,4 +1546,43 @@ test('Snatch: repeated server refusals generate multiple post-release orders', (
     assert.equal(h.purchaseCalls.length,5,'snatch remains armed after several losses');
     h.api.snatchOutcome(789,'confirmed');
     assert.equal(h.state.snatchObserved.has(h.key),false);
+});
+
+// A released Snatch must not go to sleep for 10 seconds behind an unrelated
+// pending purchase, and a server result must immediately resume the pipeline.
+test('Snatch: pending unrelated purchase is revisited within 250ms', () => {
+    const h=heldSnatchHarness();
+    h.setServer(h.candidate.retainedUntil);
+    h.state.pendingBuy={listingId:999,sentAt:Date.now()};
+    h.api.snatchTick();
+    assert.equal(h.purchaseCalls.length,0);
+    assert.equal(h.timers.at(-1).ms,250);
+    h.state.pendingBuy=null;
+    h.api.snatchTick();
+    assert.equal(h.purchaseCalls.length,1);
+});
+
+test('Throughput: settlement schedules another authorized buy without a 1s stall', () => {
+    const src=section('    function finishPendingBuy(', '    function requestItemSummary(');
+    const state={pendingBuy:{
+        order:{listingId:201,status:'submitted'},listingId:201,candidateKey:'rule:201',
+        kind:'item',itemId:106,currency:'gold'
+    },candidates:new Map(),snatchObserved:new Map(),
+        itemInventoryMemo:{},ruleItemKeys:new Set(),lastDetailRequest:new Map()};
+    const config={purchasesPaused:false};
+    const scheduled=[];
+    let purchased=0, refreshed=0;
+    const fn=new Function('state','config','settleOrder','diagnosticOutcome',
+        'snatchCriticalWindow','hasAnyBuyingRules','activeAnyItemRules',
+        'queueItemDetail','startPokemonScan','queueRender','setTimeout',
+        'snatchTick','runMarketAutomation',src+'\nreturn finishPendingBuy;')(
+        state,config,()=>{},()=>{},()=>false,()=>true,()=>[],
+        ()=>refreshed++,()=>{},()=>{},(callback,ms)=>{scheduled.push({callback,ms});},
+        ()=>{},()=>purchased++);
+    fn('server-confirmed');
+    assert.equal(state.pendingBuy,null);
+    assert.equal(refreshed,1);
+    assert.ok(scheduled.some(x=>x.ms===0),'next buy is scheduled immediately');
+    scheduled.find(x=>x.ms===0).callback();
+    assert.equal(purchased,1);
 });
