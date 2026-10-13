@@ -420,8 +420,8 @@
             'xp.currentModeled': ' · current modeled {value} trainer XP/h',
             'xp.warmingSession': 'warming up: sustained observations still insufficient',
             'xp.sessionEvidence': '{samples} kills / {minutes} min, wall-clock',
-            'sort.capture': 'Captured/hour (Ultra/Beast)',
-            'sort.shinyCatch': 'Shiny caught/hour (conditional)',
+            'sort.capture': 'Captures (Ultra/Beast rate)',
+            'sort.shinyCatch': 'Shiny catches (conditional rate)',
             'catch.title': 'Catch and shiny planner',
             'catch.ball': 'Compare with',
             'catch.ultra': 'Ultra Ball · ×4 (default)',
@@ -432,7 +432,7 @@
             'catch.percent': '{chance}% per accepted throw',
             'catch.expected': '{count} captures · {balls} accepted balls/capture on average',
             'catch.seen': 'Shinies seen: {count} · shinies caught: {caught}',
-            'catch.oneDay': '≥1 shiny caught in 24h: {chance}% (if steady conditions)',
+            'catch.oneDay': '≥1 shiny caught in 24h: {chance} (if steady conditions)',
             'catch.cost': 'Replacement: {coins} Coins per expected capture',
             'catch.diamondCost': 'Beast requires Diamonds; no Coin cost assumed',
             'catch.stock': 'Stock: {count} · coverage at observed throw rate: {hours}h',
@@ -447,13 +447,13 @@
             'catch.card': 'Ultra {ultra}% · Beast {beast}% (wiki-conditional)',
             'catch.levelCap': 'Caught level cap: {level} (wild rewards unchanged)',
             'catch.cardUnknown': 'Capture chance unavailable (rarity unresolved)',
-            'catch.targetRate': 'Target {captures} captures · {shiny} shiny caught · mean {hours}h/shiny ({source})',
+            'catch.targetRate': 'Target {captures} captures · {shiny} shiny caught · mean {hours}/shiny ({source})',
             'catch.targetObserved': 'observed throw coverage',
             'catch.targetCeiling': 'upper bound if all bodies targeted',
-            'catch.shinyMean': 'Mean wait for shiny caught: {hours}h · ≈{throws} accepted attempts/shiny caught',
+            'catch.shinyMean': 'Mean wait for shiny caught: {hours} · ≈{throws} accepted attempts/shiny caught',
             'sort.pokemonXp': 'Pokémon XP/hour',
             'sort.npcLoot': 'NPC loot EV/hour (not cash)',
-            'sort.rare': 'Selected rare items/hour',
+            'sort.rare': 'Selected rare item rate',
             'sort.ballEfficiency': 'Fewest Coins/capture (Ultra)',
             'rank.heading': 'Hunt recommendations by {metric}',
             'rank.topFive': 'Top 5 by {metric}',
@@ -469,7 +469,7 @@
             'rank.pokemonXp': 'Pokémon XP/h',
             'rank.kills': 'Kills/h',
             'rank.coverage': 'Coverage {percent}%',
-            'rank.rare': 'Selected rare items/h',
+            'rank.rare': 'Selected rare item rate',
             'rank.capture': 'Selected ball: {chance}% per accepted throw',
             'rank.confidence': 'Confidence: {confidence} (heuristic)',
 
@@ -546,9 +546,9 @@
             'rare.source': '{source} · {rate} kills/h ({rateSource})',
             'rare.kills': 'per kill',
             'rare.units': '{value} expected items',
-            'rare.mean': 'mean {hours}h / item',
-            'rare.craft': 'mean {hours}h / 10 fragments',
-            'rare.chances': '≥1 in 1h: {hour}% · 24h: {day}%',
+            'rare.mean': 'mean {hours} / item',
+            'rare.craft': 'mean {hours} / 10 fragments',
+            'rare.chances': '≥1 in 1h: {hour} · 24h: {day}',
             'rare.incubation': 'Shiny Egg incubation: 168h after crafting (126h with verified heating)',
             'rare.observed': 'Observed in this session: {count}',
             'rare.marketUnknown': 'Completed-sale valuation: — (no verified sales samples)',
@@ -769,8 +769,8 @@
             'xp.currentModeled': ' · atual modelado {value} XP de treinador/h',
             'xp.warmingSession': 'aquecendo: ainda faltam medições sustentadas',
             'xp.sessionEvidence': '{samples} abates / {minutes} min, tempo corrido',
-            'sort.capture': 'Capturas/h (Ultra/Beast)',
-            'sort.shinyCatch': 'Shinies capturados/h (condicional)',
+            'sort.capture': 'Frequência de capturas (Ultra/Beast)',
+            'sort.shinyCatch': 'Frequência de shinies capturados (condicional)',
             'catch.title': 'Planejador de capturas e shinies',
             'catch.ball': 'Comparar usando',
             'catch.ultra': 'Ultra Ball · ×4 (padrão)',
@@ -781,7 +781,7 @@
             'catch.percent': '{chance}% por bola aceita',
             'catch.expected': '{count} capturas · {balls} bolas aceitas/captura em média',
             'catch.seen': 'Shinies vistos: {count} · shinies capturados: {caught}',
-            'catch.oneDay': '≥1 shiny capturado em 24h: {chance}% (com condições constantes)',
+            'catch.oneDay': '≥1 shiny capturado em 24h: {chance} (com condições constantes)',
             'catch.cost': 'Reposição: {coins} Moedas por captura esperada',
             'catch.diamondCost': 'Beast usa Diamantes; sem inventar custo em Moedas',
             'catch.stock': 'Estoque: {count} · duração no ritmo observado: {hours}h',
@@ -796,13 +796,13 @@
             'catch.card': 'Ultra {ultra}% · Beast {beast}% (condicional da wiki)',
             'catch.levelCap': 'Teto do nível ao capturar: {level} (recompensas do selvagem não mudam)',
             'catch.cardUnknown': 'Chance de captura indisponível (raridade não verificada)',
-            'catch.targetRate': 'Alvo {captures} capturas · {shiny} shinies capturados · média {hours}h/shiny ({source})',
+            'catch.targetRate': 'Alvo {captures} capturas · {shiny} shinies capturados · média {hours}/shiny ({source})',
             'catch.targetObserved': 'cobertura medida de arremessos',
             'catch.targetCeiling': 'teto se todos os corpos receberem bola',
-            'catch.shinyMean': 'Espera média por shiny capturado: {hours}h · ≈{throws} bolas aceitas/shiny capturado',
+            'catch.shinyMean': 'Espera média por shiny capturado: {hours} · ≈{throws} bolas aceitas/shiny capturado',
             'sort.pokemonXp': 'XP do Pokémon/hora',
             'sort.npcLoot': 'EV de loot NPC/h (não é dinheiro recebido)',
-            'sort.rare': 'Itens raros selecionados/h',
+            'sort.rare': 'Frequência do item raro escolhido',
             'sort.ballEfficiency': 'Menor custo Moedas/captura (Ultra)',
             'rank.heading': 'Melhores hunts por {metric}',
             'rank.topFive': 'Top 5 por {metric}',
@@ -818,7 +818,7 @@
             'rank.pokemonXp': 'XP do Pokémon/h',
             'rank.kills': 'Abates/h',
             'rank.coverage': 'Cobertura {percent}%',
-            'rank.rare': 'Itens raros selecionados/h',
+            'rank.rare': 'Frequência do item raro escolhido',
             'rank.capture': 'Bola selecionada: {chance}% por arremesso aceito',
             'rank.confidence': 'Confiança: {confidence} (heurística)',
 
@@ -895,9 +895,9 @@
             'rare.source': '{source} · {rate} abates/h ({rateSource})',
             'rare.kills': 'por abate',
             'rare.units': '{value} itens esperados',
-            'rare.mean': 'média {hours}h / item',
-            'rare.craft': 'média {hours}h / 10 fragmentos',
-            'rare.chances': '≥1 em 1h: {hour}% · 24h: {day}%',
+            'rare.mean': 'média {hours} / item',
+            'rare.craft': 'média {hours} / 10 fragmentos',
+            'rare.chances': '≥1 em 1h: {hour} · 24h: {day}',
             'rare.incubation': 'Incubação do Ovo Shiny: 168h após fabricar (126h com aquecimento confirmado)',
             'rare.observed': 'Observado nesta sessão: {count}',
             'rare.marketUnknown': 'Valoração por vendas concluídas: — (sem amostras verificadas)',
@@ -1781,6 +1781,24 @@
         if(!Number.isFinite(days))return formatRate(value)+'/h';
         if(days>=365)return '~1 / '+formatRate(days/365)+' yr';
         return '~1 / '+formatRate(days)+' d';
+    }
+    function formatDurationHours(value,portuguese=false) {
+        if(typeof value!=='number'||!Number.isFinite(value)||value<0)return '—';
+        if(value>=8760)return formatRate(value/8760)+' '+(portuguese?'anos':'yr');
+        if(value>=24)return formatRate(value/24)+' d';
+        return formatRate(value)+' h';
+    }
+    function formatProbability(value) {
+        if(typeof value!=='number'||!Number.isFinite(value)||value<0||
+            value>1)return '—';
+        if(value===0)return '0%';
+        const percent=value*100;
+        if(percent>=1)return formatRate(percent)+'%';
+        if(percent>=.01)return percent.toFixed(3).replace(/0+$/,'')
+            .replace(/\.$/,'')+'%';
+        if(percent>=.000001)return percent.toFixed(6).replace(/0+$/,'')
+            .replace(/\.$/,'')+'%';
+        return percent.toExponential(2)+'%';
     }
     function formatObjectiveValue(value,objective,portuguese=false) {
         if(typeof value!=='number'||!Number.isFinite(value))return '—';
@@ -12539,8 +12557,7 @@
             tr('catch.targetRate',{
                 captures:formatEventRate(chosenSpeciesPlan.catchesH),
                 shiny:formatEventRate(chosenSpeciesPlan.shinyCaughtH),
-                hours:chosenSpeciesPlan.meanHoursShiny===null?'—':
-                    formatRate(chosenSpeciesPlan.meanHoursShiny),
+                hours:formatDurationHours(chosenSpeciesPlan.meanHoursShiny,currentLocale()==='pt-BR'),
                 source:tr(chosenSpeciesPlan.acceptedSource==='observed'
                     ?'catch.targetObserved':'catch.targetCeiling')}) :
             null;
@@ -13032,8 +13049,7 @@
                 hunt.area!=='outland' && Number(hunt.nivel)>=5000) || null;
         const eggModel=eggHunt?rareModelForHunt(eggHunt,1):null;
         const fmtChance=value=>(value*100).toFixed(6)+'%';
-        const fmtHours=value=>value===null?'—':
-            value>=1000?formatRate(value):value.toFixed(value>=10?1:2);
+        const fmtHours=value=>formatDurationHours(value,currentLocale()==='pt-BR');
         const fmtUnits=value=>formatEventRate(value);
         const modelRows=model=>model?.drops?.length
             ? model.drops.map(row=>{
@@ -13043,8 +13059,8 @@
                     tr('rare.units',{value:fmtUnits(row.unitsH)}),
                     tr('rare.mean',{hours:fmtHours(row.meanHours)}),
                     row.craft>1 ? tr('rare.craft',{hours:fmtHours(row.craftHours)}) : null,
-                    tr('rare.chances',{hour:(100*row.chance1h).toFixed(4),
-                        day:(100*row.chance24h).toFixed(4)}),
+                    tr('rare.chances',{hour:formatProbability(row.chance1h),
+                        day:formatProbability(row.chance24h)}),
                     observed===undefined ? null:
                         tr('rare.observed',{count:observed})
                 ].filter(Boolean).join(' · ');
@@ -13167,7 +13183,7 @@
         const beast=captureHunt?capturePlanForHunt(captureHunt,5,capXp):null;
         const chosen=activeCaptureId===5?beast:ultra;
         const pct=value=>typeof value==='number'&&Number.isFinite(value)
-            ?(100*value).toFixed(3)+'%':tr('catch.unknown');
+            ?formatProbability(value):tr('catch.unknown');
         const rate=value=>typeof value==='number'&&Number.isFinite(value)
             ?formatRate(value):tr('catch.unknown');
         const captureLine=(label,value)=>'<div class="mha-xp-note">'+
@@ -13202,15 +13218,14 @@
                 balls:rate(chosen.ballsPerCapture)
             })):'',
             chosen && chosen.shinyCaughtH>0 ? captureLine(tr('catch.shinyMean',{
-                hours:formatRate(1/chosen.shinyCaughtH),
+                hours:formatDurationHours(1/chosen.shinyCaughtH,currentLocale()==='pt-BR'),
                 throws:formatRate(1/(chosen.chance*chosen.shinyP))
             }),tr('catch.limit')):'',
             chosen ? captureLine(tr('catch.seen',{
                 count:formatEventRate(chosen.shinySeenH),
                 caught:formatEventRate(chosen.shinyCaughtH)
             }),tr('catch.oneDay',{
-                chance:chosen.shinyCaught24hChance===null?'—':
-                    (100*chosen.shinyCaught24hChance).toFixed(5)
+                chance:formatProbability(chosen.shinyCaught24hChance)
             })):'',
             chosen && chosen.ball.id===4 && chosen.coinsPerCapture!==null ?
                 captureLine(tr('catch.cost',{
@@ -13301,8 +13316,6 @@
         const refPct=p=>p===null||!Number.isFinite(p)?'—':
             p>0&&p*100<0.000001?'<0.000001%':
             (p*100).toFixed(p*100<0.01?6:p*100<1?4:2)+'%';
-        const refCount=v=>Number.isFinite(v)?
-            v.toFixed(v<1?5:2):'—';
         const refCaptureText=refCatch ? tr('reference.captureStats',{
             catchChance:refPct(refCatch.catchChance),
             catches:formatEventRate(refCatch.catchesH),
