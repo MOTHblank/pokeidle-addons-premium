@@ -1,12 +1,28 @@
 # PokéIdle Addons Premium
 
-Moth Watch lives in this repository starting with **v0.2.1**. The standard `pokeidle-addons` controller does not install or update it automatically.
+Moth Watch **v0.3.0** lives in this repository. The standard `pokeidle-addons` controller does not install or update it automatically.
 
 ## Moth Watch installation
 
-Install [Violentmonkey](https://addons.mozilla.org/firefox/addon/violentmonkey/) in the desired Firefox profile and open [Moth Watch userscript](https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/market-bot.user.js). Confirm the installation in Violentmonkey. Existing users of the public script should replace their old copy to avoid two concurrent Moth Watch instances. Check that the script's `@updateURL` and `@downloadURL` point at this repository.
+Install [Violentmonkey](https://addons.mozilla.org/firefox/addon/violentmonkey/) in the desired Firefox profile. While signed in with access to this **private** repository, open [Moth Watch source](addons/market-bot.user.js), copy the script into Violentmonkey, and save. Do not keep an old Moth Watch copy enabled alongside it. The script contains premium `@updateURL` and `@downloadURL` metadata, but private GitHub raw endpoints might not be accessible to a userscript manager; manual updates may be necessary.
 
-The script preserves its existing local settings keys. **Automated buying stays disabled for new profiles**; fixed item-buy rules are the only supported automatic purchase path. Pokémon purchases remain manual.
+The script preserves its existing local settings keys. **Automated buying stays disabled for new profiles**. Each purchase rule can be individually toggled, but no rule will place an order until the master **Enable rule-based buying** switch is turned on.
+
+## Rule-based purchases (v0.3.0)
+
+Three groups are available in **Moth Watch → Automation**:
+
+1. **Fixed item**: choose a specific item, currency, and maximum **unit** price.
+2. **Any item**: choose Coins or Gems and the maximum **unit** price; for example, any item at or below **10,000 Coins per unit**.
+3. **Pokémon**: choose **Any Pokémon**, **Shiny Pokémon**, or **P5 Pokémon**, Coins/Gems (Shiny requires Gems), and the maximum **per-Pokémon** listing price. For example, any Pokémon at or below **1,000,000 Coins**, or any Shiny at or below **5 Gems**.
+
+All modes use the same reserves and per-purchase spending caps. A cap of zero means no additional limit beyond the spendable balance; with zero reserves, an enabled category-wide rule can spend the entire currency balance on multiple purchases. Items are bought in full available quantity, bounded by affordability/caps, while Pokémon are indivisible and bought one at a time. Only **one order can be pending** server confirmation, and the same recently attempted listing is temporarily excluded.
+
+**These are absolute-price rules, not value predictions.** A Pokémon can qualify even without reliable grade, IVs, or completed-sale history. No arbitrary reference discount is required; the user-configured price is the explicit authorization. Moth Watch validates currencies and listing prices, skips your own ads and retained ads, and sends the listed unit price to the server. Server purchase acceptance remains authoritative.
+
+The broad-item scanner uses the market's item summary to shortlist relevant item types, then verifies individual offers at a bounded request cadence. When Pokémon buying rules are active, it scans up to **three cheapest-price pages per currency**. It does not promise to inspect all listings or beat retention lotteries, and monitoring pauses when the player browses the normal market to avoid replacing that view.
+
+
 
 ## Pokémon valuation
 
