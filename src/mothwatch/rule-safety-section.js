@@ -19,21 +19,17 @@
 
     function confirmUnboundedRule(rule) {
         if (!broadRuleUnbounded(rule)) return true;
-        return window.confirm(tr('Warning: this broad rule has no cumulative spending or purchase-count limit. If enabled, it may repeatedly spend the available {currency}. Continue?', {
-            currency: tr(rule.currency === 'orb' ? 'Gems' : 'Coins')
-        }));
+        return true; // Explicit per-listing price ceiling is the chosen authorization.
     }
 
     function confirmUnboundedMaster() {
         const rules = enabledUnboundedBroadRules();
         if (!rules.length) return true;
-        return window.confirm(tr('Warning: enabling the master switch activates {count} broad buying rules without cumulative caps. Available balances may be spent repeatedly. Continue?', {
-            count: rules.length
-        }));
+        return true; // The user explicitly opted into these configured rules.
     }
 
     function confirmRemovingLastBroadCap() {
-        return window.confirm(tr('Warning: this change removes the last cumulative protection from an active broad-buying rule. Repeated orders may exhaust your balance. Continue?'));
+        return true; // Zero cumulative cap is supported.
     }
 
     function ruleRiskSummary(rule, type) {
