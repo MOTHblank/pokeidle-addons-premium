@@ -1,6 +1,6 @@
 # PokéIdle Hunt Atlas
 
-> **Versão experimental 1.9.12.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
+> **Versão experimental 1.9.13.** Esta pasta no repositório premium é o ambiente de testes do Hunt Atlas. A cópia do `pokeidle-addons` não recebe automaticamente nenhuma mudança daqui. **Desative a outra instalação do Hunt Atlas antes de testar**, pois duas cópias podem disputar o mapa e os hooks de WebSocket.
 >
 > Não há mapa visual novo. O Atlas continua sendo uma lista pesquisável; o índice `map-markers.json` só adiciona contexto textual de localização para hunts com slug correspondente. O índice `moves-index.json` oferece golpes possíveis por espécie/nível, não uma lista de golpes equipados. Agora o Atlas compara os golpes dos índices com o catálogo mais recente de Pokémon e mostra divergências. Quando o jogo fornece nomes de golpes, o modelo usa **amostras por execução**, sem contar várias vítimas de um ataque em área como vários golpes. Quando o nome não chega, mantém o modelo por tipo. XP/h **medido** continua acima de qualquer projeção. Os índices são opcionais e podem estar desatualizados.
 >
@@ -24,7 +24,7 @@ O painel indica **aquecendo** enquanto o modelo ainda não reúne dados suficien
 
 ### Economia de farming (v1.9.6 · Marco C)
 
-O Atlas agora calcula **Moedas/h por abate** usando o nível da hunt e o teto real de 25.000; quando existe uma janela válida com recibos de morte do servidor, usa o valor medido. Há novos filtros de ordenação: **Moedas/h por abate** e **Moedas líquidas/h (medido)**.
+O Atlas agora calcula **Moedas/h por abate** usando o nível da hunt e o teto real de 25.000; quando existe uma janela válida com recibos de morte do servidor, usa o valor medido. A ordenação por **Moedas/h por abate** continua disponível; Moedas líquidas/h seguem nos detalhes econômicos, mas não são critério de ordenação.
 
 No painel de XP/h aparece também a **Economia da hunt**, com quatro números separados: Moedas/h pelos abates, **valor esperado** de loot ordinário vendável ao NPC, Moedas/h **já realizadas** (abates + venda automática confirmada) e **líquido após custo de reposição dos itens consumidos**. O EV dos drops não é somado à renda realizada; itens guardados ou anúncios no mercado não viram Moedas recebidas. Custos dependem dos preços apresentados pelo jogo; itens sem preço conhecido tornam o líquido **indisponível**, e Diamantes ficam em sua própria moeda. Com estoque conhecido há estimativa de duração.
 
@@ -77,23 +77,13 @@ O cenário usa o modelo de espécie/Ultra/Beast e a taxa de bolas aceitas do pr�
 
 ### Rankings, detalhes compactos e desempenho (v1.9.9 · Marco F)
 
-O **Top 5 agora acompanha a métrica selecionada** — XP do treinador, XP do Pokémon, Moedas por abate, valor esperado de loot NPC, Moedas líquidas, item raro/h (escolha o item e a prévia do tier Outland), capturas/h, shinies capturados/h ou eficiência da Ultra em Moedas por captura. Uma hunt excelente em XP não lidera automaticamente uma pesquisa de raros. Valores indisponíveis ficam no fim e **não viram zero**. A ordenação também respeita os filtros de busca, fraqueza, tipo e desbloqueio. Em capturas, é o resultado do **Pokémon alvo correspondente ao filtro**, com Ultra como padrão e Beast opcional, não uma porcentagem genérica da região.
+O **Top 5 agora acompanha a métrica selecionada** — XP do treinador, Moedas por abate, valor esperado de loot NPC, item raro/h (escolha o item e a prévia do tier Outland), capturas/h, shinies capturados/h ou eficiência da Ultra em Moedas por captura. Uma hunt excelente em XP não lidera automaticamente uma pesquisa de raros. Valores indisponíveis ficam no fim e **não viram zero**. A ordenação também respeita os filtros de busca, fraqueza, tipo e desbloqueio. Em capturas, é o resultado do **Pokémon alvo correspondente ao filtro**, com Ultra como padrão e Beast opcional, não uma porcentagem genérica da região.
 
 A lista de hunts está mais compacta. **Clique em “Detalhes da hunt”** para ver K/h, XP/h dos dois canais, economia, chance de captura, previsão de shiny, item raro escolhido, fonte e confiança. O painel geral de economia/captura/raros também fica recolhido por padrão, com um diagnóstico **opcional e somente local**, sem mensagens brutas ou tokens. O botão **Top 5** continua independente.
 
-**Performance:** as medições de eventos continuam independentes da interface. Com o mapa fechado, nativo ou no minigame, o Atlas não repinta a lista nem faz uma leitura pesada do Controller Bridge a cada 3 segundos. Quando visível, repinturas de eventos são agrupadas (intervalo mínimo de 1,5 s) e a atualização passiva é muito menos frequente (12 s). Os caches, amostras e janelas são limitados. O resultado real de CPU/RAM em sessões longas permanece para verificar no jogo, assim como os bônus e a fórmula de captura do servidor.
+**Performance:** as medições de eventos continuam independentes da interface. Com o mapa fechado ou nativo, o Atlas não repinta a lista nem faz uma leitura pesada do Controller Bridge a cada 3 segundos. Quando visível, repinturas de eventos são agrupadas (intervalo mínimo de 1,5 s) e a atualização passiva é muito menos frequente (12 s). Os caches, amostras e janelas são limitados. O resultado real de CPU/RAM em sessões longas permanece para verificar no jogo, assim como os bônus e a fórmula de captura do servidor.
 
 Detalhes: [Marco F](../docs/HUNTATLAS_MILESTONE_F.md).
-
-### 🎮 Correio Maluco — minigame experimental (1.9.3)
-
-O botão **🎮 Correio Maluco**, dentro do Atlas, abre um jogo de entregas que usa as coordenadas **`pixel`** e a região **`area`** do índice de locais já consultado pelo Atlas. Ele mostra pequenas constelações de hunts, destinos de entrega (📮), um caminhão (🚚) e fiscais fantasmas (👻). Você tem **60 segundos e três vidas**; cada entrega dá um ponto e mais cinco segundos. O recorde fica salvo *localmente*, separado por região.
-
-**Controles:** WASD ou setas com o tabuleiro em foco; clique/arraste ou toque/arraste no tabuleiro; quatro botões direcionais para tela sensível ao toque. O seletor começa por **Outland** (quando o índice estiver disponível), mas também permite **Kanto** e **Orre**. Ao fechar o Atlas, desligar o addon ou sair do minigame, a animação para.
-
-**É um brinquedo, não uma alternativa de navegação:** os caminhos são inventados; o mapa é distorcido para ocupar a tela; as posições não representam rotas, distâncias reais ou desbloqueios. O minigame não envia comandos ao PokéIdle, não altera a hunt e não concede XP real. Só roda enquanto estiver aberto e jogando. Depende do índice de locais já usado pelo Atlas; não exige uma segunda extensão.
-
-Para verificar a lógica isoladamente: `node --test tests/parcel-panic.test.cjs`. Os testes não substituem uma checagem visual dentro do Firefox.
 
 Um addon para **PokéIdle** que substitui a tela **Mapa**.
 
@@ -185,7 +175,7 @@ The UI shows a **warming up** label until enough sustained evidence exists. `win
 
 ### Farming economy (v1.9.6 · Milestone C)
 
-Hunt Atlas now estimates **kill Coins/hour** with the proper level-25,000 cap and uses real wild-kill receipts whenever a representative current-session window exists. You can sort by **kill Coins/hour** or **net Coins/hour (measured)**, separately from the XP rank.
+Hunt Atlas now estimates **kill Coins/hour** with the proper level-25,000 cap and uses real wild-kill receipts whenever a representative current-session window exists. You can sort by **kill Coins/hour**, separately from the XP rank; net Coins/hour remains visible in economic details.
 
 The XP details include four distinct measures: kill Coins/h, ordinary NPC-resellable **loot expected value/h**, **realized** Coins/h (native kill receipts and one occurrence of auto NPC resale), and **net Coins/h** after replacement cost of actually consumed supplies. Unsold drops and potential listings are never counted as already realized Coins. Costs require explicit game catalog prices; unknown prices leave net unavailable, and Diamonds remain separate. When inventory quantity is known, the panel estimates remaining stock coverage.
 
@@ -212,23 +202,13 @@ Read the [technical contract, tests and limitations](../docs/HUNTATLAS_MILESTONE
 
 ### Meaningful rankings, compact details and performance (v1.9.9 · Milestone F)
 
-**Top Five now follows your chosen metric**: trainer XP, Pokémon XP, kill Coins, NPC loot expected value, net Coins, selected rare item/hour (choose both the item and the preview Outland tier), target captures/hour, shiny catches/hour or fewest Ultra Coins per expected capture. An XP-heavy hunt can no longer lead an unrelated rare-item list. Missing values rank last **without being treated as zero**. Existing search, weakness, type, collection and unlock filters still apply. Capture recommendations rank the **matching target species**, with Ultra by default or Beast when selected.
+**Top Five now follows your chosen metric**: trainer XP, kill Coins, NPC loot expected value, selected rare item/hour (choose both the item and the preview Outland tier), target captures/hour, shiny catches/hour or fewest Ultra Coins per expected capture. An XP-heavy hunt can no longer lead an unrelated rare-item list. Missing values rank last **without being treated as zero**. Existing search, weakness, type, collection and unlock filters still apply. Capture recommendations rank the **matching target species**, with Ultra by default or Beast when selected.
 
 Hunt rows are now compact: expand **Hunt details** to see K/h, the two XP channels, economics, target capture/shiny chances, selected rare units, source and confidence. The main capture/economy/rare sections are also collapsed by default; an optional **local-only** diagnostics toggle reveals safe aggregate evidence, never full packets or tokens. The separate Top Five toggle remains.
 
-**Performance:** accepted-event recording is independent of the visual panel. Closed/native-map/headless/mini-game sessions no longer redraw the full list or parse heavyweight controller snapshots every three seconds. Visible redraws are coalesced (at least 1.5 seconds apart), while the passive refresh is every 12 seconds or more. All histories remain bounded. Actual four-profile CPU/RAM and live probability/bonus semantics still need owner testing.
+**Performance:** accepted-event recording is independent of the visual panel. Closed/native-map/headless sessions no longer redraw the full list or parse heavyweight controller snapshots every three seconds. Visible redraws are coalesced (at least 1.5 seconds apart), while the passive refresh is every 12 seconds or more. All histories remain bounded. Actual four-profile CPU/RAM and live probability/bonus semantics still need owner testing.
 
 See the [Milestone F implementation details](../docs/HUNTATLAS_MILESTONE_F.md).
-
-### 🎮 Parcel Panic — experimental mini-game (1.9.3)
-
-The **🎮 Parcel Panic** button inside Atlas opens a delivery game that reuses the existing location index's **`pixel`** coordinates and **`area`** region. Hunt markers become a silly constellation, parcel destinations (📮), a delivery truck (🚚), and ghost auditors (👻). You get **60 seconds and three hearts**; every delivery gives one point and five extra seconds. Each region has a separate **locally stored** best score.
-
-**Controls:** WASD or arrow keys when the playfield is focused; click/drag or touch/drag on the board; four on-screen directional buttons. The default is **Outland**, with **Kanto** and **Orre** selectable when marker data loads. Closing Atlas, disabling it, or leaving the game stops the animation.
-
-**Not a real navigation map:** roads are invented; each region is stretched to fill the screen; placements are not real routes, walking distances, or unlock information. The mini-game never sends PokéIdle actions, never changes the current hunt, and never awards actual XP. It only animates while visible and playing. It reuses the Atlas location index, with no additional extension.
-
-To test the isolated logic: `node --test tests/parcel-panic.test.cjs`. A visual check in Firefox is still recommended.
 
 A **PokéIdle** addon that replaces the **Map** screen.
 

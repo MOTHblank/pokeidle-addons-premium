@@ -4,15 +4,13 @@
 
 ## 1. Every ranking has exactly one objective
 
-`haMetricValue` and `haRankMetricRows` are small, independent helpers covered by `huntatlas/tests/recommendations-milestone-f.test.cjs`. They select only the requested metric; **missing data are last in both directions**, never replaced with a high trainer-XP estimate, fabricated zero, or a blended score. Negative net Coins remains a valid negative value, distinct from `null`.
+`haMetricValue` and `haRankMetricRows` are small, independent helpers covered by `huntatlas/tests/recommendations-milestone-f.test.cjs`. They select only the requested metric; **missing data are last in both directions**, never replaced with a high trainer-XP estimate, fabricated zero, or a blended score. Net Coins remains a separate, read-only hunt-detail metric, not a ranking objective since v1.9.13.
 
 | Dropdown objective | Score and limitations |
 | --- | --- |
 | Trainer XP/h | Measured or labeled modelled trainer XP only; default remains `xp` |
-| Active Pokémon XP/h | Separate `pokemonValue`; missing Pokémon XP is not replaced with trainer XP |
 | Kill Coins/h | Guaranteed kill payout prediction or observed kill receipts where complete |
 | NPC loot EV/h | **Expected** NPC-saleable ordinary loot; not realized liquid Coins |
-| Net Coins/h | Observed complete realized Coins less item replacement cost; unavailable with incomplete cost evidence |
 | Selected rare items/h | **Individual** Boss Token/Key/Shiny Stone/Bicycle/Egg Fragment from the Outland preview tier or eligible ordinary hunt; cannot rank from a generic combined rare scalar |
 | Target capture successes/h | Accepted-throw percentage × **target species spawn frequency** × conditional ball odds; Ultra is default, Beast optional |
 | Target shiny captures/h | Eligible accepted throws × target catch probability × conditional shiny roll; Outland is intentionally unknown |
@@ -35,7 +33,7 @@ The browser already runs long-lived Firefox sessions and may be headless or have
 
 - No additional market calls, sockets, external services, canvas animation loops or new gameplay automation are added.
 - Previously, even with Atlas closed, the recurring 3-second housekeeping tick performed **`syncFromControllerBridge()`**, rebuilding a hunt list and merging state. Now this heavy sync happens when Atlas **opens**, and thereafter only during a **visible-list passive refresh at 12 seconds or longer**. The periodic button check remains cheap. The original 3-second timer remains, so nothing adds another periodic timer; it simply skips the expensive work.
-- Incoming combat events can arrive frequently. The new UI queue is **coalesced at a minimum 1.5-second redraw interval** and checks the game modal, enabled Atlas and open Parcel Panic before scheduling. Closed/headless/native-map sessions avoid expensive redraws. Direct user interactions (sort/filter, rare-item selection, expansion) update immediately.
+- Incoming combat events can arrive frequently. The new UI queue is **coalesced at a minimum 1.5-second redraw interval** and checks that the game modal and Atlas list are visible before scheduling. Closed/headless/native-map sessions avoid expensive redraws. Direct user interactions (sort/filter, rare-item selection, expansion) update immediately.
 - The previous 120-row incremental limit, 33 x 30-second accepted-event buckets, 64 corpse slots, limited combat samples and bounded caches remain. Expandable per-hunt details are tracked for at most **40 cards**. The redundant legacy verbose per-hunt formatting pass was removed, and optional shared-location work runs only on an expanded card. Formatted DOM HTML is compared with existing content before being replaced.
 - Source calculations use local per-render maps for economy and capture sorting, and reuse the existing estimate cache and normalized creature/item/ball catalogs. Server snapshots, relevant scope transitions and window expiration still control rate freshness; the UI throttling does not throttle the actual accepted-event counters.
 
@@ -43,10 +41,12 @@ The browser already runs long-lived Firefox sessions and may be headless or have
 
 ## 4. Synthetic QA and manual release gates
 
-`huntatlas/tests/recommendations-milestone-f.test.cjs` executes the exact pure math embedded in the shipped userscript. It asserts every metric selector, null-last direction, negative/zero net distinction, cheapest-coin efficiency order, Outland tier gating and individual rare-drop choice, deterministic ties, selected-metric UI wiring and open/closed/performance guardrails. Earlier A–E tests continue to cover source semantics, combat coverage, loot, rare drops, Ultra/Beast capture and shiny roll stages. Node syntax and regression workflows run on GitHub Actions.
+`huntatlas/tests/recommendations-milestone-f.test.cjs` executes the exact pure math embedded in the shipped userscript. It asserts every metric selector, null-last direction, retired sorting exclusions, cheapest-coin efficiency order, Outland tier gating and individual rare-drop choice, deterministic ties, selected-metric UI wiring and open/closed/performance guardrails. Earlier A–E tests continue to cover source semantics, combat coverage, loot, rare drops, Ultra/Beast capture and shiny roll stages. Node syntax and regression workflows run on GitHub Actions.
 
 Owner-led live QA remains: exercise all metrics/sorts/rare selections in a large catalog while keeping the existing search/weakness filters, verify Top Five names and targeted capture rates, expand/collapse cards through live telemetry refresh, compare background CPU/RAM before/after over multiple hours and verify the real capture/bonus/market protocol unknowns documented in Milestones B–E. Passing CI **does not certify server behavior, runtime cost or the availability of an unknown price**.
 
 ## Rollout boundary
 
-The only modified running addon is the **premium** `huntatlas/hunt-atlas.user.js`; the ordinary distribution in `pokeidle-addons`, Auto Catch+, Moth Watch and Parcel Panic logic are not copied/released/rewritten. This is an experimental version for the user's own runtime certification.
+The only modified running addon is the **premium** `huntatlas/hunt-atlas.user.js`; the ordinary distribution in `pokeidle-addons`, Auto Catch+, Moth Watch are not copied/released/rewritten. This is an experimental version for the user's own runtime certification.
+
+**v1.9.13 menu simplification:** Pokémon XP and net Coins continue to be measured and displayed, but neither is a sortable objective. Saved references to those discontinued sorting modes fall back to the default trainer-XP sort. The delivery-game implementation is removed; background render guards now depend only on Atlas visibility and the active modal.
