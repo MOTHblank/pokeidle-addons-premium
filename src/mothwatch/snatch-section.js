@@ -77,7 +77,7 @@
         const rule = snatchMatchingRule(kind,currency,itemId,offer);
         const until = Number(offer.compravelEm);
         const held = Number.isFinite(until) && until > serverNow();
-        if (!manual && (!rule || !held)) return;
+        if (!manual && (!rule || !held && !state.snatchObserved.has(key))) return;
         if (!state.snatchObserved.has(key) && state.snatchObserved.size >= SNATCH_LIMIT) {
             const disposable = [...state.snatchObserved.keys()].find(k=>!state.snatchManual.has(k));
             if (!disposable) return;
@@ -108,16 +108,26 @@
         if (!state.orderJournal?.accountKey || message?.t !== 'market') return;
         if (message.aba === 'item' && ['gold','orb'].includes(message.moeda) &&
             Number.isSafeInteger(Number(message.itemId))) {
-            for (const offer of Array.isArray(message.linhas) ? message.linhas.slice(0,120) : [])
-                snatchObserve('item',message.moeda,offer,Number(message.itemId));
+            for (const offer of Array.isArray(message.linhas) ? message.linhas.slice(0,120) : []) {
+                const id=Number(offer?.id),itemId=Number(message.itemId);
+                if (Number.isSafeInteger(id)&&id>0 && Number.isSafeInteger(itemId)&&itemId>0)
+                    state.snatchNativeOffers.set(snatchKey('item',message.moeda,id),offer);
+                snatchObserve('item',message.moeda,offer,itemId);
+            }
         } else if (message.aba === 'vitrine' && Array.isArray(message.linhas)) {
             for (const offer of message.linhas.slice(0,120)) {
                 const kind = offer?.ficha ? 'pokemon' : offer?.tipo === 'item' ? 'item' : null;
                 const currency = offer?.moeda || message.moeda;
-                if (kind && ['gold','orb'].includes(currency))
+                if (kind && ['gold','orb'].includes(currency)) {
+                    const id=Number(offer?.id);
+                    if (Number.isSafeInteger(id)&&id>0)
+                        state.snatchNativeOffers.set(snatchKey(kind,currency,id),offer);
                     snatchObserve(kind,currency,offer,Number(offer.itemId || 0));
+                }
             }
         }
+        while (state.snatchNativeOffers.size > 240)
+            state.snatchNativeOffers.delete(state.snatchNativeOffers.keys().next().value);
     }
 
     function snatchMark(kind, currency, id, itemId = 0) {
@@ -266,6 +276,34 @@
             entry.missing = present.has(entry.candidate.listingId) ? 0 : (entry.missing||0)+1;
             if (entry.missing >= 2 && serverNow() >= entry.releaseAt)
                 snatchStop(key,'listing no longer available');
+        }
+    }
+
+    function snatchEnhanceNativeMarket() {
+        const list=q('#cm-lista');
+        if (!list || !communityMarketIsOpen()) return;
+        // Native markup is not a stable public contract. Only attach to rows
+        // with an explicit matching listing ID and a verified market packet.
+        for (const row of list.querySelectorAll('[data-anuncio-id],[data-listing-id]')) {
+            const id=Number(row.getAttribute('data-anuncio-id') ||
+                row.getAttribute('data-listing-id'));
+            if (!Number.isSafeInteger(id)||id<=0||row.querySelector('[data-moth-native-snatch]'))
+                continue;
+            const entry=[...state.snatchNativeOffers.entries()].find(([key])=>
+                key.endsWith(':'+id));
+            if (!entry) continue;
+            const [key,offer]=entry;
+            const [kind,currency]=key.split(':');
+            const marker=row.querySelector('.cm-tempo,.cm-retencao,.cm-contagem,[data-compravel-em]') ||
+                row.querySelector('button');
+            if (!marker || !offer || !['item','pokemon'].includes(kind)) continue;
+            const button=document.createElement('button');
+            button.type='button'; button.className='moth-mw-btn';
+            button.dataset.mothNativeSnatch=key;
+            button.dataset.mothSnatchItem=String(Number(offer.itemId)||0);
+            button.textContent=tr(state.snatchManual.has(key)?'Cancel snatch':'Snatch');
+            button.style.marginInlineStart='0.4rem';
+            marker.insertAdjacentElement('afterend',button);
         }
     }
 
