@@ -126,6 +126,7 @@
         lastPurchaseOutcome: 'idle',
         marketReply: null,
         orderJournal: null,
+        exposureCache: new Map(),
         automationLastRunAt: 0,
         itemSummaryAt: 0,
         automationNotice: null,
@@ -655,6 +656,7 @@
     }
 
     function saveOrderJournal() {
+        state.exposureCache?.clear();
         if (!state.orderJournal?.sessionId) return false;
         try {
             localStorage.setItem(ORDER_JOURNAL_KEY, JSON.stringify(state.orderJournal));
@@ -671,9 +673,17 @@
             order.listingId === id && order.status === 'unknown');
     }
 
+    function unverifiedOrdersExist() {
+        return !!state.orderJournal?.orders.some(order => order.status === 'unknown');
+    }
+
     // Confirmed orders are charged at the quoted maximum for safety when
     // the acknowledgement omits actual settlement price or filled quantity.
     function orderExposure(scope, currency = null, ruleId = '') {
+        const cache = state.exposureCache || (state.exposureCache = new Map());
+        const key = scope + ':' + (currency || '*') + ':' + ruleId + ':' + orderDay(Date.now());
+        const hit = cache.get(key);
+        if (hit && Date.now() - hit.at < 1000) return hit.value;
         let spent = 0, count = 0, quantity = 0;
         for (const o of state.orderJournal?.orders || []) {
             if (o.status === 'refused' || currency && o.currency !== currency ||
@@ -682,7 +692,9 @@
                 scope === 'session' && o.sessionId !== state.orderJournal.sessionId) continue;
             spent += o.spend; count++; quantity += o.qty;
         }
-        return { spent, count, quantity };
+        const value = { spent, count, quantity };
+        cache.set(key, { at: Date.now(), value });
+        return value;
     }
 
     function activeRuleById(id) {
@@ -788,7 +800,8 @@
             !(candidate.retainedUntil > serverNow()) && !unresolvedListing(id) &&
             (manual || candidate.kind !== 'pokemon' ||
                 candidate.ficha && typeof candidate.ficha.shiny === 'boolean' &&
-                Number.isSafeInteger(Number(candidate.ficha.potencia)));
+                Number.isSafeInteger(Number(candidate.ficha.potencia)) &&
+                Number(candidate.ficha.potencia) >= 1 && Number(candidate.ficha.potencia) <= 5);
     }
 
     function loadConfig() {
@@ -1983,7 +1996,7 @@
         const fetch = state.historyFetch;
         if (!fetch) return;
         if (fetch.waitingSince && Date.now() - fetch.waitingSince < 12000) return;
-        if (q('#cm-hist-corpo')) {
+        if (q('#cm-hist-corpo') || communityMarketIsOpen()) {
             setTimeout(requestHistoryPage, 1500);
             return;
         }
@@ -2160,6 +2173,11 @@
     function pumpPokemonScan() {
         const scan = state.pokemonScan;
         if (!scan || scan.waiting) return;
+        if (communityMarketIsOpen() || (q('.cm-topo') && !state.watchOpen)) {
+            state.pokemonScan = null;
+            state.pokemonStatus = 'paused while browsing';
+            return;
+        }
         const job = scan.queue[0];
         if (!job) {
             state.pokemonScan = null;
@@ -2414,7 +2432,8 @@
 
     function tryBuy(candidate, manual, requestedQuantity = null, fixedRule = false) {
         // Rule eligibility is revalidated against the latest saved settings.
-        if (config.purchasesPaused || !freshQuote(candidate, !!manual)) {
+        if (config.purchasesPaused || unverifiedOrdersExist() ||
+            !freshQuote(candidate, !!manual)) {
             if (manual) addLog('Stale or unverified quote · refresh listing');
             return false;
         }
@@ -2863,6 +2882,7 @@
                 !pokemonRuleMatches(rule, listing.ficha, rule.currency) ||
                 typeof listing.ficha.shiny !== 'boolean' ||
                 !Number.isSafeInteger(Number(listing.ficha.potencia)) ||
+                Number(listing.ficha.potencia) < 1 || Number(listing.ficha.potencia) > 5 ||
                 isOwnListing(listing) || retentionUntil(listing) > serverNow() ||
                 Number(state.attemptedListings.get(id) || 0) > Date.now()) continue;
             if (!best || unitPrice < best.price || (unitPrice === best.price && id < best.listingId)) {
@@ -2887,7 +2907,7 @@
         }
         if (!state.socket || state.socket.readyState !== 1) return;
         if (q('#modal .cm-folha') || communityMarketIsOpen() ||
-            state.pendingBuy || config.purchasesPaused) return;
+            state.pendingBuy || config.purchasesPaused || unverifiedOrdersExist()) return;
         const now = Date.now();
         if (now - Number(state.automationLastRunAt || 0) < 1000) return;
         state.automationLastRunAt = now;
@@ -3950,6 +3970,7 @@
 
     function fixedRuleStatus(rule) {
         if (config.purchasesPaused) return tr('Purchases paused');
+        if (unverifiedOrdersExist()) return tr('Unknown purchase outcome');
         if (state.pendingBuy) return tr('Waiting for acknowledgement');
         if (remainingBudget(rule.currency, rule.id).spend < 1) return tr('Budget blocked');
         if (!rule.buyEnabled || !(rule.buyMax > 0)) return tr('Rule paused');
@@ -4052,6 +4073,7 @@
 
     function categoryRuleStatus(rule, type) {
         if (config.purchasesPaused) return tr('Purchases paused');
+        if (unverifiedOrdersExist()) return tr('Unknown purchase outcome');
         if (state.pendingBuy) return tr('Waiting for acknowledgement');
         if (remainingBudget(rule.currency, rule.id).spend < 1) return tr('Budget blocked');
         if (!rule.buyEnabled || !(rule.buyMax > 0)) return tr('Rule paused');
