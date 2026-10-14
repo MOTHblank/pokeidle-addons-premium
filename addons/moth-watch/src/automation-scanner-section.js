@@ -266,7 +266,7 @@
             state.ruleItemKeys.clear();
             return;
         }
-        if (!state.socket || state.socket.readyState !== 1) return;
+        if (!state.gameSocket || state.gameSocket.readyState !== 1) return;
         // A hidden native-market sheet may remain mounted in #modal. Its
         // mere DOM presence must not disable all background automation.
         // Browsing the native market must not pause authorized purchases.
