@@ -280,73 +280,89 @@
     function snatchTick() {
         state.snatchWake = null;
         const now = Date.now();
-        for (const [key, target] of [...state.snatchManual]) {
-            if (state.snatchObserved.has(key) || now - Number(state.snatchRecoverAt?.get(key)||0)<10000) continue;
-            state.snatchRecoverAt.set(key,now);
-            if (target.kind === 'item' && target.itemId > 0 && !communityMarketIsOpen()) {
-                state.ruleItemKeys.add(target.itemId + ':' + target.currency);
-                queueItemDetail(target.itemId,target.currency);
-            } else if (target.kind === 'pokemon' && !communityMarketIsOpen() &&
-                !state.pokemonScan?.waiting) startPokemonScan();
-        }
+        const server = serverNow();
         if (!state.orderJournal?.accountKey || !config.enabled || config.purchasesPaused ||
             !state.gameSocket || state.gameSocket.readyState !== 1 || gameIsLoading()) {
-            snatchSchedule(10000); return;
+            snatchSchedule(1000); return;
         }
-        // Previously sent orders do not block a released target.
-        // Distinct listings and bounded repeated Snatch attempts may overlap.
-        const server = serverNow();
-        const entries = [...state.snatchObserved.entries()].sort((a,b)=>
-            Number(a[1].releaseAt || 0) - Number(b[1].releaseAt || 0));
+        // Recover exact manual listing IDs. A general item/market page can
+        // omit a listing that still exists; market.anuncio does not.
+        for (const [key, target] of state.snatchManual) {
+            if (state.snatchObserved.has(key)) continue;
+            if (snatchVerifyListing(key, target, null, now)) break;
+        }
+        const entries = [...state.snatchObserved.entries()].sort((a,b) => {
+            const aBurst = a[1].releaseAt > 0 && a[1].releaseAt <= server &&
+                server < a[1].releaseAt + SNATCH_WINDOW_MS;
+            const bBurst = b[1].releaseAt > 0 && b[1].releaseAt <= server &&
+                server < b[1].releaseAt + SNATCH_WINDOW_MS;
+            if (aBurst !== bBurst) return aBurst ? -1 : 1;
+            // With 22 simultaneous targets, give each listing its FIRST shot
+            // before spending the four seconds retrying the first listing.
+            if (aBurst && a[1].attempts !== b[1].attempts)
+                return a[1].attempts - b[1].attempts;
+            return Number(a[1].releaseAt || 0) - Number(b[1].releaseAt || 0);
+        });
+        let sentThisTick = 0;
         for (const [key, entry] of entries) {
             const manual = state.snatchManual.get(key);
             const rule = entry.ruleId ? activeRuleById(entry.ruleId) : null;
             if (!manual && !rule) { state.snatchObserved.delete(key); continue; }
             const c = entry.candidate;
-            if (manual && (c.price > manual.maxPrice || c.itemId !== manual.itemId && c.kind==='item')) {
-                snatchStop(key,'quote changed'); continue;
+            if (manual && (c.price > manual.maxPrice ||
+                c.itemId !== manual.itemId && c.kind === 'item')) {
+                snatchStop(key, 'quote changed'); continue;
             }
-            if (entry.releaseAt > server + SNATCH_PREPARE_MS) continue;
             if (entry.releaseAt > server) {
-                // Do not fill the wire with scans immediately before unlock.
-                if (entry.releaseAt - server > 5000 &&
-                    now - Number(c.seenAt||0) > SNATCH_MAX_QUOTE_AGE_MS - 12000)
-                    snatchRefresh(entry,now);
+                // Use spare time BEFORE unlock to verify held listings. Do
+                // not compete with the four-second purchase burst.
+                if (entry.releaseAt - server <= SNATCH_PREPARE_MS &&
+                    now - Number(c.seenAt || 0) > 25000)
+                    snatchVerifyListing(key, manual, entry, now);
                 continue;
             }
-            if (!freshQuote(c,!!manual,true) && !snatchReleaseQuote(c)) {
-                // Missing a current quote must not create a 35ms busy loop.
-                entry.retryAt = now + 1000;
-                snatchRefresh(entry,now);
+            const burst = entry.releaseAt > 0 &&
+                server < entry.releaseAt + SNATCH_WINDOW_MS;
+            if (!burst) {
+                // Outside the four-second lottery, only try a recent positive
+                // per-listing verification. Never pound a vanished offer.
+                const verified = entry.lastVerifiedAt > 0 &&
+                    now - entry.lastVerifiedAt < 15000;
+                if (!verified || entry.needsVerification) {
+                    snatchVerifyListing(key, manual, entry, now);
+                    continue;
+                }
+            }
+            if (!freshQuote(c, !!manual, true) &&
+                !(burst && snatchReleaseQuote(c))) {
+                entry.needsVerification = true;
+                snatchVerifyListing(key, manual, entry, now);
                 continue;
             }
-            if (now < entry.retryAt || Number(state.attemptedListings.get(c.listingId)||0)>now) continue;
-            if (Number(state.rateLimitedUntil||0)>now) {
-                entry.retryAt = Number(state.rateLimitedUntil);
+            if (now < entry.retryAt ||
+                Number(state.attemptedListings.get(c.listingId) || 0) > now)
                 continue;
-            }
-            // A still-available, rule-authorized item does not expire merely
-            // because its original hold ended 30 minutes ago.
+            if (Number(state.rateLimitedUntil || 0) > now) break;
             if (entry.ruleId && !manual && (!rule || !currentRuleMatches(rule,c,c.price))) {
                 state.snatchObserved.delete(key); continue;
             }
             const activeRule = manual ? null : rule;
             if (purchaseQuantity(c,activeRule?.id || '') < 1) {
-                entry.retryAt = now + 1000;
+                entry.retryAt = now + 500;
                 continue;
             }
-            // Each attempt requests the FULL quoted listing quantity, bounded
-            // only by funds and explicit configuration inside tryBuy.
-            // marketComprado does not generally report the remaining stock,
-            // so subtracting previous orders here could shrink retries to 1.
-            entry.retryAt = now + snatchRetryDelay(entry.attempts);
-            if (tryBuy(c,!!manual,null,activeRule || false,true)) {
+            // The server accepts market.comprar on the exact listing ID.
+            // Request the MAX affordable units each time; never decrement
+            // the original lot quantity based on an ambiguous acknowledgement.
+            entry.retryAt = now + (burst ? SNATCH_RETRY_MS : 1000);
+            if (tryBuy(c,!!manual,null,activeRule || false,burst)) {
                 entry.attempts++;
-                queueRender();
-                break;
+                if (!burst) entry.lastVerifiedAt = 0;
+                sentThisTick++;
+                if (sentThisTick >= SNATCH_BURST_SIZE) break;
+            } else {
+                entry.retryAt = now + (burst ? 100 : 500);
             }
-            // An unsent attempt was not accepted as an order. Avoid spinning.
-            entry.retryAt = now + 250;
         }
         snatchSchedule();
     }
@@ -368,23 +384,30 @@
         state.snatchWake = null;
         if (!(state.snatchManual?.size || state.snatchObserved?.size)) return;
         const server = serverNow();
-        let wait = override || (state.snatchObserved.size ? 30000 : 10000);
+        const now = Date.now();
+        let wait = override || 10000;
         if (!override) {
+            if ([...state.snatchManual].some(([key]) => !state.snatchObserved.has(key)))
+                wait = Math.min(wait, 500);
+            if (state.snatchVerifyPending)
+                wait = Math.min(wait, 600);
             for (const entry of state.snatchObserved.values()) {
-                const until = entry.releaseAt || 0;
-                if (until > server + SNATCH_PREPARE_MS)
-                    wait = Math.min(wait,Math.max(50,until-server-SNATCH_PREPARE_MS));
-                else if (until > server) wait = Math.min(wait,until-server);
-                else {
-                    // Match the timer to the actual listing cooldown instead
-                    // of waking every 35 ms for a temporarily blocked offer.
-                    const attempted = Number(state.attemptedListings.get(entry.candidate.listingId) || 0);
-                    wait = Math.min(wait, Math.max(35,
-                        Math.max(entry.retryAt || 0, attempted) - Date.now()));
+                const until = Number(entry.releaseAt || 0);
+                if (until > server + SNATCH_PREPARE_MS) {
+                    wait = Math.min(wait,Math.max(100,until-server-SNATCH_PREPARE_MS));
+                } else if (until > server) {
+                    // During the 45-second warmup verify held listings,
+                    // rather than sleeping right through to unlock.
+                    wait = Math.min(wait, Math.max(120,
+                        Math.min(1500, until-server)));
+                } else if (until > 0 && server < until + SNATCH_WINDOW_MS) {
+                    wait = Math.min(wait, 120);
+                } else {
+                    wait = Math.min(wait, Math.max(700,
+                        Number(entry.retryAt || 0)-now));
                 }
             }
         }
-        // A single timer for all snatches. No permanently fast interval.
         state.snatchWake = setTimeout(snatchTick,Math.max(25,Math.min(30000,wait)));
     }
 
@@ -415,13 +438,22 @@
     function snatchConfirmItemListingSet(itemId,currency,offers) {
         if (!Array.isArray(offers)) return;
         const present = new Set(offers.map(o=>Number(o?.id)));
-        for (const entry of state.snatchObserved.values()) {
+        for (const [key,entry] of state.snatchObserved) {
             if (entry.candidate.kind !== 'item' ||
                 entry.candidate.itemId !== itemId || entry.candidate.currency !== currency) continue;
-            // A response can be truncated or cover another page. Absence from
-            // two sampled pages is not proof that the listing was sold.
-            entry.missing = present.has(entry.candidate.listingId)
-                ? 0 : (entry.missing || 0) + 1;
+            if (present.has(entry.candidate.listingId)) {
+                entry.missing = 0;
+                entry.needsVerification = false;
+            } else if (offers.length < 120) {
+                entry.missing = (entry.missing || 0) + 1;
+                // Not on the item detail page twice? Request this exact ID.
+                // The answer removes closed listings instead of leaving a
+                // permanent 30-minute "failing" Snatch in the queue.
+                if (entry.missing >= 2) {
+                    entry.needsVerification = true;
+                    snatchSchedule(25);
+                }
+            }
         }
     }
 
