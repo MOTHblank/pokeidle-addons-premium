@@ -906,7 +906,16 @@
             fillQty: Number.isSafeInteger(o.fillQty) && o.fillQty > 0 && o.fillQty <= o.qty ? o.fillQty : null,
             fillSpend: Number.isSafeInteger(o.fillSpend) && o.fillSpend > 0 && o.fillSpend <= o.spend ? o.fillSpend : null
         })).slice(-2500);
-        return { version: 1, accountKey, sessionId: orderSessionId(), orders };
+        // Aggregate settled purchases can be compacted without losing
+        // per-day, per-session or per-rule budget exposure.
+        let archived = {};
+        try {
+            const saved = JSON.parse(localStorage.getItem(ORDER_JOURNAL_KEY + ':' + accountKey) || 'null');
+            if (saved?.version === 1 && saved.archived &&
+                typeof saved.archived === 'object' && !Array.isArray(saved.archived))
+                archived = saved.archived;
+        } catch {}
+        return { version: 1, accountKey, sessionId: orderSessionId(), orders, archived };
     }
 
     function saveOrderJournal() {
@@ -947,6 +956,22 @@
                 scope === 'day' && o.day !== orderDay(Date.now()) ||
                 scope === 'session' && o.sessionId !== state.orderJournal.sessionId) continue;
             spent += o.spend; count++; quantity += o.qty;
+        }
+        for (const [key, archived] of Object.entries(state.orderJournal?.archived || {})) {
+            let fields;
+            try { fields = JSON.parse(key); } catch { continue; }
+            if (!Array.isArray(fields) || fields.length !== 4) continue;
+            const [session, day, unit, id] = fields;
+            if (currency && unit !== currency || ruleId && id !== ruleId ||
+                scope === 'day' && day !== orderDay(Date.now()) ||
+                scope === 'session' && session !== state.orderJournal.sessionId) continue;
+            const amount = Number(archived?.spent), times = Number(archived?.count),
+                units = Number(archived?.quantity);
+            if (Number.isSafeInteger(amount) && amount >= 0 &&
+                Number.isSafeInteger(times) && times >= 0 &&
+                Number.isSafeInteger(units) && units >= 0) {
+                spent += amount; count += times; quantity += units;
+            }
         }
         const value = { spent, count, quantity };
         cache.set(key, { at: Date.now(), value });
@@ -996,8 +1021,35 @@
         return { spend: maxCount > 0 ? spend : 0, quantity };
     }
 
+    function compactOrderJournal() {
+        const journal = state.orderJournal;
+        if (!journal || journal.orders.length < 2500) return;
+        const keep = [];
+        let drop = journal.orders.length - 1500;
+        journal.archived ||= {};
+        for (const o of journal.orders) {
+            if (drop > 0 && (o.status === 'confirmed' || o.status === 'refused')) {
+                if (o.status === 'confirmed') {
+                    const key = JSON.stringify([o.sessionId, o.day, o.currency, o.ruleId || '']);
+                    const bucket = journal.archived[key] ||= {spent:0,count:0,quantity:0};
+                    bucket.spent += o.spend;
+                    bucket.count += 1;
+                    bucket.quantity += o.qty;
+                }
+                drop--;
+            } else keep.push(o);
+        }
+        journal.orders = keep;
+        state.exposureCache?.clear();
+    }
+
     function reserveOrder(order) {
-        if (!state.orderJournal?.sessionId || state.orderJournal.orders.length >= 2500) return false;
+        if (!state.orderJournal?.sessionId) return false;
+        // A long-running buyer must not deadlock forever at 2500 receipts.
+        // Unknown orders remain individually tracked; confirmed orders are
+        // rolled into exact exposure totals before freeing journal space.
+        compactOrderJournal();
+        if (state.orderJournal.orders.length >= 2500) return false;
         state.orderJournal.orders.push(order);
         if (saveOrderJournal()) return true;
         state.orderJournal.orders.pop();
@@ -2761,7 +2813,12 @@
     }
 
     function startPokemonScan() {
-        if ((!config.scanPokemon && !activePokemonRules().length) || state.pokemonScan) return;
+        // A manually armed Pokémon Snatch is itself a reason to refresh
+        // listing quotes, even with background Pokémon monitoring disabled.
+        const manualSnatches = [...(state.snatchManual?.values() || [])]
+            .some(entry => entry.kind === 'pokemon');
+        if ((!config.scanPokemon && !activePokemonRules().length && !manualSnatches) ||
+            state.pokemonScan) return;
 
         /*
          * Bot requests share the game's WebSocket. A background market.listar
