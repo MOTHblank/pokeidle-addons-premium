@@ -44,7 +44,7 @@
             if (panel.dataset.mothWatchShell) delete panel.dataset.mothWatchShell;
             forceViewBuild = true;
         }
-        const views = ['opportunities', 'inventory', 'pricing', 'economy', 'snatches', 'automation', 'activity'];
+        const views = ['opportunities', 'inventory', 'pricing', 'snatches', 'automation', 'activity'];
         if (!views.includes(state.watchView)) state.watchView = 'opportunities';
 
         if (!panel.dataset.mothWatchShell) {
@@ -55,8 +55,7 @@
                 '<nav class="moth-mw-tabs" aria-label="' + escapeHtml(tr('Moth Watch views')) + '">' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="opportunities">' + escapeHtml(tr('Opportunities')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="inventory">' + escapeHtml(tr('Market inventory')) + '</button>' +
-                '<button type="button" class="moth-mw-tab" data-moth-view="pricing">' + escapeHtml(tr('Pokémon price evidence')) + '</button>' +
-                '<button type="button" class="moth-mw-tab" data-moth-view="economy">' + escapeHtml(tr('Economy & holdings')) + '</button>' +
+                '<button type="button" class="moth-mw-tab" data-moth-view="pricing">' + escapeHtml(tr('Pokémon values')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="snatches" id="moth-mw-snatch-tab">' + escapeHtml(tr('Snatch queue')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="automation">' + escapeHtml(tr('Automation & budget')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="activity">' + escapeHtml(tr('Activity & references')) + '</button></nav>' +
@@ -145,14 +144,29 @@
                     escapeHtml(tr('Browse item types, then load the offers for a selected currency.')) + '</span></div><div id="moth-mw-inventory-content"></div>';
             } else if (state.watchView === 'pricing') {
                 content.innerHTML = '<div class="moth-mw-section-title"><h4>' +
-                    escapeHtml(tr('Pokémon price evidence')) + '</h4><span>' +
-                    escapeHtml(tr('Read-only completed-sale comparisons. No purchase authorization.')) +
-                    '</span></div><div id="moth-mw-pricing-list"></div>';
-            } else if (state.watchView === 'economy') {
-                content.innerHTML = '<div class="moth-mw-section-title"><h4>' +
-                    escapeHtml(tr('Economy & holdings')) + '</h4><span>' +
-                    escapeHtml(tr('Read-only fees, market eligibility, and recorded purchase exposure.')) +
-                    '</span></div><div id="moth-mw-economy"></div>';
+                    escapeHtml(tr('Pokémon values')) + '</h4><span>' +
+                    escapeHtml(tr('Read-only sale estimates · no purchase authorization')) +
+                    '</span></div>' +
+                    '<p class="moth-mw-evidence-intro">' +
+                    escapeHtml(tr('Open any Pokémon sheet in the game to estimate your own Pokémon. Below are examples from recently observed market listings.')) +
+                    '</p><div class="moth-mw-value-tools"><button type="button" class="moth-mw-btn" id="moth-mw-refresh-sales">' +
+                    escapeHtml(tr('Refresh completed sales')) + '</button><span>' +
+                    escapeHtml(tr('History status: {status}', {status:displayStatus(state.pokemonStatus)})) +
+                    '</span></div>' +
+                    '<details class="moth-mw-advanced moth-mw-value-settings"><summary>' +
+                    escapeHtml(tr('Advanced price references & method')) + '</summary>' +
+                    '<div class="moth-mw-advanced-body"><p>' +
+                    escapeHtml(tr('First group sold Pokémon by species, form, Shiny, potency and currency. Compare grade, level, quality, IVs and refinement as available. The estimate is the median sale price; the displayed range covers the middle 50% of matched sales. Sparse, undated, old or broad matches are indicative only.')) +
+                    '</p><section class="moth-mw-settings-card"><h4>' +
+                    escapeHtml(tr('Valuation sample settings (not buying limits)')) +
+                    '</h4><p class="moth-mw-rule-hint">' +
+                    escapeHtml(tr('These settings affect price estimates and deal discovery only. Rules such as “buy any item below 10,000 Coins” never require historical sales.')) +
+                    '</p><div class="moth-mw-config">' +
+                    configField('Sold item units for estimate confidence', 'minItemUnits', 'number', '') +
+                    configField('Comparable Pokémon sales for price estimates', 'minPokemonSamples', 'number', '') +
+                    configField('Pokémon history pages', 'pokemonHistoryPages', 'number', '') +
+                    '</div></section></div></details>' +
+                    '<div id="moth-mw-pricing-list"></div>';
             } else if (state.watchView === 'snatches') {
                 content.innerHTML =
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Snatch queue')) +
@@ -198,15 +212,10 @@
                     '</div></section></div></div></details>';
             } else {
                 content.innerHTML =
-                    '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Price references')) + '</h4><span>' +
-                    escapeHtml(tr('Inspect market-price evidence independently of your buying rules.')) + '</span></div>' +
-                    '<section class="moth-mw-settings-card"><h4>' + escapeHtml(tr('Valuation sample settings (not buying limits)')) +
-                    '</h4><p class="moth-mw-rule-hint">' + escapeHtml(tr('These settings affect price estimates and deal discovery only. Rules such as “buy any item below 10,000 Coins” never require historical sales.')) +
-                    '</p><div class="moth-mw-config">' +
-                    configField('Sold item units for estimate confidence', 'minItemUnits', 'number', '') +
-                    configField('Comparable Pokémon sales for price estimates', 'minPokemonSamples', 'number', '') +
-                    configField('Pokémon history pages', 'pokemonHistoryPages', 'number', '') +
-                    '</div></section>' +
+                    '<p class="moth-mw-rule-hint">' +
+                    escapeHtml(tr('Pokémon sale estimates and advanced price references are now in Pokémon values.')) +
+                    ' <button type="button" class="moth-mw-btn" data-moth-goto="pricing">' +
+                    escapeHtml(tr('Open Pokémon values')) + '</button></p>' +
                     '<div class="moth-mw-reference-tools" id="moth-mw-reference-tools"></div>' +
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Recent activity')) + '</h4><span>' +
                     escapeHtml(tr('Purchase attempts, confirmations, and errors.')) + '</span></div>' +
@@ -258,10 +267,6 @@
             const host = q('#moth-mw-pricing-list', content);
             const html = renderPokemonPriceEvidence();
             if (host && host.innerHTML !== html) host.innerHTML = html;
-        } else if (state.watchView === 'economy') {
-            const host = q('#moth-mw-economy', content);
-            const html = renderEconomyDashboard();
-            if (host && host.innerHTML !== html && !host.contains(document.activeElement)) host.innerHTML = html;
         } else if (state.watchView === 'automation') {
             refreshAutomationLive(content);
         } else if (state.watchView === 'snatches') {

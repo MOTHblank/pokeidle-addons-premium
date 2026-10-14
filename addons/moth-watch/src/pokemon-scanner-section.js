@@ -48,7 +48,7 @@
     }
 
     function ensurePokemonHistory(force) {
-        if (!config.scanPokemon) return;
+        if (!config.scanPokemon && !force) return;
         // Do not compete with the game's own boot-time data and asset loading.
         // The normal scan timer will retry after the loading overlay disappears.
         if (gameIsLoading()) {

@@ -769,9 +769,9 @@ test('Milestone B: combat annotations require equipped moves or observed bases',
 test('Milestone B: price inspection is read-only and cannot authorize market orders', () => {
     const inspect=section('    function pokemonRulePreview(', '    function renderCandidate(');
     assert.doesNotMatch(inspect,/market\.comprar|send\(|tryBuy\(|saveConfig\(/);
-    assert.match(inspect,/Insufficient comparable sales/);
+    assert.match(inspect,/Not enough matching completed sales/);
     assert.match(inspect,/No matching configured Pokémon rule/);
-    assert.match(script,/No purchase authorization/);
+    assert.match(script,/no purchase authorization/i);
     assert.match(script,/data-moth-view="pricing"/);
     const state={orderJournal:{},pendingBuy:null};
     const config={enabled:true,fixedRulesEnabled:true,purchasesPaused:false,pokemonBuyRules:[
@@ -796,6 +796,29 @@ test('Milestone B: price inspection is read-only and cannot authorize market ord
         'inspection must not mutate authorization');
 });
 
+
+test('Pokémon sheet valuation remains read-only and accepts unknown attributes', () => {
+    const source = section('    function pokemonSheetDraft(', '    function renderCandidate(');
+    assert.match(source, /function ensurePokemonSheetValuation/);
+    assert.match(source, /#ficha-corpo/);
+    assert.doesNotMatch(source, /market\.comprar|tryBuy\(|send\(/);
+    const parser = new Function('normalize', source.slice(0, source.indexOf('    function pokemonSheetOffer(')) +
+        '\nreturn pokemonSheetDraft;')(value => String(value).toLowerCase().trim());
+    const knownNames = new Map([[25, 'Pikachu']]);
+    const pk = parser('Pokédex #25 · Potência: 4 · Nota: 3,55 · Nível 100',
+        'Pikachu', knownNames);
+    assert.equal(pk.speciesId, 25);
+    assert.equal(pk.potencia, 4);
+    assert.equal(pk.nota, 3.55);
+    assert.equal(pk.level, 100);
+    assert.equal(pk.shiny, null, 'absence of Shiny label is not a verified non-Shiny');
+    assert.equal(pk.formId, null, 'unknown form must not silently be called base');
+    assert.equal(parser('', 'Pikachu', knownNames).speciesId, 25);
+    assert.equal(parser('', 'Unknown nickname', knownNames).speciesId, null);
+    assert.equal(parser('Shiny', 'Shiny Pikachu', knownNames).shiny, true);
+    assert.match(script, /Advanced price references & method/);
+    assert.match(script, /id="moth-mw-refresh-sales"/);
+});
 
 test('Milestone B: relevant IV and combat role matches are explanatory only', () => {
     const h=createPokemonValuationHarness(), work=new Map();
@@ -943,9 +966,9 @@ test('Milestone C: optional session telemetry avoids duplicate NPC sales', () =>
     assert.equal(h.readEconomyTelemetry(),null);
 });
 
-test('Milestone C: independent economy UI cannot start selling automation', () => {
-    assert.match(script,/data-moth-view="economy"/);
-    assert.match(script,/Read-only fees, market eligibility, and recorded purchase exposure/);
+test('Economy-only dashboard is hidden without enabling selling automation', () => {
+    assert.doesNotMatch(script,/data-moth-view="economy"/);
+    assert.match(script,/data-moth-view="pricing"/);
     assert.match(script,/@version\s+0\.6\.13/);
     assert.doesNotMatch(script,/market\.criar|autoSellRules|sendItemSale/);
 });

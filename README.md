@@ -6,7 +6,7 @@ Private repository for premium and experimental [PokéIdle](https://pokeidle.io/
 
 | Script | Purpose |
 | --- | --- |
-| [Moth Watch](addons/moth-watch/moth-watch.user.js) | Community Market browser, rule-based item/Pokémon buying, Snatch queue, purchase activity and read-only pricing/economy context. |
+| [Moth Watch](addons/moth-watch/moth-watch.user.js) | Community Market browser, rule-based item/Pokémon buying, Snatch queue, purchase activity, Pokémon-sheet valuations and completed-sale price references. |
 | [Hunt Atlas experiment](addons/hunt-atlas/) | Alternative hunt finder with measured and modeled XP, resource and rare-drop comparisons, and capture planning. Independent of the public Hunt Atlas installation. |
 | [Upstream Scraper & Exporter](addons/upstream-scraper/scraper-exporter.user.js) | Manually export publicly served game client assets and a manifest, with download limits and cancellation. |
 
@@ -31,7 +31,9 @@ Turn on **Enable rule-based buying** to let enabled rules place orders; buying i
 
 Use the **Snatch queue** to mark held listings for purchase attempts when they unlock, or let buying rules target matching listings. Snatch can make repeated attempts while the listing remains available; only a server acknowledgement confirms a purchase. Normal available-listing purchases are not meant to wait for a Snatch release. Keep one actively buying Moth Watch tab per game account to avoid conflicting order state.
 
-The **Activity & references**, **Pokémon price evidence**, and **Economy & holdings** views provide diagnostics and read-only context. Price comparisons are not an additional requirement for an explicitly authorized maximum-price buying rule. Moth Watch does **not** automate selling.
+Use **Pokémon values** for compact asking-price comparisons and **Advanced price references & method** for the comparable-sales rules, minimum sample count and history depth. Click **Refresh completed sales** there to update history. When you open a Pokémon's native game **sheet** (a captured Pokémon or a market Pokémon), Moth valuation appears in the sheet with Coin and Gem estimates, middle-price ranges and a collapsible form to correct any missing Pokémon facts. Only completed-sale medians are reported; thin or unknown data is labeled indicative or unavailable, never a promised sale price.
+
+**Activity & references** holds logs, baseline tools and opt-in diagnostics; the low-value standalone **Economy & holdings** view has been removed from the navigation. Price estimates are not required by an explicitly authorized maximum-price buying rule. Moth Watch does **not** automate selling.
 
 ## Development
 
