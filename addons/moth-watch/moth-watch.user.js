@@ -7420,8 +7420,20 @@
 
         state.scanTimer = setInterval(() => {
             adoptBridgeSocket();
-            ensureUi();
-            runMarketAutomation();
+            // A render exception must not skip buying, snatches and scans for
+            // every subsequent timer tick while a particular sheet is open.
+            try { ensureUi(); } catch (error) {
+                if (Date.now() - Number(state.lastUiTickErrorAt || 0) > 30000) {
+                    state.lastUiTickErrorAt = Date.now();
+                    console.warn('[Moth Watch] UI update failed:', error);
+                }
+            }
+            try { runMarketAutomation(); } catch (error) {
+                if (Date.now() - Number(state.lastAutomationErrorAt || 0) > 30000) {
+                    state.lastAutomationErrorAt = Date.now();
+                    console.warn('[Moth Watch] buying rule tick failed:', error);
+                }
+            }
             // Give queued rule listings first use of the shared request slot.
             if (!state.detailPending && state.detailQueue.some(job => state.ruleItemKeys.has(job.key))) {
                 pumpItemDetails();
