@@ -278,7 +278,7 @@
             hero.querySelector('.fi-selos-linha')?.textContent || ''
         ].join(' ');
         const shiny = /\bshiny\b/i.test(shinyLabel) ||
-            !!hero.querySelector('.fi-selos-linha .shiny, .fi-selos-linha [title*="Shiny"]');
+            !!hero.querySelector('.fi-nome [class*="shiny"], .fi-selos-linha [class*="shiny"], .fi-selos-linha [title*="Shiny"]');
         const aliases = {hp:'hp',atk:'atk',def:'def',spatk:'spAtk',spdef:'spDef',spd:'speed',speed:'speed'};
         const ivs = {};
         for (const row of body.querySelectorAll('.fi-stats-duo .fi-stat')) {
@@ -403,7 +403,7 @@
         if (!sheet || sheet.classList.contains('hidden') || sheet.getAttribute('aria-hidden') === 'true')
             return;
         const body = q('#ficha-corpo', sheet);
-        if (!body || !body.querySelector('.fi-heroi')) return;
+        if (!body || !body.querySelector('.fi-placas-heroi .pk-selo-pot')) return;
         let host = q('#moth-sheet-valuation', body);
         const title = q('#ficha-titulo', sheet)?.textContent || '';
         const nativeText = [...body.childNodes].filter(node => node !== host)
