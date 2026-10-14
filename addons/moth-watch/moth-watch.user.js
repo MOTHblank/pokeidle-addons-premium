@@ -2546,7 +2546,7 @@
     }
 
     function ensurePokemonHistory(force) {
-        if (!config.scanPokemon) return;
+        if (!config.scanPokemon && !force) return;
         // Do not compete with the game's own boot-time data and asset loading.
         // The normal scan timer will retry after the loading overlay disappears.
         if (gameIsLoading()) {
@@ -5462,7 +5462,7 @@
             pokemonValueLabel(ficha, 'gold') + '</div><div><span>' + escapeHtml(tr('Gems')) + '</span>' +
             pokemonValueLabel(ficha, 'orb') + '</div></div>' +
             '<p>' + escapeHtml(tr('Shown prices are completed-sale medians, not guaranteed selling prices. Open Pokémon values in Moth Watch for the calculation and reference settings.')) + '</p>';
-        host.dataset.mothReferenceAt = String(state.pokemonReference?.capturedAt || 0);
+        host.dataset.mothReferenceAt = String(state.pokemonReference?.capturedAt || 0) + ':' + String(config.minPokemonSamples);
     }
 
     function ensurePokemonSheetValuation() {
@@ -5477,7 +5477,7 @@
             .map(node => node.textContent || '').join(' ');
         const key = title + '|' + nativeText.slice(0, 1600);
         if (host?.dataset.mothSheetKey === key) {
-            if (host.dataset.mothReferenceAt !== String(state.pokemonReference?.capturedAt || 0))
+            if (host.dataset.mothReferenceAt !== String(state.pokemonReference?.capturedAt || 0) + ':' + String(config.minPokemonSamples))
                 updatePokemonSheetValues(host);
             return;
         }
