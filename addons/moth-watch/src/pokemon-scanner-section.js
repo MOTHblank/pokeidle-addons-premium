@@ -2,7 +2,7 @@
         const fetch = state.historyFetch;
         if (!fetch) return;
         if (fetch.waitingSince && Date.now() - fetch.waitingSince < 12000) return;
-        if (q('#cm-hist-corpo') || communityMarketIsOpen()) {
+        if (communityMarketIsOpen()) {
             setTimeout(requestHistoryPage, 1500);
             return;
         }
@@ -156,7 +156,7 @@
          * normal Pokémon market. Moth Watch may scan while its own panel hides
          * that view, but otherwise leave interactive browsing alone.
          */
-        if (q('.cm-topo') && !state.watchOpen) {
+        if (communityMarketIsOpen()) {
             state.pokemonStatus = 'paused while browsing';
             return;
         }
@@ -179,7 +179,7 @@
     function pumpPokemonScan() {
         const scan = state.pokemonScan;
         if (!scan || scan.waiting) return;
-        if (communityMarketIsOpen() || (q('.cm-topo') && !state.watchOpen)) {
+        if (communityMarketIsOpen()) {
             state.pokemonScan = null;
             state.pokemonStatus = 'paused while browsing';
             return;
