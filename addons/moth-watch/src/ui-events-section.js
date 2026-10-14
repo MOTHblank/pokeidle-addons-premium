@@ -29,61 +29,26 @@
                 renderWatch(state.watchView !== 'snatches'); return;
             }
             const quickLink = target.closest('[data-moth-goto]');
-            if (quickLink?.dataset.mothGoto === 'snatches') {
-                state.watchView = 'snatches';
-                try { localStorage.setItem('moth-pokeidle-market-watch-view-v1', 'snatches'); } catch {}
+            if (['snatches', 'pricing'].includes(quickLink?.dataset.mothGoto)) {
+                state.watchView = quickLink.dataset.mothGoto;
+                try { localStorage.setItem('moth-pokeidle-market-watch-view-v1', state.watchView); } catch {}
                 renderWatch(true);
+                return;
+            }
+            if (target.closest('#moth-mw-refresh-sales')) {
+                ensurePokemonHistory(true);
+                state.pokemonEvidenceMemo = null;
+                queueRender();
                 return;
             }
             const tab = target.closest('[data-moth-view]');
             if (tab) {
                 const view = tab.dataset.mothView;
-                if (!['opportunities', 'inventory', 'pricing', 'economy', 'snatches', 'automation', 'activity'].includes(view)) return;
+                if (!['opportunities', 'inventory', 'pricing', 'snatches', 'automation', 'activity'].includes(view)) return;
                 state.watchView = view;
                 try { localStorage.setItem('moth-pokeidle-market-watch-view-v1', view); } catch {}
                 renderWatch(true);
                 return;
-            }
-            const holdingRemove = target.closest('[data-moth-holding-remove]');
-            if (holdingRemove) {
-                const ok = setEconomyHolding(Number(holdingRemove.dataset.mothHoldingRemove), 0, 'gold');
-                state.economyNotice = ok ? tr('Holding removed.') : tr('Could not remove holding.');
-                renderWatch(true); return;
-            }
-            if (target.closest('#moth-mw-holding-save')) {
-                const itemId = Number(q('#moth-mw-holding-item', panel)?.value);
-                const quantity = Number(q('[data-moth-economy-field="quantity"]', panel)?.value);
-                const currency = q('#moth-mw-holding-currency', panel)?.value;
-                const ok = setEconomyHolding(itemId, quantity, currency);
-                state.economyNotice = ok ? tr('Holding quantity recorded.') : tr('Select a catalog item and a valid quantity.');
-                if (ok) {
-                    state.economyInput.itemId = itemId;
-                    state.economyInput.quantity = quantity;
-                    state.economyInput.holdingCurrency = currency;
-                }
-                renderWatch(true); return;
-            }
-            if (target.closest('#moth-mw-fee-calc')) {
-                const kind = q('#moth-mw-fee-kind', panel)?.value;
-                const currency = q('#moth-mw-fee-currency', panel)?.value;
-                const unit = Number(q('[data-moth-economy-field="feeUnit"]', panel)?.value);
-                const quantity = Number(q('[data-moth-economy-field="feeQuantity"]', panel)?.value);
-                const days = Number(q('[data-moth-economy-field="holdingDays"]', panel)?.value);
-                if (!['item','diamond','pokemon'].includes(kind) ||
-                    !['gold','orb'].includes(currency) ||
-                    !Number.isSafeInteger(unit) || unit <= 0 ||
-                    !Number.isSafeInteger(quantity) || quantity < 1 ||
-                    kind === 'pokemon' && quantity !== 1 ||
-                    !Number.isSafeInteger(unit * quantity) ||
-                    !Number.isSafeInteger(days) || days < 1 || days > 30) {
-                    state.economyNotice = tr('Enter a valid positive price and quantity; Pokémon are indivisible.');
-                    renderWatch(true);
-                    return;
-                }
-                state.economyInput = { ...state.economyInput, feeKind: kind, feeCurrency:currency,
-                    feeUnit: unit, feeQuantity: quantity, holdingDays: days };
-                state.economyNotice = tr('Seller fee estimate updated.');
-                renderWatch(true); return;
             }
             if (target.closest('#moth-mw-diagnostics-toggle')) {
                 diagnosticReset(!state.diagnostics?.enabled);
