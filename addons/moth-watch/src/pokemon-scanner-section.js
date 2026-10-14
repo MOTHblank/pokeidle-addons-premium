@@ -148,7 +148,12 @@
     }
 
     function startPokemonScan() {
-        if ((!config.scanPokemon && !activePokemonRules().length) || state.pokemonScan) return;
+        // A manually armed Pokémon Snatch is itself a reason to refresh
+        // listing quotes, even with background Pokémon monitoring disabled.
+        const manualSnatches = [...(state.snatchManual?.values() || [])]
+            .some(entry => entry.kind === 'pokemon');
+        if ((!config.scanPokemon && !activePokemonRules().length && !manualSnatches) ||
+            state.pokemonScan) return;
 
         /*
          * Bot requests share the game's WebSocket. A background market.listar
