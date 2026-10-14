@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.6.18
+// @version      0.6.19
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/moth-watch/moth-watch.user.js
@@ -15,7 +15,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.18');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.19');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -1032,8 +1032,11 @@
         let drop = journal.orders.length - 1500;
         journal.archived ||= {};
         for (const o of journal.orders) {
-            if (drop > 0 && (o.status === 'confirmed' || o.status === 'refused')) {
-                if (o.status === 'confirmed') {
+            if (drop > 0 && (o.status === 'confirmed' || o.status === 'refused' ||
+                o.status === 'unknown' && Date.now() - o.sentAt > 60000)) {
+                // A timed-out purchase remains a *possible* spend. Preserve
+                // exposure, but don't let old attempts block all new orders.
+                if (o.status === 'confirmed' || o.status === 'unknown') {
                     const key = JSON.stringify([o.sessionId, o.day, o.currency, o.ruleId || '']);
                     const bucket = journal.archived[key] ||= {spent:0,count:0,quantity:0};
                     bucket.spent += o.spend;
@@ -3795,7 +3798,7 @@
     const SNATCH_BURST_SIZE = 8;
     const SNATCH_MAX_QUOTE_AGE_MS = 3 * 60000;
     const SNATCH_PREPARE_MS = 45000;
-    const SNATCH_VERIFY_RETRY_MS = 8500;
+    const SNATCH_VERIFY_RETRY_MS = 1500;
     // All held-listing attempts compete in the same four-second window.
     // Afterwards only a separately confirmed live listing may be bought.
     function snatchRetryDelay() { return SNATCH_RETRY_MS; }
@@ -3834,7 +3837,7 @@
         state.snatchRecoverAt = new Map();
         state.snatchNativeOffers = new Map();
         state.snatchWake = null;
-        state.snatchVerifyPending = null;
+        state.snatchVerifyPending = new Map();
         state.snatchVerifyAt = new Map();
         if (!account) return;
         try {
@@ -3991,7 +3994,7 @@
         const wasManual = state.snatchManual.delete(key);
         state.snatchObserved.delete(key);
         state.snatchVerifyAt?.delete(key);
-        if (state.snatchVerifyPending?.key === key) state.snatchVerifyPending = null;
+        state.snatchVerifyPending?.delete(Number(key.split(':').at(-1)));
         if (wasManual) snatchSave();
         if (reason) addLog('Snatch ' + reason);
         snatchSchedule(); queueRender();
@@ -4000,18 +4003,20 @@
     // PokéIdle's own client uses market.anuncio to inspect a specific listing.
     // Unlike page-zero browsing, this can authoritatively report that #id is
     // sold/closed. Never infer deletion from a truncated market listing page.
+    // market.anuncio is the game's exact listing-by-ID lookup. Multiple
+    // lookups can be in flight; one slow response must not stall 25 targets.
     function snatchHandleSingleListing(message) {
         if (message?.aba !== 'anuncio') return false;
         const id = Number(message.id);
-        const pending = state.snatchVerifyPending;
-        if (!pending || id !== pending.id) return false;
-        state.snatchVerifyPending = null;
+        const pending = state.snatchVerifyPending?.get(id);
+        if (!pending) return false;
+        state.snatchVerifyPending.delete(id);
         const target = state.snatchManual.get(pending.key);
         const entry = state.snatchObserved.get(pending.key);
         const listing = message.anuncio;
         if (!target && !entry) return true;
         if (!listing || listing.estado && listing.estado !== 'aberto' ||
-            Number(listing.id) !== id) {
+            Number(listing.id) !== id || !(Number(listing.qtd) > 0)) {
             snatchStop(pending.key, 'listing #' + id + ' no longer exists');
             return true;
         }
@@ -4021,7 +4026,7 @@
         if (kind !== (target?.kind || entry?.candidate?.kind) ||
             currency !== (target?.currency || entry?.candidate?.currency) ||
             target && Number(listing.preco) > target.maxPrice) {
-            snatchStop(pending.key, 'quote changed for #' + id);
+            snatchStop(pending.key, 'listing #' + id + ' changed beyond authorization');
             return true;
         }
         snatchObserve(kind, currency, listing, itemId);
@@ -4035,15 +4040,22 @@
     }
 
     function snatchVerifyListing(key, target, entry, now) {
-        if (state.snatchVerifyPending &&
-            now - state.snatchVerifyPending.sentAt < 5500) return false;
-        if (state.snatchVerifyPending) state.snatchVerifyPending = null;
-        if (now - Number(state.snatchVerifyAt?.get(key) || 0) < SNATCH_VERIFY_RETRY_MS)
-            return false;
+        if (now < Number(state.rateLimitedUntil || 0)) return false;
         const id = Number(target?.id || entry?.candidate?.listingId);
         if (!Number.isSafeInteger(id) || id < 1) return false;
-        if (!sendBackground({t:'market.anuncio',id})) return false;
-        state.snatchVerifyPending = {id,key,sentAt:now};
+        const pending = state.snatchVerifyPending || (state.snatchVerifyPending = new Map());
+        for (const [otherId, job] of pending) {
+            if (now - job.sentAt > 4000) pending.delete(otherId);
+        }
+        if (pending.has(id) || pending.size >= 8 ||
+            now - Number(state.snatchVerifyAt?.get(key) || 0) < SNATCH_VERIFY_RETRY_MS)
+            return false;
+        // Exact listing lookups are time-critical; do not put them behind
+        // the background scanner's serial cooldown.
+        const request = {t:'market.anuncio',id};
+        if (!send(request)) return false;
+        diagnosticOutbound(request);
+        pending.set(id,{id,key,sentAt:now});
         state.snatchVerifyAt.set(key,now);
         return true;
     }
@@ -4072,12 +4084,6 @@
             !state.gameSocket || state.gameSocket.readyState !== 1 || gameIsLoading()) {
             snatchSchedule(1000); return;
         }
-        // Recover exact manual listing IDs. A general item/market page can
-        // omit a listing that still exists; market.anuncio does not.
-        for (const [key, target] of state.snatchManual) {
-            if (state.snatchObserved.has(key)) continue;
-            if (snatchVerifyListing(key, target, null, now)) break;
-        }
         const entries = [...state.snatchObserved.entries()].sort((a,b) => {
             const aBurst = a[1].releaseAt > 0 && a[1].releaseAt <= server &&
                 server < a[1].releaseAt + SNATCH_WINDOW_MS;
@@ -4086,7 +4092,7 @@
             if (aBurst !== bBurst) return aBurst ? -1 : 1;
             // With 22 simultaneous targets, give each listing its FIRST shot
             // before spending the four seconds retrying the first listing.
-            if (aBurst && a[1].attempts !== b[1].attempts)
+            if (a[1].attempts !== b[1].attempts)
                 return a[1].attempts - b[1].attempts;
             return Number(a[1].releaseAt || 0) - Number(b[1].releaseAt || 0);
         });
@@ -4114,8 +4120,9 @@
             if (!burst) {
                 // Outside the four-second lottery, only try a recent positive
                 // per-listing verification. Never pound a vanished offer.
-                const verified = entry.lastVerifiedAt > 0 &&
-                    now - entry.lastVerifiedAt < 15000;
+                const verified = !entry.needsVerification && (
+                    freshQuote(c, !!manual, true) ||
+                    entry.lastVerifiedAt > 0 && now - entry.lastVerifiedAt < 15000);
                 if (!verified || entry.needsVerification) {
                     snatchVerifyListing(key, manual, entry, now);
                     continue;
@@ -4142,15 +4149,20 @@
             // The server accepts market.comprar on the exact listing ID.
             // Request the MAX affordable units each time; never decrement
             // the original lot quantity based on an ambiguous acknowledgement.
-            entry.retryAt = now + (burst ? SNATCH_RETRY_MS : 1000);
-            if (tryBuy(c,!!manual,null,activeRule || false,burst)) {
+            entry.retryAt = now + SNATCH_RETRY_MS;
+            if (tryBuy(c,!!manual,null,activeRule || false,true)) {
                 entry.attempts++;
-                if (!burst) entry.lastVerifiedAt = 0;
                 sentThisTick++;
                 if (sentThisTick >= SNATCH_BURST_SIZE) break;
             } else {
-                entry.retryAt = now + (burst ? 100 : 500);
+                entry.retryAt = now + SNATCH_RETRY_MS;
             }
+        }
+        // Recover missing manual targets in parallel *after* purchases. The
+        // exact lookup returns null/closed for listings already gone.
+        for (const [key, target] of state.snatchManual) {
+            if (!state.snatchObserved.has(key))
+                snatchVerifyListing(key, target, null, Date.now());
         }
         snatchSchedule();
     }
@@ -4175,11 +4187,11 @@
         const now = Date.now();
         let wait = override || 10000;
         if (!override) {
-            if (state.snatchManual?.size) wait = Math.min(wait, 1000);
+            if (state.snatchManual?.size) wait = Math.min(wait, 250);
             if ([...state.snatchManual].some(([key]) => !state.snatchObserved.has(key)))
-                wait = Math.min(wait, 500);
-            if (state.snatchVerifyPending)
-                wait = Math.min(wait, 600);
+                wait = Math.min(wait, 200);
+            if (state.snatchVerifyPending?.size)
+                wait = Math.min(wait, 250);
             for (const entry of state.snatchObserved.values()) {
                 const until = Number(entry.releaseAt || 0);
                 if (until > server + SNATCH_PREPARE_MS) {
@@ -4190,9 +4202,9 @@
                     wait = Math.min(wait, Math.max(120,
                         Math.min(1500, until-server)));
                 } else if (until > 0 && server < until + SNATCH_WINDOW_MS) {
-                    wait = Math.min(wait, 120);
+                    wait = Math.min(wait, 75);
                 } else {
-                    wait = Math.min(wait, Math.max(700,
+                    wait = Math.min(wait, Math.max(150,
                         Number(entry.retryAt || 0)-now));
                 }
             }
@@ -4212,12 +4224,17 @@
                 // that the whole item listing sold, even when qtd was large.
                 // Ask for a new authenticated stock quote asynchronously but
                 // never block the next maximum-quantity purchase on it.
+                entry.needsVerification = true;
                 entry.refreshedAt = 0;
-                snatchRefresh(entry, Date.now());
+                snatchVerifyListing(key, state.snatchManual.get(key), entry, Date.now());
             }
             // Success, refusal and unknown all leave item stock uncertain.
             // Keep requesting the largest affordable quantity while the quote
             // is valid; the authoritative server decides what remains.
+            if (status === 'refused') {
+                entry.needsVerification = true;
+                snatchVerifyListing(key, state.snatchManual.get(key), entry, Date.now());
+            }
             entry.retryAt = Date.now() + snatchRetryDelay(entry.attempts);
             state.attemptedListings.set(listingId,entry.retryAt);
         }
@@ -7768,7 +7785,7 @@
             sheetObserver.observe(pokemonSheetBody, {childList: true, subtree: true});
         }
         ensureUi();
-        console.info('[Moth Watch] v0.6.18 loaded');
+        console.info('[Moth Watch] v0.6.19 loaded');
     }
 
     bootstrap();
