@@ -1,23 +1,26 @@
 # PokéIdle Addons Premium
 
-Private repository for premium and experimental [PokéIdle](https://pokeidle.io/app) userscripts. These scripts are **not installed or updated** by the public [pokeidle-addons](https://github.com/MOTHblank/pokeidle-addons) controller.
+Premium and experimental [PokéIdle](https://pokeidle.io/app) userscripts. **This repository is currently public.** The public [pokeidle-addons](https://github.com/MOTHblank/pokeidle-addons) controller does not install or update these scripts; Violentmonkey handles Moth Watch updates independently.
 
 ## Scripts
 
 | Script | Purpose |
 | --- | --- |
-| [Moth Watch](addons/moth-watch/moth-watch.user.js) | Community Market browser, rule-based item/Pokémon buying, Snatch queue, purchase activity, Pokémon-sheet valuations and completed-sale price references. |
+| [Moth Watch](addons/moth-watch/moth-watch.user.js) · [Install / update](https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/moth-watch/moth-watch.user.js) | Community Market browser, rule-based item/Pokémon buying, Snatch queue, purchase activity, Pokémon-sheet valuations and completed-sale price references. |
 | [Hunt Atlas experiment](addons/hunt-atlas/) | Alternative hunt finder with measured and modeled XP, resource and rare-drop comparisons, and capture planning. Independent of the public Hunt Atlas installation. |
 | [Upstream Scraper & Exporter](addons/upstream-scraper/scraper-exporter.user.js) | Manually export publicly served game client assets and a manifest, with download limits and cancellation. |
 
-## Manual installation and updates
+## Installation and automatic updates
 
 1. Install a userscript manager such as [Violentmonkey](https://addons.mozilla.org/firefox/addon/violentmonkey/).
-2. While signed into GitHub with access to this **private** repository, open the script from the table above.
-3. Copy the source into a new userscript (or replace an existing copy) in the manager and save it.
-4. Disable any duplicate installation of the same addon, then reload PokéIdle.
+2. Open **[Install Moth Watch](https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/moth-watch/moth-watch.user.js)** and approve installation in your userscript manager. If you previously copied the code manually, update or replace that installation and disable any duplicate.
+3. Enable Violentmonkey's automatic userscript update checks for the Firefox profile running PokéIdle. Reload the game after installing an update.
 
-**Updates are manual.** Private GitHub raw URLs do not provide a reliable unauthenticated userscript update feed. Moth Watch deliberately has no `@updateURL` or `@downloadURL`. An authorized maintainer can also run **Actions → Private MothWatch userscript package** and install the resulting artifact manually.
+**Direct installer / download:** [moth-watch.user.js](https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/moth-watch/moth-watch.user.js)
+
+**Update and download feed:** `@updateURL` and `@downloadURL` both point to the **public `main` branch** at the URL above. Each published change must increase `@version` for installed userscripts to discover it.
+
+**If the repository is made private again:** unauthenticated access to this URL will stop working, so automatic updates will stop. Move the distributable script to a stable public location **before** making it private again if you want uninterrupted updates. A manually triggered packaging workflow remains an alternative for private distribution.
 
 ## Moth Watch
 
@@ -41,14 +44,13 @@ Moth Watch is assembled into the standalone userscript from `addons/moth-watch/s
 
 ```sh
 node addons/moth-watch/build.cjs
-node --test addons/moth-watch/tests/automation.test.cjs
 ```
 
 See [Hunt Atlas instructions](addons/hunt-atlas/README.md) for experiment-specific usage. Durable protocol, economics, combat and pricing references are indexed in [docs/](docs/README.md).
 
 ## Repository layout
 
-- `addons/moth-watch/` — distributable script, source sections, builder and tests.
+- `addons/moth-watch/` — distributable script, source sections and builder.
 - `addons/hunt-atlas/` — experimental standalone script, instructions and preview.
 - `addons/upstream-scraper/` — client-asset export userscript.
 - `docs/mechanics/`, `docs/market/`, `docs/references/` — topic-specific technical references.
