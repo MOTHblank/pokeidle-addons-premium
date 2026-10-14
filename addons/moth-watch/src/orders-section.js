@@ -173,8 +173,11 @@
         let drop = journal.orders.length - 1500;
         journal.archived ||= {};
         for (const o of journal.orders) {
-            if (drop > 0 && (o.status === 'confirmed' || o.status === 'refused')) {
-                if (o.status === 'confirmed') {
+            if (drop > 0 && (o.status === 'confirmed' || o.status === 'refused' ||
+                o.status === 'unknown' && Date.now() - o.sentAt > 60000)) {
+                // A timed-out purchase remains a *possible* spend. Preserve
+                // exposure, but don't let old attempts block all new orders.
+                if (o.status === 'confirmed' || o.status === 'unknown') {
                     const key = JSON.stringify([o.sessionId, o.day, o.currency, o.ruleId || '']);
                     const bucket = journal.archived[key] ||= {spent:0,count:0,quantity:0};
                     bucket.spent += o.spend;
