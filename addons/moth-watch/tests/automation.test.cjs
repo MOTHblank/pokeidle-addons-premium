@@ -820,6 +820,51 @@ test('Pokémon sheet valuation remains read-only and accepts unknown attributes'
     assert.match(script, /id="moth-mw-refresh-sales"/);
 });
 
+test('Native Pokémon sheet actually mounts the valuation through the normal UI pass', () => {
+    const uiEvents = fs.readFileSync(path.join(__dirname, '..', 'src/ui-events-section.js'), 'utf8');
+    const ui = uiEvents.slice(uiEvents.indexOf('    function ensureUi() {'));
+    assert.match(ui, /function ensureUi\(\) \{[\s\S]*?ensureSellPriceRecommendation\(\);[\s\S]*?ensurePokemonSheetValuation\(\);/);
+    assert.equal((uiEvents.match(/ensurePokemonSheetValuation\(\);/g) || []).length, 1,
+        'the mount call must be inside ensureUi, not an unrelated callback');
+    assert.match(script, /sheetObserver\.observe\(pokemonSheet/);
+    assert.match(script, /sheetObserver\.observe\(pokemonSheetBody/);
+    const source = section('    function ensurePokemonSheetValuation()', '    function renderCandidate(');
+    let host = null, prepends = 0, refreshed = 0;
+    const native = {textContent:'Pokédex #25 · Potência: 4'};
+    const body = {
+        childNodes:[native],
+        prepend(node) { host = node; prepends++; }
+    };
+    const sheet = {classList:{contains(){return false;}},getAttribute(){return null;}};
+    const title = {textContent:'Pikachu'};
+    const q = selector => ({
+        '#ficha':sheet, '#ficha-corpo':body, '#ficha-titulo':title,
+        '#moth-sheet-valuation':host
+    })[selector] || null;
+    const document = {createElement() {
+        return {dataset:{},querySelector(){return null;},addEventListener(){}};
+    }};
+    const mount = new Function('q','document','state','config','pokemonSheetOffer',
+        'pokemonSheetDraft','updatePokemonSheetValues','escapeHtml','tr',
+        source + '\nreturn ensurePokemonSheetValuation;')(
+        q,document,{pokemonReference:{capturedAt:0},creatureNames:new Map()},
+        {minPokemonSamples:3},()=>null,
+        ()=>({speciesId:25,potencia:4,nota:3.5,level:100,shiny:false,formId:'base'}),
+        ()=>{refreshed++;},value=>String(value),value=>String(value)
+    );
+    mount();
+    assert.equal(prepends,1,'estimate is inserted at the top of the native sheet');
+    assert.equal(host.id,'moth-sheet-valuation');
+    assert.match(host.innerHTML,/Moth valuation/);
+    mount();
+    assert.equal(prepends,1,'polling must not inject duplicate panels');
+    assert.equal(refreshed,1);
+    native.textContent = 'Pokédex #25 · Potência: 5';
+    mount();
+    assert.equal(prepends,1,'repainting native sheet should reuse the panel');
+    assert.equal(refreshed,2);
+});
+
 test('Milestone B: relevant IV and combat role matches are explanatory only', () => {
     const h=createPokemonValuationHarness(), work=new Map();
     const physical=samplePokemon({equippedMoves:[{categoria:'PHYSICAL'}]});
