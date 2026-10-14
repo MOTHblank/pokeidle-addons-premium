@@ -37,18 +37,17 @@ Use **Pokémon values** for compact asking-price comparisons and **Advanced pric
 
 ## Development
 
-Moth Watch is assembled into the standalone userscript from `addons/moth-watch/src/`:
+Moth Watch is assembled into the standalone userscript from `addons/moth-watch/src/`. Run the builder after changing a source section; no automatic regression workflow runs for Moth Watch:
 
 ```sh
 node addons/moth-watch/build.cjs
-node --test addons/moth-watch/tests/automation.test.cjs
 ```
 
 See [Hunt Atlas instructions](addons/hunt-atlas/README.md) for experiment-specific usage. Durable protocol, economics, combat and pricing references are indexed in [docs/](docs/README.md).
 
 ## Repository layout
 
-- `addons/moth-watch/` — distributable script, source sections, builder and tests.
+- `addons/moth-watch/` — distributable script, source sections and builder.
 - `addons/hunt-atlas/` — experimental standalone script, instructions and preview.
 - `addons/upstream-scraper/` — client-asset export userscript.
 - `docs/mechanics/`, `docs/market/`, `docs/references/` — topic-specific technical references.
