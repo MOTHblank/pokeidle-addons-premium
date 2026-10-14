@@ -142,7 +142,7 @@
         })) + ' ' + escapeHtml(tr('Comparison: {stage}', { stage: tr(ref.comparison) })) +
             ' · ' + escapeHtml(tr('Confidence: {confidence}', { confidence: tr(ref.confidence) })) +
             (ref.ageDays == null ? ' · ' + escapeHtml(tr('Sale dates unverified')) :
-                ' · ' + escapeHtml(tr('Newest comparable sale: {days} days ago', {days:ref.ageDays}));
+                ' · ' + escapeHtml(tr('Newest comparable sale: {days} days ago', {days:ref.ageDays})));
     }
 
     function pokemonValueLabel(ficha, currency) {
