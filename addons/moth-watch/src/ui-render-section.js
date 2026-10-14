@@ -145,7 +145,7 @@
             } else if (state.watchView === 'pricing') {
                 content.innerHTML = '<div class="moth-mw-section-title"><h4>' +
                     escapeHtml(tr('Pokémon values')) + '</h4><span>' +
-                    escapeHtml(tr('Read-only sale estimates · no purchase authorization')) +
+                    escapeHtml(tr('Relative stat + market estimates · no purchase authorization')) +
                     '</span></div>' +
                     '<p class="moth-mw-evidence-intro">' +
                     escapeHtml(tr('Open any Pokémon sheet in the game to estimate your own Pokémon. Below are examples from recently observed market listings.')) +
@@ -154,13 +154,13 @@
                     escapeHtml(tr('History status: {status}', {status:displayStatus(state.pokemonStatus)})) +
                     '</span></div>' +
                     '<details class="moth-mw-advanced moth-mw-value-settings"><summary>' +
-                    escapeHtml(tr('Advanced price references & method')) + '</summary>' +
+                    escapeHtml(tr('Model & historical reference settings')) + '</summary>' +
                     '<div class="moth-mw-advanced-body"><p>' +
-                    escapeHtml(tr('First group sold Pokémon by species, form, Shiny, potency and currency. Compare grade, level, quality, IVs and refinement as available. The estimate is the median sale price; the displayed range covers the middle 50% of matched sales. Sparse, undated, old or broad matches are indicative only.')) +
+                    escapeHtml(tr('The value estimate uses conservative modeled P scarcity and stat strength, N, quality, role-sensitive IVs, level and refinement. Current offers for the same species anchor the currency, with completed sales as supporting data. Each currency is modeled independently; the range is indicative, not an empirical guarantee. Historic sale-match thresholds below are retained for the separate conservative opportunity scanner.')) +
                     '</p><section class="moth-mw-settings-card"><h4>' +
-                    escapeHtml(tr('Valuation sample settings (not buying limits)')) +
+                    escapeHtml(tr('Historical sale scanner settings (not buying limits)')) +
                     '</h4><p class="moth-mw-rule-hint">' +
-                    escapeHtml(tr('These settings affect price estimates and deal discovery only. Rules such as “buy any item below 10,000 Coins” never require historical sales.')) +
+                    escapeHtml(tr('These settings affect the historical-sale scanner and its conservative discount discovery, not the relative model or explicit maximum-price buying rules.')) +
                     '</p><div class="moth-mw-config">' +
                     configField('Sold item units for estimate confidence', 'minItemUnits', 'number', '') +
                     configField('Comparable Pokémon sales for price estimates', 'minPokemonSamples', 'number', '') +

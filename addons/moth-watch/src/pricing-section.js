@@ -271,6 +271,114 @@
         });
     }
 
+    /*
+     * A relative, read-only market model. The mechanics (P multipliers, grade,
+     * Q, IV and leveling) determine ratios between specimens; the currency
+     * scale still requires a quote in THAT currency. Rarity premiums below
+     * are deliberately conservative valuation heuristics, not game rules.
+     * Never feed this model into purchase authorization or bargain alerts.
+     */
+    function pokemonRelativeIndex(facts) {
+        const p = Number(facts?.potency);
+        if (!Number.isInteger(p) || p < 1 || p > 5) return null;
+        const power = [0, 1, 1.05, 1.10, 1.25, 2][p];
+        // Scarcity matters, but cannot be priced at inverse spawn probability.
+        const scarcity = [0, 1, 1.16, 1.50, 2.65, 7.0][p];
+        const n = facts.score == null ? 3.5 : Number(facts.score);
+        const grade = Math.exp(Math.max(-2, Math.min(5, n - 3.5)) * 0.52);
+        // N already includes Q and IV. Their extra premiums are intentionally
+        // small to avoid counting the same stat gain two or three times.
+        const q = facts.quality == null ? 1.2 : Number(facts.quality);
+        const quality = Math.pow(Math.max(0.8, Math.min(1.8, q)) / 1.2, 0.35);
+        let build = 1;
+        if (Array.isArray(facts.ivs) && facts.ivs.length === 6) {
+            const role = facts.combatRole?.role;
+            const focus = role === 'physical' ? [1, 5] :
+                role === 'special' ? [3, 5] : [1, 3, 5];
+            const useful = focus.reduce((sum, i) => sum + Number(facts.ivs[i]), 0) / focus.length;
+            if (Number.isFinite(useful))
+                build = 1 + Math.max(-0.14, Math.min(0.14, (useful - 16.5) / 110));
+        }
+        const level = facts.level == null ? 50 : Math.max(1, Number(facts.level));
+        const training = 1 + Math.min(0.75,
+            Math.max(0, Math.log10(Math.max(50, level) / 50) * 0.22));
+        const refinement = Array.isArray(facts.refinement)
+            ? 1 + Math.min(0.4, facts.refinement.reduce((sum, n) =>
+                sum + Math.max(0, Number(n) || 0), 0) / 100) : 1;
+        const index = power * scarcity * grade * quality * build * training * refinement;
+        return Number.isFinite(index) && index > 0 ? index : null;
+    }
+
+    function pokemonRelativeValue(ficha, currency, excludeListingId = null) {
+        if (!['gold', 'orb'].includes(currency) || !pokemonCurrencyAllowed(ficha, currency))
+            return null;
+        const target = pokemonFacts(ficha);
+        if (!target.speciesId || typeof target.shiny !== 'boolean') return null;
+        const factor = pokemonRelativeIndex(target);
+        if (!(factor > 0)) return null;
+        const compatible = facts => facts &&
+            facts.speciesId === target.speciesId &&
+            facts.shiny === target.shiny &&
+            // Unknown forms are usable only as broad, indicative anchors.
+            !(facts.form != null && target.form != null && facts.form !== target.form);
+        const normalizePrice = (price, facts) => {
+            const factorAtSale = pokemonRelativeIndex(facts);
+            const number = Number(price);
+            return factorAtSale > 0 && Number.isFinite(number) && number > 0
+                ? number / factorAtSale : null;
+        };
+        const current = [];
+        const live = state.pokemonAutoOffers.get(currency);
+        const liveFresh = live && Date.now() - Number(live.updatedAt || 0) < 6 * 3600000;
+        if (liveFresh) {
+            for (const offer of live.offers || []) {
+                if (!offer?.ficha || (excludeListingId != null &&
+                    String(offer.id) === String(excludeListingId))) continue;
+                const facts = pokemonFacts(offer.ficha);
+                if (!compatible(facts)) continue;
+                const normalized = normalizePrice(offer.preco, facts);
+                if (normalized != null) current.push(normalized);
+            }
+        }
+        const completed = [];
+        if (state.pokemonReference?.version === 3) {
+            const prefix = currency + '|s:' + target.speciesId + '|';
+            for (const [key, sales] of Object.entries(state.pokemonReference.values || {})) {
+                if (!key.startsWith(prefix) || !Array.isArray(sales)) continue;
+                for (const sale of sales) {
+                    if (!compatible(sale) || (sale.soldAt &&
+                        Date.now() - sale.soldAt > POKEMON_SALE_WINDOW_MS)) continue;
+                    const normalized = normalizePrice(sale.price, sale);
+                    if (normalized != null) completed.push(normalized);
+                }
+            }
+        }
+        if (!current.length && !completed.length) return null;
+        // A few unusual listings must not drown out common current quotes.
+        // Active market anchors lead; history merely steadies sparse pages.
+        const askBase = current.length ? percentile(current, 0.40) : null;
+        const soldBase = completed.length ? median(completed) : null;
+        const askWeight = askBase == null ? 0 :
+            soldBase == null ? 1 : current.length >= 3 ? 0.85 : 0.65;
+        const base = askBase == null ? soldBase : soldBase == null ? askBase :
+            askBase * askWeight + soldBase * (1 - askWeight);
+        const value = Math.round(base * factor);
+        if (!Number.isSafeInteger(value) || value <= 0) return null;
+        const all = current.length ? current : completed;
+        const low = Math.max(1, Math.round(percentile(all, 0.20) * factor * 0.72));
+        const high = Math.max(value, Math.round(percentile(all, 0.80) * factor * 1.32));
+        const assumed = target.missing.filter(label =>
+            ['N', 'Q', 'six named IVs', 'refinement', 'level', 'form'].includes(label));
+        const confidence = current.length >= 3 && !assumed.includes('N')
+            ? 'modeled' : 'rough';
+        return {
+            value, low: Math.min(low, value), high,
+            currentCount: current.length, saleCount: completed.length,
+            index: factor, source: 'relative market model', confidence, assumed,
+            method: 'Prices of this species are normalized by P, grade, Q, IV build, level and refinement; live Coin/Gem asking prices establish each currency separately. Rarity coefficients are heuristic.'
+        };
+    }
+
     function pokemonReferenceFor(ficha, currency) {
         const key = pokemonIdentityKey(ficha, currency);
         if (!key) return null;

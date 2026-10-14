@@ -133,34 +133,40 @@
     }
 
 
-    // One explanation shared by sampled listings and the native Pokémon sheet.
-    // The median is an observed sale price, NOT a computed intrinsic stat score.
+    // This is a mathematical comparison, not a historical-price prediction.
     function pokemonValuationExplanation(ref) {
-        if (!ref) return escapeHtml(tr('No usable completed-sale matches yet. No price was invented.'));
-        return escapeHtml(tr('Median of {count} comparable completed sales; the range is the middle 50% of prices (25th–75th percentile).', {
-            count: num(ref.samples)
-        })) + ' ' + escapeHtml(tr('Comparison: {stage}', { stage: tr(ref.comparison) })) +
-            ' · ' + escapeHtml(tr('Confidence: {confidence}', { confidence: tr(ref.confidence) })) +
-            (ref.ageDays == null ? ' · ' + escapeHtml(tr('Sale dates unverified')) :
-                ' · ' + escapeHtml(tr('Newest comparable sale: {days} days ago', {days:ref.ageDays})));
+        if (!ref) return escapeHtml(tr('A monetary estimate needs at least one price for this species in the same currency. The relative math alone has no Coin or Gem unit.'));
+        return escapeHtml(tr('Relative valuation from {asks} live asking prices and {sales} older completed sales of this species.', {
+            asks: num(ref.currentCount), sales: num(ref.saleCount)
+        })) + ' ' + escapeHtml(tr('Model index: {factor}', {
+            factor: ref.index.toFixed(2)
+        })) + '. ' + escapeHtml(ref.method) +
+            (ref.assumed.length ? ' ' + escapeHtml(tr('Assumed/unknown: {fields}', {
+                fields: ref.assumed.join(', ')
+            })) : '');
     }
 
-    function pokemonValueLabel(ficha, currency) {
+    function pokemonValueLabel(ficha, currency, excludeListingId = null) {
         if (currency === 'gold' && ficha?.shiny === true)
             return '<b>—</b><small>' + escapeHtml(tr('Shiny Pokémon use Gems only.')) + '</small>';
-        const ref = pokemonReferenceFor(ficha, currency);
-        if (!ref) return '<b>—</b><small>' + escapeHtml(tr('Not enough matching completed sales')) + '</small>';
-        const status = ref.actionable ? tr('Recent, comparable sales') : tr('Indicative only — limited evidence');
-        return '<strong>' + money(Math.round(ref.value), currency) + '</strong>' +
-            '<small>' + escapeHtml(tr('Middle range: {low}–{high}', {
-                low: num(Math.round(ref.low)), high: num(Math.round(ref.high))
-            })) + ' · ' + num(ref.samples) + ' ' + escapeHtml(tr('sales')) + '</small>' +
-            '<small>' + escapeHtml(status) + '</small>';
+        const ref = pokemonRelativeValue(ficha, currency, excludeListingId);
+        if (!ref) return '<b>—</b><small>' +
+            escapeHtml(tr('No same-currency species price anchor yet.')) + '</small>';
+        return '<strong>' + money(ref.value, currency) + '</strong>' +
+            '<small>' + escapeHtml(tr('Model range: {low}–{high}', {
+                low: num(ref.low), high: num(ref.high)
+            })) + '</small><small>' +
+            escapeHtml(tr('Relative estimate · {asks} market listings · {sales} sales', {
+                asks: num(ref.currentCount), sales: num(ref.saleCount)
+            })) + '</small>' +
+            '<small>' + escapeHtml(tr(ref.confidence === 'modeled'
+                ? 'Stat-adjusted market model; not a guaranteed sale price'
+                : 'Rough estimate; some stats or comparable prices are missing')) + '</small>';
     }
 
     function pokemonEvidenceCard(listing, currency, observedAt) {
         const ficha = listing?.ficha;
-        const ref = pokemonReferenceFor(ficha, currency);
+        const ref = pokemonRelativeValue(ficha, currency, listing?.id);
         const price = Number(listing?.preco);
         const validPrice = Number.isSafeInteger(price) && price > 0;
         const delta = ref?.value > 0 && validPrice
@@ -174,16 +180,13 @@
             ' · ' + escapeHtml(tr(fresh ? 'Recent listing observation' : 'Stale listing observation')) + '</p>' +
             '<div class="moth-mw-value-output"><span>' +
             escapeHtml(tr('Estimated sale value')) + '</span>' +
-            pokemonValueLabel(ficha, currency) + '</div>' +
+            pokemonValueLabel(ficha, currency, listing?.id) + '</div>' +
             (delta == null ? '' : '<p>' + escapeHtml(tr('Asking price is {percent}% {direction} the estimate', {
                 percent: num(Math.abs(delta)), direction: tr(delta > 0 ? 'above' : delta < 0 ? 'below' : 'from')
             })) + '</p>') +
             '<details class="moth-mw-value-details"><summary>' + escapeHtml(tr('How was this valued?')) + '</summary>' +
             '<p>' + pokemonValuationExplanation(ref) + '</p>' +
-            '<p>' + escapeHtml(tr('Only the same species, form, Shiny status, potency and currency enter the sale bucket. Grade, level, quality, IVs and refinement narrow comparisons when available.')) + '</p>' +
-            '<p>' + escapeHtml(tr('Role-comparable sales: {count}', {
-                count: num(ref?.roleComparison?.observedRoleSales || 0)
-            })) + '</p>' +
+            '<p>' + escapeHtml(tr('Potency, grade, quality, combat IVs and level adjust relative value; live asks anchor the currency. Estimates are heuristic, not transaction guarantees.')) + '</p>' +
             '<p>' + escapeHtml(tr('Missing fields: {fields}', {
                 fields: pokemonFacts(ficha).missing.join(', ') || tr('None')
             })) + '</p>' +
@@ -227,24 +230,41 @@
     function pokemonSheetDraft(text, title, names) {
         const body = String(text || '').slice(0, 14000);
         const originalTitle = String(title || '').trim();
-        const heading = originalTitle.replace(/^shiny\s+/i, '').trim();
+        const heading = originalTitle.replace(/^(?:ficha\s+(?:de|do|da)\s+)?(?:shiny\s+)?/i, '').trim();
         const idText = body.match(/(?:Pok[eé]dex|Species ID|Esp[eé]cie|Dex)\s*(?:#|n[º°]\.?\s*)?(\d{1,5})\b/i);
         let speciesId = idText ? Number(idText[1]) : null;
         if (!speciesId && names) {
-            const matches = [...names].filter(([, name]) => normalize(name) === normalize(heading));
-            if (matches.length === 1) speciesId = Number(matches[0][0]);
+            const normalizedHeading = normalize(heading);
+            const exact = [...names].filter(([, name]) => normalize(name) === normalizedHeading);
+            if (exact.length === 1) speciesId = Number(exact[0][0]);
+            else {
+                const words = [...names].filter(([, name]) => {
+                    const key = normalize(name);
+                    return key.length > 2 && (normalizedHeading.startsWith(key + ' ') ||
+                        normalizedHeading.endsWith(' ' + key) ||
+                        normalizedHeading.includes(' ' + key + ' '));
+                });
+                if (words.length === 1) speciesId = Number(words[0][0]);
+            }
         }
         const potency = body.match(/(?:Pot[eê]ncia|Potency)\s*[:=]?\s*([1-5])\b/i) ||
-            body.match(/\bP([1-5])\b/);
-        const score = body.match(/(?:Nota|Grade|Score)\s*[:=]?\s*(\d+(?:[.,]\d{1,3})?)\b/i);
+            body.match(/\bP\s*[:=]?\s*([1-5])\b/i);
+        const score = body.match(/(?:Nota|Grade|Score)\s*[:=]?\s*(\d+(?:[.,]\d{1,3})?)\b/i) ||
+            body.match(/\bN\s*[:=]\s*(\d+(?:[.,]\d{1,3})?)\b/i);
+        const quality = body.match(/(?:Qualidade|Quality|\bQ\b)\s*[:=]\s*(\d+(?:[.,]\d{1,3})?)\b/i);
         const level = body.match(/(?:N[ií]vel|Level|Lv\.?)\s*[:=#]?\s*(\d{1,7})\b/i);
+        // In the game's native sheet a Shiny is visibly labelled. A sheet
+        // without that badge is provisionally assumed ordinary, and the user
+        // can correct this in the estimate controls.
+        const shiny = /^shiny\b/i.test(heading) || /\bshiny\b/i.test(originalTitle) ||
+            /(?:Shiny)\s*[:=]\s*(?:sim|yes|true)\b/i.test(body);
         return {
             speciesId: Number.isSafeInteger(speciesId) && speciesId > 0 ? speciesId : null,
             potencia: potency ? Number(potency[1]) : null,
             nota: score ? Number(score[1].replace(',', '.')) : null,
+            qualidade: quality ? Number(quality[1].replace(',', '.')) : null,
             level: level ? Number(level[1]) : null,
-            shiny: /^shiny\b/i.test(originalTitle) || /\bshiny\b/i.test(body) ? true : null,
-            formId: null
+            shiny, formId: null
         };
     }
 
@@ -270,12 +290,14 @@
         const id = Number(field('speciesId'));
         const potency = Number(field('potencia'));
         const grade = Number(field('nota').replace(',', '.'));
+        const quality = Number(field('qualidade').replace(',', '.'));
         const level = Number(field('level'));
         const shiny = field('shiny');
         return {
             speciesId: Number.isSafeInteger(id) && id > 0 ? id : null,
             potencia: Number.isSafeInteger(potency) && potency >= 1 && potency <= 5 ? potency : null,
             nota: field('nota') && Number.isFinite(grade) && grade >= 0 && grade <= 10 ? grade : null,
+            qualidade: field('qualidade') && Number.isFinite(quality) && quality >= 0.8 && quality <= 1.8 ? quality : null,
             level: Number.isSafeInteger(level) && level > 0 ? level : null,
             shiny: shiny === 'yes' ? true : shiny === 'no' ? false : null,
             formId: field('formId').trim() || null
@@ -283,19 +305,43 @@
     }
 
     function updatePokemonSheetValues(host) {
-        const ficha = pokemonSheetInputs(host);
+        const fields = pokemonSheetInputs(host);
+        // Retain verified IVs, combat role, refinement and collectible flags from
+        // the actual market ficha while applying any user-edited fields.
+        const ficha = host.mothObservedFicha ? {...host.mothObservedFicha, ...fields} : fields;
         const output = host.querySelector('.moth-sheet-results');
         if (!output) return;
-        const missing = ['speciesId','potencia','shiny'].filter(name => ficha[name] == null);
-        output.innerHTML = (missing.length
-            ? '<p class="moth-sheet-warning">' + escapeHtml(tr('To match sale records, provide: {fields}', {
-                fields: missing.join(', ')
-            })) + '</p>' : '') +
-            '<div class="moth-sheet-currencies"><div><span>' + escapeHtml(tr('Coins')) + '</span>' +
-            pokemonValueLabel(ficha, 'gold') + '</div><div><span>' + escapeHtml(tr('Gems')) + '</span>' +
-            pokemonValueLabel(ficha, 'orb') + '</div></div>' +
-            '<p>' + escapeHtml(tr('Shown prices are completed-sale medians, not guaranteed selling prices. Open Pokémon values in Moth Watch for the calculation and reference settings.')) + '</p>';
-        host.dataset.mothReferenceAt = String(state.pokemonReference?.capturedAt || 0) + ':' + String(config.minPokemonSamples);
+        const primary = ficha.shiny ? 'orb' : 'gold';
+        let valueHtml;
+        if (ficha.potencia == null && ficha.speciesId && ficha.shiny != null) {
+            const scenarios = [1, 2, 3, 4, 5].map(p => {
+                const variant = {...ficha, potencia:p};
+                const ref = pokemonRelativeValue(variant, primary);
+                return '<div class="moth-sheet-scenario"><span>P' + p + '</span><b>' +
+                    (ref ? money(ref.value, primary) : '—') + '</b></div>';
+            }).join('');
+            valueHtml = '<p>' + escapeHtml(tr('Potency is missing; select P to get one estimate. Scenarios below are not interchangeable.')) + '</p>' +
+                '<div class="moth-sheet-scenarios">' + scenarios + '</div>';
+        } else {
+            valueHtml = pokemonValueLabel(ficha, primary);
+        }
+        const warnings = [];
+        if (!ficha.speciesId) warnings.push(tr('Species not recognized; enter its Pokédex ID below.'));
+        if (ficha.nota == null) warnings.push(tr('N missing: model uses the ordinary N=3.5 reference. Set the actual grade below.'));
+        if (ficha.qualidade == null) warnings.push(tr('Q missing: model uses typical Q=1.2.'));
+        if (host.dataset.mothShinyAssumed === '1' && ficha.shiny === false)
+            warnings.push(tr('No Shiny badge detected: assumed ordinary. Correct below if needed.'));
+        output.innerHTML = '<div class="moth-sheet-currencies"><div><span>' +
+            escapeHtml(tr(primary === 'orb' ? 'Gem market model' : 'Coin market model')) +
+            '</span>' + valueHtml + '</div></div>' +
+            (warnings.length ? '<p class="moth-sheet-warning">' +
+                escapeHtml(warnings.join(' ')) + '</p>' : '') +
+            '<p>' + escapeHtml(tr('No automatic Coin ↔ Gem conversion. The stat model needs a live listing or past sale of the species to set a currency scale; earlier sales are secondary.')) + '</p>';
+        host.dataset.mothReferenceAt = [
+            state.pokemonReference?.capturedAt || 0,
+            state.pokemonAutoOffers.get('gold')?.updatedAt || 0,
+            state.pokemonAutoOffers.get('orb')?.updatedAt || 0
+        ].join(':');
     }
 
     function ensurePokemonSheetValuation() {
@@ -308,14 +354,31 @@
         const title = q('#ficha-titulo', sheet)?.textContent || '';
         const nativeText = [...body.childNodes].filter(node => node !== host)
             .map(node => node.textContent || '').join(' ');
-        const key = title + '|' + nativeText.slice(0, 1600);
+        const key = title + '|' + nativeText.slice(0, 1600) + '|catalog:' + state.creatureNames.size;
         if (host?.dataset.mothSheetKey === key) {
-            if (host.dataset.mothReferenceAt !== String(state.pokemonReference?.capturedAt || 0) + ':' + String(config.minPokemonSamples))
+            const referenceKey = [
+                state.pokemonReference?.capturedAt || 0,
+                state.pokemonAutoOffers.get('gold')?.updatedAt || 0,
+                state.pokemonAutoOffers.get('orb')?.updatedAt || 0
+            ].join(':');
+            if (host.dataset.mothReferenceAt !== referenceKey)
                 updatePokemonSheetValues(host);
             return;
         }
         const observed = pokemonSheetOffer(sheet);
-        const draft = observed || pokemonSheetDraft(nativeText, title, state.creatureNames);
+        const parsed = pokemonSheetDraft(nativeText, title, state.creatureNames);
+        // An exact market ficha is more complete than DOM text; preserve its
+        // verified stats rather than throwing away Q/IVs when a field is edited.
+        const draft = observed ? {
+            ...parsed,
+            speciesId: speciesIdOf(observed) || parsed.speciesId,
+            potencia: Number(observed.potencia) || parsed.potencia,
+            nota: pokemonScore(observed) ?? parsed.nota,
+            qualidade: pokemonQuality(observed) ?? parsed.qualidade,
+            level: Number(observed.level) || parsed.level,
+            shiny: typeof observed.shiny === 'boolean' ? observed.shiny : parsed.shiny,
+            formId: pokemonForm(observed)
+        } : parsed;
         if (!host) {
             host = document.createElement('section');
             host.id = 'moth-sheet-valuation';
@@ -330,7 +393,7 @@
             '" ' + extra + '></label>';
         const shinyValue = draft.shiny === true ? 'yes' : draft.shiny === false ? 'no' : '';
         host.innerHTML = '<div class="moth-sheet-heading"><b>Moth valuation</b><small>' +
-            escapeHtml(tr('Sale-price estimate · read-only')) + '</small></div>' +
+            escapeHtml(tr('Relative stat + market estimate · read-only')) + '</small></div>' +
             '<div class="moth-sheet-results" aria-live="polite"></div>' +
             '<details><summary>' + escapeHtml(tr('Edit Pokémon details / see how it works')) + '</summary>' +
             '<p>' + escapeHtml(tr('These fields are taken from the sheet when identifiable. Fill blanks if the game does not expose them. Unknown form stays separate from confirmed forms.')) + '</p>' +
@@ -338,6 +401,7 @@
             field('speciesId', 'Species ID', draft.speciesId, 'number', 'min="1" step="1"') +
             field('potencia', 'Potency (P)', draft.potencia, 'number', 'min="1" max="5" step="1"') +
             field('nota', 'Grade (N)', draft.nota, 'text', 'inputmode="decimal"') +
+            field('qualidade', 'Quality (Q)', draft.qualidade, 'text', 'inputmode="decimal"') +
             field('level', 'Level', draft.level, 'number', 'min="1" step="1"') +
             field('formId', 'Form ID (if known)', draft.formId, 'text') +
             '<label><span>' + escapeHtml(tr('Shiny?')) + '</span><select data-moth-sheet-field="shiny">' +
@@ -345,8 +409,10 @@
                 '<option value="' + value + '"' + (shinyValue === value ? ' selected' : '') + '>' +
                 escapeHtml(tr(label)) + '</option>').join('') +
             '</select></label></div><p>' +
-            escapeHtml(tr('Estimate = median of comparable completed sales; middle range = 25th–75th percentile. Missing or stale evidence is labeled indicative, not a bargain.')) +
+            escapeHtml(tr('Relative strength uses P bonus and scarcity, N, Q, IVs, level and refinement. Current species listings set the price scale; sparse data means a wide, indicative range.')) +
             '</p></details>';
+        host.mothObservedFicha = observed || null;
+        host.dataset.mothShinyAssumed = observed ? '0' : !parsed.shiny ? '1' : '0';
         host.dataset.mothSheetKey = key;
         if (!host.dataset.mothBound) {
             host.dataset.mothBound = '1';
