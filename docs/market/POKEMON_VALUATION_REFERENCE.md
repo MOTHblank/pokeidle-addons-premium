@@ -5,6 +5,16 @@
 **Sources:** the complete PokéIdle wiki supplied by the project owner (especially *Stats, Qualidade e IV*, *Nota, Poder e Calculadora*, *Potência*, *Shiny*, *Combate*, *Evolução*, *Mercado da Comunidade*, and *Todas as taxas*); [pokeidle-upstream](https://github.com/MOTHblank/pokeidle-upstream) `master`; and this repository's [Moth Watch](../../addons/moth-watch/moth-watch.user.js).  
 **Source authority:** wiki = stated live game rules; upstream mirror = inspected client/shared implementation; Moth Watch = existing behavior. Where a server-only calculation, message shape, live transaction sample, or buyer preference is missing, this document says so rather than guessing.
 
+## Current MothWatch v0.6.15: relative valuation, not standalone historical medians
+
+Moth valuation in the native Pokémon sheet and Pokémon values cards now uses a **relative heuristic model**, while the historical completed-sale matcher below remains the separate conservative discount-discovery engine. The price scale primarily comes from **current same-species listings, in the same currency**, with older completed sales as secondary calibration; no observed monetary anchor means no price can be mathematically determined in Coins or Gems.
+
+A Pokémon's relative index is the product of (1) upstream potency combat multipliers `[1, 1.05, 1.10, 1.25, 2]`, (2) conservative **invented market scarcity weights** `[1, 1.16, 1.50, 2.65, 7]`, (3) a grade weight `exp(0.52 × clamp(N − 3.5, −2, 5))`, (4) a small `(Q / 1.2)^0.35` adjustment, (5) a capped bonus for role-relevant IVs, (6) level/training adjustment and (7) small refinement adjustment. The same index is calculated for current specimen and market quotes; ratios translate prices across P and N tiers *within the same species*.
+
+**Crucial distinction:** Upstream establishes Pokémon stats, P multipliers and supply frequency, **not** the economic conversion from rarity or N into demand. Therefore the scarcity/grade weights are intentionally labeled modeling assumptions, not an official or proven fair-price formula. Interquartile claims from the earlier empirical engine do not apply to these model ranges. Unknown N/Q are modeled at baseline and flagged in the sheet. Missing potency is shown as five different conditional P1–P5 scenarios.
+
+**Coin/Gem separation:** Do not show a Coin-price estimate and Gem-price estimate as currency equivalents for the same Pokémon. The sheet shows Coins for an ordinary Pokémon and Gems for a Shiny. Listings priced in Gems are assessed only against Gem-market anchors; there is no inferred Gem↔Coin exchange rate. Model outputs never authorize purchases.
+
 ## Premium Moth Watch v0.4.0: empirical evidence, not an automatic buy signal
 
 Moth Watch now maintains an **independent v3 completed-sale cache**, partitioned by currency, species/form identity, explicit Shiny status and P-tier. A missing Shiny, P, form, N, Q, refinement or named six-stat IV value stays unknown; no cached v1/v2 record is upgraded using invented fields. Sample provenance distinguishes packet observation from an actual sold-at timestamp, and excludes explicitly old sales (90-day window).
