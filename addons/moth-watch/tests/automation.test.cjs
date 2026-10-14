@@ -850,7 +850,8 @@ test('Native Pokémon sheet actually mounts the valuation through the normal UI 
         q,document,{pokemonReference:{capturedAt:0},creatureNames:new Map()},
         {minPokemonSamples:3},()=>null,
         ()=>({speciesId:25,potencia:4,nota:3.5,level:100,shiny:false,formId:'base'}),
-        ()=>{refreshed++;},value=>String(value),value=>String(value)
+        node=>{refreshed++; node.dataset.mothReferenceAt = '0:3';},
+        value=>String(value),value=>String(value)
     );
     mount();
     assert.equal(prepends,1,'estimate is inserted at the top of the native sheet');
