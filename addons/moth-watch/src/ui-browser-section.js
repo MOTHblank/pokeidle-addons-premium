@@ -320,7 +320,9 @@
             host = document.createElement('section');
             host.id = 'moth-sheet-valuation';
             host.className = 'moth-sheet-valuation';
-            body.appendChild(host);
+            // The sheet can be several screens tall. Put the estimate first,
+            // not below all the native stats where nobody sees it.
+            body.prepend(host);
         }
         const field = (name, label, value, type, extra = '') =>
             '<label><span>' + escapeHtml(tr(label)) + '</span><input data-moth-sheet-field="' +

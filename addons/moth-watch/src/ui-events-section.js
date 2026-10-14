@@ -518,6 +518,9 @@
     function ensureUi() {
         injectStyle();
         ensureSellPriceRecommendation();
+        // Native #ficha is a separate modal, not the Community Market panel.
+        // Run every UI pass so owned and listed Pokémon show a valuation.
+        ensurePokemonSheetValuation();
         if (state.watchOpen && state.lastLocale !== currentLocale()) renderWatch(true);
 
         /*

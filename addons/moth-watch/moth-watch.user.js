@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.6.13
+// @version      0.6.14
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -14,7 +14,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.13');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.14');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -1721,7 +1721,6 @@
                 setTimeout(() => {
                     state.sellRecommendationKey = null;
                     ensureSellPriceRecommendation();
-        ensurePokemonSheetValuation();
                 }, 0);
             });
         }
@@ -5488,7 +5487,9 @@
             host = document.createElement('section');
             host.id = 'moth-sheet-valuation';
             host.className = 'moth-sheet-valuation';
-            body.appendChild(host);
+            // The sheet can be several screens tall. Put the estimate first,
+            // not below all the native stats where nobody sees it.
+            body.prepend(host);
         }
         const field = (name, label, value, type, extra = '') =>
             '<label><span>' + escapeHtml(tr(label)) + '</span><input data-moth-sheet-field="' +
@@ -6956,6 +6957,9 @@
     function ensureUi() {
         injectStyle();
         ensureSellPriceRecommendation();
+        // Native #ficha is a separate modal, not the Community Market panel.
+        // Run every UI pass so owned and listed Pokémon show a valuation.
+        ensurePokemonSheetValuation();
         if (state.watchOpen && state.lastLocale !== currentLocale()) renderWatch(true);
 
         /*
@@ -7318,8 +7322,25 @@
             }
         }
 
+        // #ficha is a separate modal. Follow its own open/close lifecycle.
+        // The scoped observer avoids waking on unrelated game rendering.
+        const pokemonSheet = q('#ficha');
+        const pokemonSheetBody = pokemonSheet ? q('#ficha-corpo', pokemonSheet) : null;
+        if (pokemonSheet && pokemonSheetBody) {
+            const sheetObserver = new MutationObserver(records => {
+                if (records.some(record => record.type === 'attributes'
+                    ? record.target === pokemonSheet
+                    : !record.target?.closest?.('#moth-sheet-valuation'))) {
+                    ensurePokemonSheetValuation();
+                }
+            });
+            sheetObserver.observe(pokemonSheet, {
+                attributes: true, attributeFilter: ['class', 'aria-hidden', 'style']
+            });
+            sheetObserver.observe(pokemonSheetBody, {childList: true, subtree: true});
+        }
         ensureUi();
-        console.info('[Moth Watch] v0.6.6 loaded');
+        console.info('[Moth Watch] v0.6.14 loaded');
     }
 
     bootstrap();
