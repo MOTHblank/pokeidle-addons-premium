@@ -249,7 +249,8 @@
         }
         const potency = body.match(/(?:Pot[eê]ncia|Potency)\s*[:=]?\s*([1-5])\b/i) ||
             body.match(/\bP\s*[:=]?\s*([1-5])\b/i);
-        const score = body.match(/(?:Nota|Grade|Score|\bN\b)\s*[:=]\s*(\d+(?:[.,]\d{1,3})?)\b/i);
+        const score = body.match(/(?:Nota|Grade|Score)\s*[:=]?\s*(\d+(?:[.,]\d{1,3})?)\b/i) ||
+            body.match(/\bN\s*[:=]\s*(\d+(?:[.,]\d{1,3})?)\b/i);
         const quality = body.match(/(?:Qualidade|Quality|\bQ\b)\s*[:=]\s*(\d+(?:[.,]\d{1,3})?)\b/i);
         const level = body.match(/(?:N[ií]vel|Level|Lv\.?)\s*[:=#]?\s*(\d{1,7})\b/i);
         // In the game's native sheet a Shiny is visibly labelled. A sheet
