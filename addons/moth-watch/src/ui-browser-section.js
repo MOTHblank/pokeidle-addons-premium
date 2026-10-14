@@ -133,34 +133,40 @@
     }
 
 
-    // One explanation shared by sampled listings and the native Pokémon sheet.
-    // The median is an observed sale price, NOT a computed intrinsic stat score.
+    // This is a mathematical comparison, not a historical-price prediction.
     function pokemonValuationExplanation(ref) {
-        if (!ref) return escapeHtml(tr('No usable completed-sale matches yet. No price was invented.'));
-        return escapeHtml(tr('Median of {count} comparable completed sales; the range is the middle 50% of prices (25th–75th percentile).', {
-            count: num(ref.samples)
-        })) + ' ' + escapeHtml(tr('Comparison: {stage}', { stage: tr(ref.comparison) })) +
-            ' · ' + escapeHtml(tr('Confidence: {confidence}', { confidence: tr(ref.confidence) })) +
-            (ref.ageDays == null ? ' · ' + escapeHtml(tr('Sale dates unverified')) :
-                ' · ' + escapeHtml(tr('Newest comparable sale: {days} days ago', {days:ref.ageDays})));
+        if (!ref) return escapeHtml(tr('A monetary estimate needs at least one price for this species in the same currency. The relative math alone has no Coin or Gem unit.'));
+        return escapeHtml(tr('Relative valuation from {asks} live asking prices and {sales} older completed sales of this species.', {
+            asks: num(ref.currentCount), sales: num(ref.saleCount)
+        })) + ' ' + escapeHtml(tr('Model index: {factor}', {
+            factor: ref.index.toFixed(2)
+        })) + '. ' + escapeHtml(ref.method) +
+            (ref.assumed.length ? ' ' + escapeHtml(tr('Assumed/unknown: {fields}', {
+                fields: ref.assumed.join(', ')
+            })) : '');
     }
 
-    function pokemonValueLabel(ficha, currency) {
+    function pokemonValueLabel(ficha, currency, excludeListingId = null) {
         if (currency === 'gold' && ficha?.shiny === true)
             return '<b>—</b><small>' + escapeHtml(tr('Shiny Pokémon use Gems only.')) + '</small>';
-        const ref = pokemonReferenceFor(ficha, currency);
-        if (!ref) return '<b>—</b><small>' + escapeHtml(tr('Not enough matching completed sales')) + '</small>';
-        const status = ref.actionable ? tr('Recent, comparable sales') : tr('Indicative only — limited evidence');
-        return '<strong>' + money(Math.round(ref.value), currency) + '</strong>' +
-            '<small>' + escapeHtml(tr('Middle range: {low}–{high}', {
-                low: num(Math.round(ref.low)), high: num(Math.round(ref.high))
-            })) + ' · ' + num(ref.samples) + ' ' + escapeHtml(tr('sales')) + '</small>' +
-            '<small>' + escapeHtml(status) + '</small>';
+        const ref = pokemonRelativeValue(ficha, currency, excludeListingId);
+        if (!ref) return '<b>—</b><small>' +
+            escapeHtml(tr('No same-currency species price anchor yet.')) + '</small>';
+        return '<strong>' + money(ref.value, currency) + '</strong>' +
+            '<small>' + escapeHtml(tr('Model range: {low}–{high}', {
+                low: num(ref.low), high: num(ref.high)
+            })) + '</small><small>' +
+            escapeHtml(tr('Relative estimate · {asks} market listings · {sales} sales', {
+                asks: num(ref.currentCount), sales: num(ref.saleCount)
+            })) + '</small>' +
+            '<small>' + escapeHtml(tr(ref.confidence === 'modeled'
+                ? 'Stat-adjusted market model; not a guaranteed sale price'
+                : 'Rough estimate; some stats or comparable prices are missing')) + '</small>';
     }
 
     function pokemonEvidenceCard(listing, currency, observedAt) {
         const ficha = listing?.ficha;
-        const ref = pokemonReferenceFor(ficha, currency);
+        const ref = pokemonRelativeValue(ficha, currency, listing?.id);
         const price = Number(listing?.preco);
         const validPrice = Number.isSafeInteger(price) && price > 0;
         const delta = ref?.value > 0 && validPrice
@@ -174,16 +180,13 @@
             ' · ' + escapeHtml(tr(fresh ? 'Recent listing observation' : 'Stale listing observation')) + '</p>' +
             '<div class="moth-mw-value-output"><span>' +
             escapeHtml(tr('Estimated sale value')) + '</span>' +
-            pokemonValueLabel(ficha, currency) + '</div>' +
+            pokemonValueLabel(ficha, currency, listing?.id) + '</div>' +
             (delta == null ? '' : '<p>' + escapeHtml(tr('Asking price is {percent}% {direction} the estimate', {
                 percent: num(Math.abs(delta)), direction: tr(delta > 0 ? 'above' : delta < 0 ? 'below' : 'from')
             })) + '</p>') +
             '<details class="moth-mw-value-details"><summary>' + escapeHtml(tr('How was this valued?')) + '</summary>' +
             '<p>' + pokemonValuationExplanation(ref) + '</p>' +
-            '<p>' + escapeHtml(tr('Only the same species, form, Shiny status, potency and currency enter the sale bucket. Grade, level, quality, IVs and refinement narrow comparisons when available.')) + '</p>' +
-            '<p>' + escapeHtml(tr('Role-comparable sales: {count}', {
-                count: num(ref?.roleComparison?.observedRoleSales || 0)
-            })) + '</p>' +
+            '<p>' + escapeHtml(tr('Potency, grade, quality, combat IVs and level adjust relative value; live asks anchor the currency. Estimates are heuristic, not transaction guarantees.')) + '</p>' +
             '<p>' + escapeHtml(tr('Missing fields: {fields}', {
                 fields: pokemonFacts(ficha).missing.join(', ') || tr('None')
             })) + '</p>' +
