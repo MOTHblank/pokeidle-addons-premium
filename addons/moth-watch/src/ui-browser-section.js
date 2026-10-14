@@ -328,7 +328,7 @@
         if (!ficha.speciesId) warnings.push(tr('Species not recognized; enter its Pokédex ID below.'));
         if (ficha.nota == null) warnings.push(tr('N missing: model uses the ordinary N=3.5 reference. Set the actual grade below.'));
         if (ficha.qualidade == null) warnings.push(tr('Q missing: model uses typical Q=1.2.'));
-        if (host.dataset.mothShinyAssumed === '1')
+        if (host.dataset.mothShinyAssumed === '1' && ficha.shiny === false)
             warnings.push(tr('No Shiny badge detected: assumed ordinary. Correct below if needed.'));
         output.innerHTML = '<div class="moth-sheet-currencies"><div><span>' +
             escapeHtml(tr(primary === 'orb' ? 'Gem market model' : 'Coin market model')) +
@@ -353,7 +353,7 @@
         const title = q('#ficha-titulo', sheet)?.textContent || '';
         const nativeText = [...body.childNodes].filter(node => node !== host)
             .map(node => node.textContent || '').join(' ');
-        const key = title + '|' + nativeText.slice(0, 1600);
+        const key = title + '|' + nativeText.slice(0, 1600) + '|catalog:' + state.creatureNames.size;
         if (host?.dataset.mothSheetKey === key) {
             const referenceKey = [
                 state.pokemonReference?.capturedAt || 0,
