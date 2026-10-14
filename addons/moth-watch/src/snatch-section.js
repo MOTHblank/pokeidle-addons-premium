@@ -3,14 +3,15 @@
     const SNATCH_KEY = 'moth-pokeidle-snatch-v1';
     const SNATCH_LIMIT = 40;
     const SNATCH_ACTIVE_MS = 30 * 60000;
-    const SNATCH_RETRY_MS = 400;
+    const SNATCH_RETRY_MS = 150;
+    const SNATCH_WINDOW_MS = 4000;
+    const SNATCH_BURST_SIZE = 8;
     const SNATCH_MAX_QUOTE_AGE_MS = 3 * 60000;
     const SNATCH_PREPARE_MS = 45000;
-    // Continue attempting while the listing remains freshly observed, even when
-    // an earlier attempt has no acknowledgement.
-    function snatchRetryDelay(attempts) {
-        return attempts < 30 ? SNATCH_RETRY_MS : attempts < 90 ? 1500 : 5000;
-    }
+    const SNATCH_VERIFY_RETRY_MS = 8500;
+    // All held-listing attempts compete in the same four-second window.
+    // Afterwards only a separately confirmed live listing may be bought.
+    function snatchRetryDelay() { return SNATCH_RETRY_MS; }
     function snatchKey(kind, currency, id) {
         return kind + ':' + currency + ':' + id;
     }
@@ -27,8 +28,9 @@
             ['gold','orb'].includes(candidate.currency) &&
             Number.isSafeInteger(price) && price > 0 &&
             Number.isSafeInteger(candidate.qty) && candidate.qty > 0 &&
-            Number.isFinite(age) && age >= 0 && age <= SNATCH_MAX_QUOTE_AGE_MS &&
-            Number.isFinite(retained) && retained > 0 && retained <= serverNow() &&
+            Number.isFinite(age) && age >= 0 &&
+            Number.isFinite(retained) && retained > 0 &&
+            retained <= serverNow() && serverNow() < retained + SNATCH_WINDOW_MS &&
             !!state.nick && !!candidate.seller && candidate.seller !== '—' &&
             !isOwnListing({vendedor:candidate.seller}) &&
             (candidate.kind !== 'pokemon' || candidate.qty === 1 &&
@@ -45,6 +47,8 @@
         state.snatchRecoverAt = new Map();
         state.snatchNativeOffers = new Map();
         state.snatchWake = null;
+        state.snatchVerifyPending = null;
+        state.snatchVerifyAt = new Map();
         if (!account) return;
         try {
             const data = JSON.parse(localStorage.getItem(SNATCH_KEY + ':' + account) || 'null');
@@ -129,7 +133,8 @@
             attempts:old?.attempts || 0, retryAt:old?.retryAt || 0,
             // Every authenticated listing response replaces the previous
             // quantity quote. No purchase ack implies a remaining-stock count.
-            missing:0,
+            missing:0, needsVerification:false,
+            lastVerifiedAt:old?.lastVerifiedAt || 0,
             observedAt:Date.now(), refreshedAt:old?.refreshedAt || 0
         });
         if (manual && price > manual.maxPrice) {
@@ -198,9 +203,62 @@
     function snatchStop(key, reason) {
         const wasManual = state.snatchManual.delete(key);
         state.snatchObserved.delete(key);
+        state.snatchVerifyAt?.delete(key);
+        if (state.snatchVerifyPending?.key === key) state.snatchVerifyPending = null;
         if (wasManual) snatchSave();
         if (reason) addLog('Snatch ' + reason);
         snatchSchedule(); queueRender();
+    }
+
+    // PokéIdle's own client uses market.anuncio to inspect a specific listing.
+    // Unlike page-zero browsing, this can authoritatively report that #id is
+    // sold/closed. Never infer deletion from a truncated market listing page.
+    function snatchHandleSingleListing(message) {
+        if (message?.aba !== 'anuncio') return false;
+        const id = Number(message.id);
+        const pending = state.snatchVerifyPending;
+        if (!pending || id !== pending.id) return false;
+        state.snatchVerifyPending = null;
+        const target = state.snatchManual.get(pending.key);
+        const entry = state.snatchObserved.get(pending.key);
+        const listing = message.anuncio;
+        if (!target && !entry) return true;
+        if (!listing || listing.estado && listing.estado !== 'aberto' ||
+            Number(listing.id) !== id) {
+            snatchStop(pending.key, 'listing #' + id + ' no longer exists');
+            return true;
+        }
+        const kind = listing.ficha ? 'pokemon' : listing.tipo === 'item' ? 'item' : target?.kind;
+        const currency = listing.moeda || target?.currency || entry?.candidate?.currency;
+        const itemId = Number(listing.itemId || target?.itemId || entry?.candidate?.itemId || 0);
+        if (kind !== (target?.kind || entry?.candidate?.kind) ||
+            currency !== (target?.currency || entry?.candidate?.currency) ||
+            target && Number(listing.preco) > target.maxPrice) {
+            snatchStop(pending.key, 'quote changed for #' + id);
+            return true;
+        }
+        snatchObserve(kind, currency, listing, itemId);
+        const refreshed = state.snatchObserved.get(pending.key);
+        if (refreshed) {
+            refreshed.lastVerifiedAt = Date.now();
+            refreshed.needsVerification = false;
+        }
+        snatchSchedule(25);
+        return true;
+    }
+
+    function snatchVerifyListing(key, target, entry, now) {
+        if (state.snatchVerifyPending &&
+            now - state.snatchVerifyPending.sentAt < 5500) return false;
+        if (state.snatchVerifyPending) state.snatchVerifyPending = null;
+        if (now - Number(state.snatchVerifyAt?.get(key) || 0) < SNATCH_VERIFY_RETRY_MS)
+            return false;
+        const id = Number(target?.id || entry?.candidate?.listingId);
+        if (!Number.isSafeInteger(id) || id < 1) return false;
+        if (!sendBackground({t:'market.anuncio',id})) return false;
+        state.snatchVerifyPending = {id,key,sentAt:now};
+        state.snatchVerifyAt.set(key,now);
+        return true;
     }
 
     function snatchRefresh(entry, now) {
