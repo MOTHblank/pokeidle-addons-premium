@@ -226,7 +226,8 @@
     // omits Shiny, form or grade, let the player fill it in; never assume.
     function pokemonSheetDraft(text, title, names) {
         const body = String(text || '').slice(0, 14000);
-        const heading = String(title || '').replace(/^shiny\s+/i, '').trim();
+        const originalTitle = String(title || '').trim();
+        const heading = originalTitle.replace(/^shiny\s+/i, '').trim();
         const idText = body.match(/(?:Pok[eé]dex|Species ID|Esp[eé]cie|Dex)\s*(?:#|n[º°]\.?\s*)?(\d{1,5})\b/i);
         let speciesId = idText ? Number(idText[1]) : null;
         if (!speciesId && names) {
@@ -242,7 +243,7 @@
             potencia: potency ? Number(potency[1]) : null,
             nota: score ? Number(score[1].replace(',', '.')) : null,
             level: level ? Number(level[1]) : null,
-            shiny: /\bshiny\b/i.test(heading) ? true : null,
+            shiny: /^shiny\b/i.test(originalTitle) || /\bshiny\b/i.test(body) ? true : null,
             formId: null
         };
     }
