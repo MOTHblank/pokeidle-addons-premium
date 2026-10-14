@@ -124,12 +124,12 @@
             key:'snatch:' + key, kind, currency, listingId:id, itemId,
             ficha:kind === 'pokemon' ? offer.ficha : null, price, unitPrice:price,
             qty, seller:String(offer.vendedor || ''), seenAt:Date.now(),
-            retainedUntil:held ? until : old?.releaseAt || 0, name:kind === 'item' ? catalogName(itemId) :
+            retainedUntil:Number.isFinite(until) && until > 0 ? until : old?.releaseAt || 0, name:kind === 'item' ? catalogName(itemId) :
                 pokemonListingName(offer.ficha), average:0, ratio:1
         };
         state.snatchObserved.set(key, {
             candidate, ruleId:rule?.id || old?.ruleId || '',
-            releaseAt:held ? until : old?.releaseAt || 0,
+            releaseAt:Number.isFinite(until) && until > 0 ? until : old?.releaseAt || 0,
             attempts:old?.attempts || 0, retryAt:old?.retryAt || 0,
             // Every authenticated listing response replaces the previous
             // quantity quote. No purchase ack implies a remaining-stock count.
