@@ -160,7 +160,7 @@
         lastScanAt: 0,
         scanTimer: null,
         watchOpen: false,
-        watchView: (() => { try { const value = localStorage.getItem('moth-pokeidle-market-watch-view-v1'); return ['opportunities', 'inventory', 'pricing', 'economy', 'snatches', 'automation', 'activity'].includes(value) ? value : 'opportunities'; } catch { return 'opportunities'; } })(),
+        watchView: (() => { try { const value = localStorage.getItem('moth-pokeidle-market-watch-view-v1'); return ['opportunities', 'inventory', 'pricing', 'snatches', 'automation', 'activity'].includes(value) ? value : 'opportunities'; } catch { return 'opportunities'; } })(),
         opportunitySearch: (() => { try { return localStorage.getItem('moth-pokeidle-market-watch-search-v1') || ''; } catch { return ''; } })(),
         firstSeenCache: new Map(),
         itemInventoryCollapsed: (() => {
@@ -227,6 +227,36 @@
     const PT_BR = Object.freeze({
         "Underpriced listings and market sniper settings": "Ofertas abaixo do preço e configurações de compra no mercado",
         "Scan now": "Escanear agora",
+        "Pokémon values": "Valores de Pokémon",
+        "Pokémon sale estimates and advanced price references are now in Pokémon values.": "Estimativas de Pokémon e configurações avançadas de preço ficam em Valores de Pokémon.",
+        "Open Pokémon values": "Abrir Valores de Pokémon",
+        "Read-only sale estimates · no purchase authorization": "Estimativas de vendas · sem autorizar compras",
+        "Open any Pokémon sheet in the game to estimate your own Pokémon. Below are examples from recently observed market listings.": "Abra a ficha de qualquer Pokémon para estimar seu valor. Abaixo há exemplos de anúncios observados.",
+        "Refresh completed sales": "Atualizar vendas concluídas",
+        "History status: {status}": "Estado do histórico: {status}",
+        "Advanced price references & method": "Referências avançadas de preço e método",
+        "Estimated sale value": "Valor estimado de venda",
+        "Market asking price": "Preço do anúncio",
+        "Middle range: {low}–{high}": "Faixa central: {low}–{high}",
+        "Recent, comparable sales": "Vendas recentes comparáveis",
+        "Indicative only — limited evidence": "Apenas indicativo — dados limitados",
+        "How was this valued?": "Como foi calculado?",
+        "Not enough matching completed sales": "Vendas comparáveis insuficientes",
+        "No usable completed-sale matches yet. No price was invented.": "Nenhuma venda comparável disponível. Nenhum preço foi inventado.",
+        "Moth valuation": "Avaliação Moth",
+        "Sale-price estimate · read-only": "Estimativa de venda · somente leitura",
+        "Edit Pokémon details / see how it works": "Editar detalhes do Pokémon / entender cálculo",
+        "Species ID": "ID da espécie",
+        "Potency (P)": "Potência (P)",
+        "Grade (N)": "Nota (N)",
+        "Form ID (if known)": "ID da forma (se conhecido)",
+        "Shiny?": "Shiny?",
+        "Unknown": "Desconhecido",
+        "No": "Não",
+        "Yes": "Sim",
+        "To match sale records, provide: {fields}": "Para consultar vendas, informe: {fields}",
+        "Shiny Pokémon use Gems only.": "Shinies são vendidos apenas em Gemas.",
+        "sales": "vendas",
         "Moth Watch views": "Seções do Moth Watch",
         "Snatch": "Arrematar",
         "Cancel snatch": "Cancelar arremate",
@@ -1691,6 +1721,7 @@
                 setTimeout(() => {
                     state.sellRecommendationKey = null;
                     ensureSellPriceRecommendation();
+        ensurePokemonSheetValuation();
                 }, 0);
             });
         }
@@ -4665,6 +4696,35 @@
             '.moth-mw-evidence-card h5{margin:0 0 7px;font-size:13px}',
             '.moth-mw-evidence-card p{margin:6px 0;font-size:11px;line-height:1.5}',
             '.moth-mw-evidence-meta,.moth-mw-evidence-intro{font-size:11px;color:var(--sobre-mad-dim,#bbb)}',
+            '.moth-mw-value-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 12px;font-size:11px}',
+            '.moth-mw-value-settings{margin:9px 0 15px}',
+            '.moth-mw-value-settings summary{font-weight:700;cursor:pointer}',
+            '.moth-mw-value-settings p{font-size:11px;line-height:1.5}',
+            '.moth-mw-value-output{display:grid;gap:3px;padding:8px 10px;background:var(--mad,#2a2025);border-radius:7px;margin:8px 0}',
+            '.moth-mw-value-output>span{font-size:10px;opacity:.85}',
+            '.moth-mw-value-output strong{font-size:17px}',
+            '.moth-mw-value-output small{font-size:10px;line-height:1.4;color:var(--sobre-mad-dim,#bbb)}',
+            '.moth-mw-value-details{margin-top:10px;font-size:11px}',
+            '.moth-mw-value-details summary{cursor:pointer;font-weight:600}',
+            '#moth-sheet-valuation{margin:16px 0 10px;padding:12px;border:1px solid var(--rx,#84325f);border-radius:9px;background:var(--vao,#21191d);display:grid;gap:9px;overflow-wrap:anywhere}',
+            '.moth-sheet-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}',
+            '.moth-sheet-heading b{font-size:14px}',
+            '.moth-sheet-heading small{font-size:10px;opacity:.7}',
+            '.moth-sheet-results{font-size:11px}',
+            '.moth-sheet-currencies{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}',
+            '.moth-sheet-currencies>div{min-width:0;padding:9px;border-radius:6px;background:var(--mad,#2a2025);display:grid;gap:4px}',
+            '.moth-sheet-currencies>div>span{font-size:11px;opacity:.85}',
+            '.moth-sheet-currencies strong{font-size:15px}',
+            '.moth-sheet-currencies small{font-size:10px;line-height:1.3;opacity:.8}',
+            '.moth-sheet-warning{font-size:11px;color:var(--seta,#efc66b)}',
+            '.moth-sheet-results p{margin:7px 0 0;font-size:10px;line-height:1.5;opacity:.8}',
+            '#moth-sheet-valuation details{font-size:11px}',
+            '#moth-sheet-valuation summary{cursor:pointer;font-weight:650}',
+            '#moth-sheet-valuation details>p{font-size:10px;line-height:1.5;opacity:.85}',
+            '.moth-sheet-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:8px;margin:8px 0}',
+            '.moth-sheet-fields label{display:grid;gap:3px;font-size:10px;min-width:0}',
+            '.moth-sheet-fields input,.moth-sheet-fields select{width:100%;min-width:0;box-sizing:border-box;font:inherit;font-size:12px;padding:5px;background:var(--mad,#2a2025);border:1px solid var(--mad-linha,#604850);color:inherit;border-radius:5px}',
+            '@media(max-width:480px){.moth-sheet-currencies{grid-template-columns:1fr}}',
             '.moth-mw-row{display:grid;grid-template-columns:minmax(170px,1.4fr) 120px 110px 90px minmax(110px,.8fr) auto;gap:7px;align-items:center;padding:7px;border-radius:6px;background:var(--vao,#21191d);box-shadow:inset 0 0 0 2px var(--mad-linha,#3a2824)}',
             '.moth-mw-row.deep{box-shadow:inset 0 0 0 2px var(--rx,#84325f),inset 0 0 0 4px var(--rx-esc,#5d2345)}',
             '.moth-mw-name{min-width:0}.moth-mw-name b,.moth-mw-name span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
@@ -5240,112 +5300,226 @@
         return results;
     }
 
+
+    // One explanation shared by sampled listings and the native Pokémon sheet.
+    // The median is an observed sale price, NOT a computed intrinsic stat score.
+    function pokemonValuationExplanation(ref) {
+        if (!ref) return escapeHtml(tr('No usable completed-sale matches yet. No price was invented.'));
+        return escapeHtml(tr('Median of {count} comparable completed sales; the range is the middle 50% of prices (25th–75th percentile).', {
+            count: num(ref.samples)
+        })) + ' ' + escapeHtml(tr('Comparison: {stage}', { stage: tr(ref.comparison) })) +
+            ' · ' + escapeHtml(tr('Confidence: {confidence}', { confidence: tr(ref.confidence) })) +
+            (ref.ageDays == null ? ' · ' + escapeHtml(tr('Sale dates unverified')) :
+                ' · ' + escapeHtml(tr('Newest comparable sale: {days} days ago', {days:ref.ageDays})));
+    }
+
+    function pokemonValueLabel(ficha, currency) {
+        if (currency === 'gold' && ficha?.shiny === true)
+            return '<b>—</b><small>' + escapeHtml(tr('Shiny Pokémon use Gems only.')) + '</small>';
+        const ref = pokemonReferenceFor(ficha, currency);
+        if (!ref) return '<b>—</b><small>' + escapeHtml(tr('Not enough matching completed sales')) + '</small>';
+        const status = ref.actionable ? tr('Recent, comparable sales') : tr('Indicative only — limited evidence');
+        return '<strong>' + money(Math.round(ref.value), currency) + '</strong>' +
+            '<small>' + escapeHtml(tr('Middle range: {low}–{high}', {
+                low: num(Math.round(ref.low)), high: num(Math.round(ref.high))
+            })) + ' · ' + num(ref.samples) + ' ' + escapeHtml(tr('sales')) + '</small>' +
+            '<small>' + escapeHtml(status) + '</small>';
+    }
+
     function pokemonEvidenceCard(listing, currency, observedAt) {
-        const facts = pokemonFacts(listing?.ficha);
-        const role = pokemonCombatRole(listing?.ficha);
-        const ref = pokemonReferenceFor(listing?.ficha, currency);
+        const ficha = listing?.ficha;
+        const ref = pokemonReferenceFor(ficha, currency);
         const price = Number(listing?.preco);
-        const iv = facts.ivs;
-        const flags = Object.entries(facts.traits).filter(([, flag]) => flag === true)
-            .map(([name]) => tr(name));
-        const unverifiedExtras = Object.values(facts.traits).some(value => value === null);
-        const dateLabel = ref?.ageDays == null ? tr('Sale dates unverified')
-            : tr('Newest comparable sale: {days} days ago', { days: ref.ageDays });
-        const sourceLabel = ref
-            ? tr('Completed sales · {count} matched of {total} · {confidence}', {
-                count: num(ref.samples), total: num(ref.bucketSamples),
-                confidence: tr(ref.confidence)
-            }) : tr('Insufficient comparable sales');
-        const priceLabel = ref
-            ? tr('Median {median} · IQR {low}–{high} · P10–P90 {p10}–{p90}', {
-                median: num(Math.round(ref.value)), low: num(Math.round(ref.low)),
-                high: num(Math.round(ref.high)), p10: num(Math.round(ref.p10)),
-                p90: num(Math.round(ref.p90))
-            }) : tr('No defensible completed-sale price range');
-        const roles = role.focus.length && iv
-            ? role.focus.map(name => name.toUpperCase() + ' ' +
-                (iv[{hp:0,atk:1,def:2,spAtk:3,spDef:4,speed:5}[name]] ?? '?')).join(' · ')
-            : tr('Relevant IVs unknown');
-        const preview = pokemonRulePreview(listing, currency);
-        const ruleLabel = preview.length ? preview.map(row =>
-            tr(row.kind === 'shiny' ? 'Shiny Pokémon' : row.kind === 'p5' ? 'P5 Pokémon' : 'Any Pokémon') +
-            ': ' + tr(row.status) + ' (' + num(row.buyMax) + ')').join(' · ')
-            : tr('No matching configured Pokémon rule');
-        const age = Date.now() - observedAt;
-        const status = Number.isFinite(age) && age >= 0 && age <= QUOTE_MAX_AGE_MS
-            ? tr('Recent listing observation') : tr('Stale listing observation');
-        const missing = facts.missing.length ? facts.missing.join(', ') : tr('None');
-        const limitation = ref?.limitations?.length ? ref.limitations.map(key => tr(key)).join(', ') :
-            tr('No verified completed-sale reference');
-        const percent = ref && ref.value > 0 && Number.isFinite(price)
-            ? tr('Asking/reference ratio: {percent}%', {
-                percent: (100 * price / ref.value).toFixed(1)
-            }) : tr('Asking/reference ratio unavailable');
+        const validPrice = Number.isSafeInteger(price) && price > 0;
+        const delta = ref?.value > 0 && validPrice
+            ? Math.round(100 * (price / ref.value - 1)) : null;
+        const fresh = Date.now() - observedAt <= QUOTE_MAX_AGE_MS;
         return '<article class="moth-mw-evidence-card"><h5>' +
-            escapeHtml(pokemonListingName(listing?.ficha)) + '</h5>' +
-            '<div class="moth-mw-evidence-meta"><b>' +
-            (Number.isSafeInteger(price) && price > 0 ? money(price, currency) :
-                escapeHtml(tr('Price unverified'))) + '</b> · ' + escapeHtml(status) + '</div>' +
-            '<p>' + escapeHtml('N=' + (facts.score == null ? '?' : facts.score.toFixed(3)) +
-                ' · P' + (facts.potency ?? '?') + ' · Q=' +
-                (facts.quality == null ? '?' : facts.quality.toFixed(3)) +
-                ' · IV ' + (iv ? iv.reduce((a,b)=>a+b,0) + '/192' : '?') +
-                ' · ' + (facts.form == null ? tr('Form unknown') : 'Form ' + facts.form)) + '</p>' +
-            '<p>' + escapeHtml(tr('Role: {role} ({source})', {
-                role: tr(role.role), source: tr(role.source)
-            })) + ' · ' + roles + '</p>' +
-            '<p>' + escapeHtml(tr('Collectibles: {flags}', {
-                flags: flags.length ? flags.join(', ') : tr('No confirmed flags')
-            })) + (unverifiedExtras ? ' · ' + escapeHtml(tr('Other collectible flags unverified')) : '') + '</p>' +
-            '<p><b>' + escapeHtml(sourceLabel) + '</b> · ' + escapeHtml(dateLabel) +
-            (ref?.collectedAt ? ' · ' + escapeHtml(tr('History fetched: {date}', {
-                date: new Date(ref.collectedAt).toLocaleString(currentLocale())
-            })) : '') + '</p>' +
-            '<p>' + escapeHtml(priceLabel) + ' · ' + escapeHtml(percent) + '</p>' +
-            '<p>' + escapeHtml(tr('Role-comparable sales: {count} · relevant-IV difference: {gap}', {
-                count: num(ref?.roleComparison?.observedRoleSales || 0),
-                gap: ref?.roleComparison?.relevantIvGap == null ? '?' :
-                    Number(ref.roleComparison.relevantIvGap).toFixed(1)
+            escapeHtml(pokemonListingName(ficha)) + '</h5>' +
+            '<p class="moth-mw-evidence-meta">' +
+            escapeHtml(tr('Market asking price')) + ': ' +
+            (validPrice ? money(price, currency) : escapeHtml(tr('Unknown'))) +
+            ' · ' + escapeHtml(tr(fresh ? 'Recent listing observation' : 'Stale listing observation')) + '</p>' +
+            '<div class="moth-mw-value-output"><span>' +
+            escapeHtml(tr('Estimated sale value')) + '</span>' +
+            pokemonValueLabel(ficha, currency) + '</div>' +
+            (delta == null ? '' : '<p>' + escapeHtml(tr('Asking price is {percent}% {direction} the estimate', {
+                percent: num(Math.abs(delta)), direction: tr(delta > 0 ? 'above' : delta < 0 ? 'below' : 'from')
+            })) + '</p>') +
+            '<details class="moth-mw-value-details"><summary>' + escapeHtml(tr('How was this valued?')) + '</summary>' +
+            '<p>' + pokemonValuationExplanation(ref) + '</p>' +
+            '<p>' + escapeHtml(tr('Only the same species, form, Shiny status, potency and currency enter the sale bucket. Grade, level, quality, IVs and refinement narrow comparisons when available.')) + '</p>' +
+            '<p>' + escapeHtml(tr('Role-comparable sales: {count}', {
+                count: num(ref?.roleComparison?.observedRoleSales || 0)
             })) + '</p>' +
-            '<p>' + escapeHtml(tr('Comparison: {stage}', {
-                stage: ref?.comparison ? tr(ref.comparison) : tr('None')
-            })) + ' · ' + escapeHtml(tr('Limits: {details}', { details: limitation })) + '</p>' +
-            '<p>' + escapeHtml(tr('Missing listing fields: {fields}', { fields: missing })) + '</p>' +
-            '<p class="moth-mw-rule-hint">' + escapeHtml(tr('Rule preview (not permission): {preview}', {
-                preview: ruleLabel
+            '<p>' + escapeHtml(tr('Missing fields: {fields}', {
+                fields: pokemonFacts(ficha).missing.join(', ') || tr('None')
             })) + '</p>' +
+            '<p>' + escapeHtml(tr('Rule preview (not permission): {preview}', {
+                preview: pokemonRulePreview(listing, currency).map(row => row.status).join(', ') ||
+                    tr('No matching configured Pokémon rule')
+            })) + '</p></details>' +
             (retentionUntil(listing) > serverNow()
-                ? snatchButton('pokemon',currency,Number(listing?.id)) : '') + '</article>';
+                ? snatchButton('pokemon',currency,Number(listing?.id)) : '') +
+            '</article>';
     }
 
     function renderPokemonPriceEvidence() {
         const signature = JSON.stringify({
-            language: currentLocale(),
-            history: state.pokemonReference?.capturedAt,
-            pages: ['gold','orb'].map(c => state.pokemonAutoOffers.get(c)?.updatedAt || 0),
-            rules: config.pokemonBuyRules, enabled: config.enabled,
-            fixed: config.fixedRulesEnabled, paused: config.purchasesPaused,
-            pending: !!state.pendingBuy, unknown: unverifiedOrdersExist()
+            locale: currentLocale(), history: state.pokemonReference?.capturedAt,
+            listings: ['gold','orb'].map(currency => state.pokemonAutoOffers.get(currency)?.updatedAt || 0),
+            samples: config.minPokemonSamples
         });
         if (state.pokemonEvidenceMemo?.signature === signature &&
             Date.now() - state.pokemonEvidenceMemo.at < 2000) return state.pokemonEvidenceMemo.html;
         const offers = [];
         for (const currency of ['gold', 'orb']) {
             const record = state.pokemonAutoOffers.get(currency);
-            if (!record || !Array.isArray(record.offers)) continue;
-            for (const offer of record.offers.slice(0, 50)) {
-                if (offer?.ficha) offers.push({ currency, offer, updatedAt: record.updatedAt });
+            if (!Array.isArray(record?.offers)) continue;
+            for (const offer of record.offers.slice(0, 35))
+                if (offer?.ficha) offers.push({currency, offer, updatedAt:record.updatedAt});
+        }
+        const html = offers.length
+            ? offers.slice(0, 50).map(({currency, offer, updatedAt}) =>
+                pokemonEvidenceCard(offer, currency, updatedAt)).join('')
+            : '<div class="moth-mw-empty">' +
+                escapeHtml(tr('No sampled Pokémon listings yet. Scan Pokémon to see example valuations. You can also use Moth valuation directly on a Pokémon sheet.')) +
+                '</div>';
+        state.pokemonEvidenceMemo = {signature, at:Date.now(), html};
+        return html;
+    }
+
+    // Read only facts that the visible game sheet explicitly supplies, or
+    // facts from the exact market offer if a Pokémon id matches. If a sheet
+    // omits Shiny, form or grade, let the player fill it in; never assume.
+    function pokemonSheetDraft(text, title, names) {
+        const body = String(text || '').slice(0, 14000);
+        const heading = String(title || '').replace(/^shiny\s+/i, '').trim();
+        const idText = body.match(/(?:Pok[eé]dex|Species ID|Esp[eé]cie|Dex)\s*(?:#|n[º°]\.?\s*)?(\d{1,5})\b/i);
+        let speciesId = idText ? Number(idText[1]) : null;
+        if (!speciesId && names) {
+            const matches = [...names].filter(([, name]) => normalize(name) === normalize(heading));
+            if (matches.length === 1) speciesId = Number(matches[0][0]);
+        }
+        const potency = body.match(/(?:Pot[eê]ncia|Potency)\s*[:=]?\s*([1-5])\b/i) ||
+            body.match(/\bP([1-5])\b/);
+        const score = body.match(/(?:Nota|Grade|Score)\s*[:=]?\s*(\d+(?:[.,]\d{1,3})?)\b/i);
+        const level = body.match(/(?:N[ií]vel|Level|Lv\.?)\s*[:=#]?\s*(\d{1,7})\b/i);
+        return {
+            speciesId: Number.isSafeInteger(speciesId) && speciesId > 0 ? speciesId : null,
+            potencia: potency ? Number(potency[1]) : null,
+            nota: score ? Number(score[1].replace(',', '.')) : null,
+            level: level ? Number(level[1]) : null,
+            shiny: /\bshiny\b/i.test(heading) ? true : null,
+            formId: null
+        };
+    }
+
+    function pokemonSheetOffer(root) {
+        const ids = new Set();
+        for (const node of [root, ...root.querySelectorAll('[data-pokemon-id], [data-pokemonid]')]) {
+            const id = Number(node.dataset?.pokemonId ?? node.dataset?.pokemonid);
+            if (Number.isSafeInteger(id) && id > 0) ids.add(id);
+        }
+        if (ids.size !== 1) return null;
+        const matches = [];
+        for (const currency of ['gold','orb']) {
+            for (const offer of state.pokemonAutoOffers.get(currency)?.offers || []) {
+                if (ids.has(Number(offer?.pokemonId ?? offer?.ficha?.id)))
+                    matches.push(offer.ficha);
             }
         }
-        if (!offers.length) return '<div class="moth-mw-empty">' +
-            escapeHtml(tr('No sampled Pokémon listings yet. Activate Pokémon Watch or scan now.')) +
-            '</div>';
-        return '<p class="moth-mw-evidence-intro">' +
-            escapeHtml(tr('This is a bounded market sample, not every listing. Completed-sale evidence cannot authorize a purchase.')) +
-            '</p>' + offers.slice(0, 60).map(({currency, offer, updatedAt}) =>
-            pokemonEvidenceCard(offer, currency, updatedAt)).join('');
-        state.pokemonEvidenceMemo = { signature, at: Date.now(), html };
-        return html;
+        return matches.length && matches.every(f => f === matches[0]) ? matches[0] : null;
+    }
+
+    function pokemonSheetInputs(host) {
+        const field = name => host.querySelector('[data-moth-sheet-field="' + name + '"]')?.value || '';
+        const id = Number(field('speciesId'));
+        const potency = Number(field('potencia'));
+        const grade = Number(field('nota').replace(',', '.'));
+        const level = Number(field('level'));
+        const shiny = field('shiny');
+        return {
+            speciesId: Number.isSafeInteger(id) && id > 0 ? id : null,
+            potencia: Number.isSafeInteger(potency) && potency >= 1 && potency <= 5 ? potency : null,
+            nota: field('nota') && Number.isFinite(grade) && grade >= 0 && grade <= 10 ? grade : null,
+            level: Number.isSafeInteger(level) && level > 0 ? level : null,
+            shiny: shiny === 'yes' ? true : shiny === 'no' ? false : null,
+            formId: field('formId').trim() || null
+        };
+    }
+
+    function updatePokemonSheetValues(host) {
+        const ficha = pokemonSheetInputs(host);
+        const output = host.querySelector('.moth-sheet-results');
+        if (!output) return;
+        const missing = ['speciesId','potencia','shiny'].filter(name => ficha[name] == null);
+        output.innerHTML = (missing.length
+            ? '<p class="moth-sheet-warning">' + escapeHtml(tr('To match sale records, provide: {fields}', {
+                fields: missing.join(', ')
+            })) + '</p>' : '') +
+            '<div class="moth-sheet-currencies"><div><span>' + escapeHtml(tr('Coins')) + '</span>' +
+            pokemonValueLabel(ficha, 'gold') + '</div><div><span>' + escapeHtml(tr('Gems')) + '</span>' +
+            pokemonValueLabel(ficha, 'orb') + '</div></div>' +
+            '<p>' + escapeHtml(tr('Shown prices are completed-sale medians, not guaranteed selling prices. Open Pokémon values in Moth Watch for the calculation and reference settings.')) + '</p>';
+        host.dataset.mothReferenceAt = String(state.pokemonReference?.capturedAt || 0);
+    }
+
+    function ensurePokemonSheetValuation() {
+        const sheet = q('#ficha');
+        if (!sheet || sheet.classList.contains('hidden') || sheet.getAttribute('aria-hidden') === 'true')
+            return;
+        const body = q('#ficha-corpo', sheet);
+        if (!body) return;
+        let host = q('#moth-sheet-valuation', body);
+        const title = q('#ficha-titulo', sheet)?.textContent || '';
+        const nativeText = [...body.childNodes].filter(node => node !== host)
+            .map(node => node.textContent || '').join(' ');
+        const key = title + '|' + nativeText.slice(0, 1600);
+        if (host?.dataset.mothSheetKey === key) {
+            if (host.dataset.mothReferenceAt !== String(state.pokemonReference?.capturedAt || 0))
+                updatePokemonSheetValues(host);
+            return;
+        }
+        const observed = pokemonSheetOffer(sheet);
+        const draft = observed || pokemonSheetDraft(nativeText, title, state.creatureNames);
+        if (!host) {
+            host = document.createElement('section');
+            host.id = 'moth-sheet-valuation';
+            host.className = 'moth-sheet-valuation';
+            body.appendChild(host);
+        }
+        const field = (name, label, value, type, extra = '') =>
+            '<label><span>' + escapeHtml(tr(label)) + '</span><input data-moth-sheet-field="' +
+            name + '" type="' + type + '" value="' + escapeHtml(value == null ? '' : String(value)) +
+            '" ' + extra + '></label>';
+        const shinyValue = draft.shiny === true ? 'yes' : draft.shiny === false ? 'no' : '';
+        host.innerHTML = '<div class="moth-sheet-heading"><b>Moth valuation</b><small>' +
+            escapeHtml(tr('Sale-price estimate · read-only')) + '</small></div>' +
+            '<div class="moth-sheet-results" aria-live="polite"></div>' +
+            '<details><summary>' + escapeHtml(tr('Edit Pokémon details / see how it works')) + '</summary>' +
+            '<p>' + escapeHtml(tr('These fields are taken from the sheet when identifiable. Fill blanks if the game does not expose them. Unknown form stays separate from confirmed forms.')) + '</p>' +
+            '<div class="moth-sheet-fields">' +
+            field('speciesId', 'Species ID', draft.speciesId, 'number', 'min="1" step="1"') +
+            field('potencia', 'Potency (P)', draft.potencia, 'number', 'min="1" max="5" step="1"') +
+            field('nota', 'Grade (N)', draft.nota, 'text', 'inputmode="decimal"') +
+            field('level', 'Level', draft.level, 'number', 'min="1" step="1"') +
+            field('formId', 'Form ID (if known)', draft.formId, 'text') +
+            '<label><span>' + escapeHtml(tr('Shiny?')) + '</span><select data-moth-sheet-field="shiny">' +
+            [['','Unknown'],['no','No'],['yes','Yes']].map(([value,label]) =>
+                '<option value="' + value + '"' + (shinyValue === value ? ' selected' : '') + '>' +
+                escapeHtml(tr(label)) + '</option>').join('') +
+            '</select></label></div><p>' +
+            escapeHtml(tr('Estimate = median of comparable completed sales; middle range = 25th–75th percentile. Missing or stale evidence is labeled indicative, not a bargain.')) +
+            '</p></details>';
+        host.dataset.mothSheetKey = key;
+        if (!host.dataset.mothBound) {
+            host.dataset.mothBound = '1';
+            host.addEventListener('click', event => event.stopPropagation());
+            host.addEventListener('input', () => updatePokemonSheetValues(host));
+            host.addEventListener('change', () => updatePokemonSheetValues(host));
+        }
+        updatePokemonSheetValues(host);
     }
 
     function renderCandidate(candidate) {
@@ -5985,7 +6159,7 @@
             if (panel.dataset.mothWatchShell) delete panel.dataset.mothWatchShell;
             forceViewBuild = true;
         }
-        const views = ['opportunities', 'inventory', 'pricing', 'economy', 'snatches', 'automation', 'activity'];
+        const views = ['opportunities', 'inventory', 'pricing', 'snatches', 'automation', 'activity'];
         if (!views.includes(state.watchView)) state.watchView = 'opportunities';
 
         if (!panel.dataset.mothWatchShell) {
@@ -5996,8 +6170,7 @@
                 '<nav class="moth-mw-tabs" aria-label="' + escapeHtml(tr('Moth Watch views')) + '">' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="opportunities">' + escapeHtml(tr('Opportunities')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="inventory">' + escapeHtml(tr('Market inventory')) + '</button>' +
-                '<button type="button" class="moth-mw-tab" data-moth-view="pricing">' + escapeHtml(tr('Pokémon price evidence')) + '</button>' +
-                '<button type="button" class="moth-mw-tab" data-moth-view="economy">' + escapeHtml(tr('Economy & holdings')) + '</button>' +
+                '<button type="button" class="moth-mw-tab" data-moth-view="pricing">' + escapeHtml(tr('Pokémon values')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="snatches" id="moth-mw-snatch-tab">' + escapeHtml(tr('Snatch queue')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="automation">' + escapeHtml(tr('Automation & budget')) + '</button>' +
                 '<button type="button" class="moth-mw-tab" data-moth-view="activity">' + escapeHtml(tr('Activity & references')) + '</button></nav>' +
@@ -6086,14 +6259,29 @@
                     escapeHtml(tr('Browse item types, then load the offers for a selected currency.')) + '</span></div><div id="moth-mw-inventory-content"></div>';
             } else if (state.watchView === 'pricing') {
                 content.innerHTML = '<div class="moth-mw-section-title"><h4>' +
-                    escapeHtml(tr('Pokémon price evidence')) + '</h4><span>' +
-                    escapeHtml(tr('Read-only completed-sale comparisons. No purchase authorization.')) +
-                    '</span></div><div id="moth-mw-pricing-list"></div>';
-            } else if (state.watchView === 'economy') {
-                content.innerHTML = '<div class="moth-mw-section-title"><h4>' +
-                    escapeHtml(tr('Economy & holdings')) + '</h4><span>' +
-                    escapeHtml(tr('Read-only fees, market eligibility, and recorded purchase exposure.')) +
-                    '</span></div><div id="moth-mw-economy"></div>';
+                    escapeHtml(tr('Pokémon values')) + '</h4><span>' +
+                    escapeHtml(tr('Read-only sale estimates · no purchase authorization')) +
+                    '</span></div>' +
+                    '<p class="moth-mw-evidence-intro">' +
+                    escapeHtml(tr('Open any Pokémon sheet in the game to estimate your own Pokémon. Below are examples from recently observed market listings.')) +
+                    '</p><div class="moth-mw-value-tools"><button type="button" class="moth-mw-btn" id="moth-mw-refresh-sales">' +
+                    escapeHtml(tr('Refresh completed sales')) + '</button><span>' +
+                    escapeHtml(tr('History status: {status}', {status:displayStatus(state.pokemonStatus)})) +
+                    '</span></div>' +
+                    '<details class="moth-mw-advanced moth-mw-value-settings"><summary>' +
+                    escapeHtml(tr('Advanced price references & method')) + '</summary>' +
+                    '<div class="moth-mw-advanced-body"><p>' +
+                    escapeHtml(tr('First group sold Pokémon by species, form, Shiny, potency and currency. Compare grade, level, quality, IVs and refinement as available. The estimate is the median sale price; the displayed range covers the middle 50% of matched sales. Sparse, undated, old or broad matches are indicative only.')) +
+                    '</p><section class="moth-mw-settings-card"><h4>' +
+                    escapeHtml(tr('Valuation sample settings (not buying limits)')) +
+                    '</h4><p class="moth-mw-rule-hint">' +
+                    escapeHtml(tr('These settings affect price estimates and deal discovery only. Rules such as “buy any item below 10,000 Coins” never require historical sales.')) +
+                    '</p><div class="moth-mw-config">' +
+                    configField('Sold item units for estimate confidence', 'minItemUnits', 'number', '') +
+                    configField('Comparable Pokémon sales for price estimates', 'minPokemonSamples', 'number', '') +
+                    configField('Pokémon history pages', 'pokemonHistoryPages', 'number', '') +
+                    '</div></section></div></details>' +
+                    '<div id="moth-mw-pricing-list"></div>';
             } else if (state.watchView === 'snatches') {
                 content.innerHTML =
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Snatch queue')) +
@@ -6139,15 +6327,10 @@
                     '</div></section></div></div></details>';
             } else {
                 content.innerHTML =
-                    '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Price references')) + '</h4><span>' +
-                    escapeHtml(tr('Inspect market-price evidence independently of your buying rules.')) + '</span></div>' +
-                    '<section class="moth-mw-settings-card"><h4>' + escapeHtml(tr('Valuation sample settings (not buying limits)')) +
-                    '</h4><p class="moth-mw-rule-hint">' + escapeHtml(tr('These settings affect price estimates and deal discovery only. Rules such as “buy any item below 10,000 Coins” never require historical sales.')) +
-                    '</p><div class="moth-mw-config">' +
-                    configField('Sold item units for estimate confidence', 'minItemUnits', 'number', '') +
-                    configField('Comparable Pokémon sales for price estimates', 'minPokemonSamples', 'number', '') +
-                    configField('Pokémon history pages', 'pokemonHistoryPages', 'number', '') +
-                    '</div></section>' +
+                    '<p class="moth-mw-rule-hint">' +
+                    escapeHtml(tr('Pokémon sale estimates and advanced price references are now in Pokémon values.')) +
+                    ' <button type="button" class="moth-mw-btn" data-moth-goto="pricing">' +
+                    escapeHtml(tr('Open Pokémon values')) + '</button></p>' +
                     '<div class="moth-mw-reference-tools" id="moth-mw-reference-tools"></div>' +
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Recent activity')) + '</h4><span>' +
                     escapeHtml(tr('Purchase attempts, confirmations, and errors.')) + '</span></div>' +
@@ -6199,10 +6382,6 @@
             const host = q('#moth-mw-pricing-list', content);
             const html = renderPokemonPriceEvidence();
             if (host && host.innerHTML !== html) host.innerHTML = html;
-        } else if (state.watchView === 'economy') {
-            const host = q('#moth-mw-economy', content);
-            const html = renderEconomyDashboard();
-            if (host && host.innerHTML !== html && !host.contains(document.activeElement)) host.innerHTML = html;
         } else if (state.watchView === 'automation') {
             refreshAutomationLive(content);
         } else if (state.watchView === 'snatches') {
@@ -6287,61 +6466,26 @@
                 renderWatch(state.watchView !== 'snatches'); return;
             }
             const quickLink = target.closest('[data-moth-goto]');
-            if (quickLink?.dataset.mothGoto === 'snatches') {
-                state.watchView = 'snatches';
-                try { localStorage.setItem('moth-pokeidle-market-watch-view-v1', 'snatches'); } catch {}
+            if (['snatches', 'pricing'].includes(quickLink?.dataset.mothGoto)) {
+                state.watchView = quickLink.dataset.mothGoto;
+                try { localStorage.setItem('moth-pokeidle-market-watch-view-v1', state.watchView); } catch {}
                 renderWatch(true);
+                return;
+            }
+            if (target.closest('#moth-mw-refresh-sales')) {
+                ensurePokemonHistory(true);
+                state.pokemonEvidenceMemo = null;
+                queueRender();
                 return;
             }
             const tab = target.closest('[data-moth-view]');
             if (tab) {
                 const view = tab.dataset.mothView;
-                if (!['opportunities', 'inventory', 'pricing', 'economy', 'snatches', 'automation', 'activity'].includes(view)) return;
+                if (!['opportunities', 'inventory', 'pricing', 'snatches', 'automation', 'activity'].includes(view)) return;
                 state.watchView = view;
                 try { localStorage.setItem('moth-pokeidle-market-watch-view-v1', view); } catch {}
                 renderWatch(true);
                 return;
-            }
-            const holdingRemove = target.closest('[data-moth-holding-remove]');
-            if (holdingRemove) {
-                const ok = setEconomyHolding(Number(holdingRemove.dataset.mothHoldingRemove), 0, 'gold');
-                state.economyNotice = ok ? tr('Holding removed.') : tr('Could not remove holding.');
-                renderWatch(true); return;
-            }
-            if (target.closest('#moth-mw-holding-save')) {
-                const itemId = Number(q('#moth-mw-holding-item', panel)?.value);
-                const quantity = Number(q('[data-moth-economy-field="quantity"]', panel)?.value);
-                const currency = q('#moth-mw-holding-currency', panel)?.value;
-                const ok = setEconomyHolding(itemId, quantity, currency);
-                state.economyNotice = ok ? tr('Holding quantity recorded.') : tr('Select a catalog item and a valid quantity.');
-                if (ok) {
-                    state.economyInput.itemId = itemId;
-                    state.economyInput.quantity = quantity;
-                    state.economyInput.holdingCurrency = currency;
-                }
-                renderWatch(true); return;
-            }
-            if (target.closest('#moth-mw-fee-calc')) {
-                const kind = q('#moth-mw-fee-kind', panel)?.value;
-                const currency = q('#moth-mw-fee-currency', panel)?.value;
-                const unit = Number(q('[data-moth-economy-field="feeUnit"]', panel)?.value);
-                const quantity = Number(q('[data-moth-economy-field="feeQuantity"]', panel)?.value);
-                const days = Number(q('[data-moth-economy-field="holdingDays"]', panel)?.value);
-                if (!['item','diamond','pokemon'].includes(kind) ||
-                    !['gold','orb'].includes(currency) ||
-                    !Number.isSafeInteger(unit) || unit <= 0 ||
-                    !Number.isSafeInteger(quantity) || quantity < 1 ||
-                    kind === 'pokemon' && quantity !== 1 ||
-                    !Number.isSafeInteger(unit * quantity) ||
-                    !Number.isSafeInteger(days) || days < 1 || days > 30) {
-                    state.economyNotice = tr('Enter a valid positive price and quantity; Pokémon are indivisible.');
-                    renderWatch(true);
-                    return;
-                }
-                state.economyInput = { ...state.economyInput, feeKind: kind, feeCurrency:currency,
-                    feeUnit: unit, feeQuantity: quantity, holdingDays: days };
-                state.economyNotice = tr('Seller fee estimate updated.');
-                renderWatch(true); return;
             }
             if (target.closest('#moth-mw-diagnostics-toggle')) {
                 diagnosticReset(!state.diagnostics?.enabled);
