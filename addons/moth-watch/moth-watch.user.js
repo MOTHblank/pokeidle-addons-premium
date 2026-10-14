@@ -109,6 +109,7 @@
         catalog: new Map(),
         itemNames: new Map(),
         creatureNames: new Map(),
+        creatureBases: new Map(),
         itemSummary: {},
         liveItemAverages: {},
         loadedItemKeys: new Set(),
@@ -1376,6 +1377,13 @@
                     ).trim();
                     if (Number.isFinite(id) && id > 0 && name) {
                         state.creatureNames.set(id, name);
+                        const fields = ['baseHp','baseAtk','baseDef','baseSpAtk','baseSpDef','baseSpeed'];
+                        if (fields.every(key => Number.isFinite(Number(creature[key])) &&
+                            Number(creature[key]) >= 0)) {
+                            state.creatureBases.set(id, Object.fromEntries(
+                                ['hp','atk','def','spAtk','spDef','speed'].map((key,i) =>
+                                    [key, Number(creature[fields[i]])])));
+                        }
                     }
                 }
             } catch (error) {
