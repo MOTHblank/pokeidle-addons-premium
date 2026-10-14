@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.6.17
+// @version      0.6.18
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/moth-watch/moth-watch.user.js
@@ -15,7 +15,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.17');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.18');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -41,6 +41,9 @@
     const POKEMON_HISTORY_FRESH_MS = 30 * 86400000;
     const BACKGROUND_MIN_GAP_MS = 2000;
     const MAX_PENDING_BUYS = 5;
+    // Held listings have four seconds to be tried. Keep the normal buyer's
+    // five-order ceiling, but allow a short burst across many distinct IDs.
+    const MAX_SNATCH_BURST_PENDING = 40;
     const MAX_SNATCH_PENDING_PER_LISTING = 3;
     const BUY_DISPATCH_GAP_MS = 120;
     const BACKGROUND_SCAN_WITH_RULES_MS = 15000;
@@ -3148,11 +3151,14 @@
         // every further request to a single-unit buy.
         const repeatableItem = candidate.kind === 'item' && !manual;
         const repeatable = !!snatchRelease || repeatableItem;
-        if (pendingCount >= MAX_PENDING_BUYS ||
+        if (pendingCount >= (snatchRelease ? MAX_SNATCH_BURST_PENDING : MAX_PENDING_BUYS) ||
             (listingPending && (!repeatable ||
                 listingPending >= MAX_SNATCH_PENDING_PER_LISTING))) return false;
+        // Do not serialize 22 Snatches behind the regular buyer's 120ms
+        // gap. Other purchases still use the normal dispatch pacing.
         if (Date.now() < Number(state.rateLimitedUntil || 0) ||
-            Date.now() < Number(state.lastPurchaseSendAt || 0) + BUY_DISPATCH_GAP_MS) return false;
+            !snatchRelease && Date.now() < Number(state.lastPurchaseSendAt || 0) + BUY_DISPATCH_GAP_MS)
+            return false;
         if (candidate.kind === 'pokemon' &&
             !pokemonCurrencyAllowed(candidate.ficha, candidate.currency)) {
             if (manual) addLog('Skipped: shiny Pokémon require Gems');
@@ -7655,7 +7661,7 @@
             sheetObserver.observe(pokemonSheetBody, {childList: true, subtree: true});
         }
         ensureUi();
-        console.info('[Moth Watch] v0.6.17 loaded');
+        console.info('[Moth Watch] v0.6.18 loaded');
     }
 
     bootstrap();
