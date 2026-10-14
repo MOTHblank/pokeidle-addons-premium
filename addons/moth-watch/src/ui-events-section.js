@@ -519,8 +519,16 @@
         injectStyle();
         ensureSellPriceRecommendation();
         // Native #ficha is a separate modal, not the Community Market panel.
-        // Run every UI pass so owned and listed Pokémon show a valuation.
-        ensurePokemonSheetValuation();
+        // Valuation is advisory; errors in the sheet must never prevent
+        // scanning or executing previously authorized market rules.
+        try {
+            ensurePokemonSheetValuation();
+        } catch (error) {
+            if (Date.now() - Number(state.lastSheetErrorAt || 0) > 30000) {
+                state.lastSheetErrorAt = Date.now();
+                console.warn('[Moth Watch] Pokémon sheet valuation error:', error);
+            }
+        }
         if (state.watchOpen && state.lastLocale !== currentLocale()) renderWatch(true);
 
         /*
