@@ -2,7 +2,7 @@
         const fetch = state.historyFetch;
         if (!fetch) return;
         if (fetch.waitingSince && Date.now() - fetch.waitingSince < 12000) return;
-        if (q('#cm-hist-corpo') || communityMarketIsOpen()) {
+        if (communityMarketIsOpen()) {
             setTimeout(requestHistoryPage, 1500);
             return;
         }
@@ -148,7 +148,12 @@
     }
 
     function startPokemonScan() {
-        if ((!config.scanPokemon && !activePokemonRules().length) || state.pokemonScan) return;
+        // A manually armed Pokémon Snatch is itself a reason to refresh
+        // listing quotes, even with background Pokémon monitoring disabled.
+        const manualSnatches = [...(state.snatchManual?.values() || [])]
+            .some(entry => entry.kind === 'pokemon');
+        if ((!config.scanPokemon && !activePokemonRules().length && !manualSnatches) ||
+            state.pokemonScan) return;
 
         /*
          * Bot requests share the game's WebSocket. A background market.listar
@@ -156,7 +161,7 @@
          * normal Pokémon market. Moth Watch may scan while its own panel hides
          * that view, but otherwise leave interactive browsing alone.
          */
-        if (q('.cm-topo') && !state.watchOpen) {
+        if (communityMarketIsOpen()) {
             state.pokemonStatus = 'paused while browsing';
             return;
         }
@@ -179,7 +184,7 @@
     function pumpPokemonScan() {
         const scan = state.pokemonScan;
         if (!scan || scan.waiting) return;
-        if (communityMarketIsOpen() || (q('.cm-topo') && !state.watchOpen)) {
+        if (communityMarketIsOpen()) {
             state.pokemonScan = null;
             state.pokemonStatus = 'paused while browsing';
             return;

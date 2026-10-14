@@ -12,7 +12,8 @@
         if (sourceSocket && (
             message.t === 'welcome' ||
             message.t === 'market' ||
-            message.t === 'batalha'
+            message.t === 'batalha' ||
+            (message.t === 'estado' && message.estado && typeof message.estado === 'object')
         )) {
             state.socket = sourceSocket;
             state.gameSocket = sourceSocket;

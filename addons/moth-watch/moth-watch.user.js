@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.6.15
+// @version      0.6.16
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -14,7 +14,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.15');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.16');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -109,6 +109,7 @@
         catalog: new Map(),
         itemNames: new Map(),
         creatureNames: new Map(),
+        creatureBases: new Map(),
         itemSummary: {},
         liveItemAverages: {},
         loadedItemKeys: new Set(),
@@ -905,7 +906,16 @@
             fillQty: Number.isSafeInteger(o.fillQty) && o.fillQty > 0 && o.fillQty <= o.qty ? o.fillQty : null,
             fillSpend: Number.isSafeInteger(o.fillSpend) && o.fillSpend > 0 && o.fillSpend <= o.spend ? o.fillSpend : null
         })).slice(-2500);
-        return { version: 1, accountKey, sessionId: orderSessionId(), orders };
+        // Aggregate settled purchases can be compacted without losing
+        // per-day, per-session or per-rule budget exposure.
+        let archived = {};
+        try {
+            const saved = JSON.parse(localStorage.getItem(ORDER_JOURNAL_KEY + ':' + accountKey) || 'null');
+            if (saved?.version === 1 && saved.archived &&
+                typeof saved.archived === 'object' && !Array.isArray(saved.archived))
+                archived = saved.archived;
+        } catch {}
+        return { version: 1, accountKey, sessionId: orderSessionId(), orders, archived };
     }
 
     function saveOrderJournal() {
@@ -946,6 +956,22 @@
                 scope === 'day' && o.day !== orderDay(Date.now()) ||
                 scope === 'session' && o.sessionId !== state.orderJournal.sessionId) continue;
             spent += o.spend; count++; quantity += o.qty;
+        }
+        for (const [key, archived] of Object.entries(state.orderJournal?.archived || {})) {
+            let fields;
+            try { fields = JSON.parse(key); } catch { continue; }
+            if (!Array.isArray(fields) || fields.length !== 4) continue;
+            const [session, day, unit, id] = fields;
+            if (currency && unit !== currency || ruleId && id !== ruleId ||
+                scope === 'day' && day !== orderDay(Date.now()) ||
+                scope === 'session' && session !== state.orderJournal.sessionId) continue;
+            const amount = Number(archived?.spent), times = Number(archived?.count),
+                units = Number(archived?.quantity);
+            if (Number.isSafeInteger(amount) && amount >= 0 &&
+                Number.isSafeInteger(times) && times >= 0 &&
+                Number.isSafeInteger(units) && units >= 0) {
+                spent += amount; count += times; quantity += units;
+            }
         }
         const value = { spent, count, quantity };
         cache.set(key, { at: Date.now(), value });
@@ -995,8 +1021,35 @@
         return { spend: maxCount > 0 ? spend : 0, quantity };
     }
 
+    function compactOrderJournal() {
+        const journal = state.orderJournal;
+        if (!journal || journal.orders.length < 2500) return;
+        const keep = [];
+        let drop = journal.orders.length - 1500;
+        journal.archived ||= {};
+        for (const o of journal.orders) {
+            if (drop > 0 && (o.status === 'confirmed' || o.status === 'refused')) {
+                if (o.status === 'confirmed') {
+                    const key = JSON.stringify([o.sessionId, o.day, o.currency, o.ruleId || '']);
+                    const bucket = journal.archived[key] ||= {spent:0,count:0,quantity:0};
+                    bucket.spent += o.spend;
+                    bucket.count += 1;
+                    bucket.quantity += o.qty;
+                }
+                drop--;
+            } else keep.push(o);
+        }
+        journal.orders = keep;
+        state.exposureCache?.clear();
+    }
+
     function reserveOrder(order) {
-        if (!state.orderJournal?.sessionId || state.orderJournal.orders.length >= 2500) return false;
+        if (!state.orderJournal?.sessionId) return false;
+        // A long-running buyer must not deadlock forever at 2500 receipts.
+        // Unknown orders remain individually tracked; confirmed orders are
+        // rolled into exact exposure totals before freeing journal space.
+        compactOrderJournal();
+        if (state.orderJournal.orders.length >= 2500) return false;
         state.orderJournal.orders.push(order);
         if (saveOrderJournal()) return true;
         state.orderJournal.orders.pop();
@@ -1376,6 +1429,13 @@
                     ).trim();
                     if (Number.isFinite(id) && id > 0 && name) {
                         state.creatureNames.set(id, name);
+                        const fields = ['baseHp','baseAtk','baseDef','baseSpAtk','baseSpDef','baseSpeed'];
+                        if (fields.every(key => Number.isFinite(Number(creature[key])) &&
+                            Number(creature[key]) >= 0)) {
+                            state.creatureBases.set(id, Object.fromEntries(
+                                ['hp','atk','def','spAtk','spDef','speed'].map((key,i) =>
+                                    [key, Number(creature[fields[i]])])));
+                        }
                     }
                 }
             } catch (error) {
@@ -2607,7 +2667,7 @@
         const fetch = state.historyFetch;
         if (!fetch) return;
         if (fetch.waitingSince && Date.now() - fetch.waitingSince < 12000) return;
-        if (q('#cm-hist-corpo') || communityMarketIsOpen()) {
+        if (communityMarketIsOpen()) {
             setTimeout(requestHistoryPage, 1500);
             return;
         }
@@ -2753,7 +2813,12 @@
     }
 
     function startPokemonScan() {
-        if ((!config.scanPokemon && !activePokemonRules().length) || state.pokemonScan) return;
+        // A manually armed Pokémon Snatch is itself a reason to refresh
+        // listing quotes, even with background Pokémon monitoring disabled.
+        const manualSnatches = [...(state.snatchManual?.values() || [])]
+            .some(entry => entry.kind === 'pokemon');
+        if ((!config.scanPokemon && !activePokemonRules().length && !manualSnatches) ||
+            state.pokemonScan) return;
 
         /*
          * Bot requests share the game's WebSocket. A background market.listar
@@ -2761,7 +2826,7 @@
          * normal Pokémon market. Moth Watch may scan while its own panel hides
          * that view, but otherwise leave interactive browsing alone.
          */
-        if (q('.cm-topo') && !state.watchOpen) {
+        if (communityMarketIsOpen()) {
             state.pokemonStatus = 'paused while browsing';
             return;
         }
@@ -2784,7 +2849,7 @@
     function pumpPokemonScan() {
         const scan = state.pokemonScan;
         if (!scan || scan.waiting) return;
-        if (communityMarketIsOpen() || (q('.cm-topo') && !state.watchOpen)) {
+        if (communityMarketIsOpen()) {
             state.pokemonScan = null;
             state.pokemonStatus = 'paused while browsing';
             return;
@@ -3071,8 +3136,7 @@
         if (!manual && !currentRuleMatches(rule, candidate, quotedPrice)) return false;
         if (!candidate || !state.orderJournal?.sessionId ||
             !state.gameSocket || state.gameSocket.readyState !== 1 ||
-            state.orderJournal?.accountKey !== orderAccountKey() ||
-            state.orderJournal.orders.length >= 2500) return false;
+            state.orderJournal?.accountKey !== orderAccountKey()) return false;
         const pendingCount = [...(state.pendingBuys?.values() || [])]
             .reduce((n, entries) => n + entries.length, 0) ||
             (state.pendingBuys?.size ? 0 : Number(!!state.pendingBuy));
@@ -3613,7 +3677,7 @@
             state.ruleItemKeys.clear();
             return;
         }
-        if (!state.socket || state.socket.readyState !== 1) return;
+        if (!state.gameSocket || state.gameSocket.readyState !== 1) return;
         // A hidden native-market sheet may remain mounted in #modal. Its
         // mere DOM presence must not disable all background automation.
         // Browsing the native market must not pause authorized purchases.
@@ -4352,7 +4416,8 @@
         if (sourceSocket && (
             message.t === 'welcome' ||
             message.t === 'market' ||
-            message.t === 'batalha'
+            message.t === 'batalha' ||
+            (message.t === 'estado' && message.estado && typeof message.estado === 'object')
         )) {
             state.socket = sourceSocket;
             state.gameSocket = sourceSocket;
@@ -5502,62 +5567,116 @@
     // Read only facts that the visible game sheet explicitly supplies, or
     // facts from the exact market offer if a Pokémon id matches. If a sheet
     // omits Shiny, form or grade, let the player fill it in; never assume.
-    function pokemonSheetDraft(text, title, names) {
-        const body = String(text || '').slice(0, 14000);
-        const originalTitle = String(title || '').trim();
-        const heading = originalTitle.replace(/^(?:ficha\s+(?:de|do|da)\s+)?(?:shiny\s+)?/i, '').trim();
-        const idText = body.match(/(?:Pok[eé]dex|Species ID|Esp[eé]cie|Dex)\s*(?:#|n[º°]\.?\s*)?(\d{1,5})\b/i);
-        let speciesId = idText ? Number(idText[1]) : null;
+    // PokéIdle's corpoDoPokemon() builds semantic .fi-placa cards, an
+    // unanimated N in data-nota and six .fi-stat/.fi-iv rows. Read THOSE
+    // elements rather than guessing fields from a flattened wall of text.
+    function pokemonSheetDraft(root, names) {
+        const body = root.querySelector('#ficha-corpo') || root;
+        const hero = body.querySelector('.fi-heroi');
+        if (!hero) return null; // Pokédex species sheets are not specimens.
+        const title = root.querySelector('#ficha-titulo')?.textContent || '';
+        const plateValue = words => {
+            for (const plate of body.querySelectorAll('.fi-placa')) {
+                const label = normalize(plate.querySelector('small span')?.textContent || '');
+                if (words.some(word => label.includes(word)))
+                    return plate.querySelector('b')?.textContent?.trim() || '';
+            }
+            return '';
+        };
+        const decimal = value => {
+            const found = String(value || '').match(/(\d+[.,]\d{1,3})\b/);
+            return found ? Number(found[1].replace(',', '.')) : null;
+        };
+        const speciesLabel = plateValue(['especie', 'species']);
+        const speciesName = speciesLabel.replace(/^#?[\d.,]+\s*/, '').trim();
+        let speciesId = null;
+        if (speciesName && names) {
+            const matches = [...names].filter(([, name]) => normalize(name) === normalize(speciesName));
+            if (matches.length === 1) speciesId = Number(matches[0][0]);
+        }
         if (!speciesId && names) {
-            const normalizedHeading = normalize(heading);
-            const exact = [...names].filter(([, name]) => normalize(name) === normalizedHeading);
-            if (exact.length === 1) speciesId = Number(exact[0][0]);
-            else {
-                const words = [...names].filter(([, name]) => {
-                    const key = normalize(name);
-                    return key.length > 2 && (normalizedHeading.startsWith(key + ' ') ||
-                        normalizedHeading.endsWith(' ' + key) ||
-                        normalizedHeading.includes(' ' + key + ' '));
-                });
-                if (words.length === 1) speciesId = Number(words[0][0]);
+            const cleanTitle = normalize(title.split(' · ')[0].replace(/^shiny\s+/i, ''));
+            const matches = [...names].filter(([, name]) => normalize(name) === cleanTitle);
+            if (matches.length === 1) speciesId = Number(matches[0][0]);
+        }
+        const idInLabel = speciesLabel.match(/#\s*(\d{1,5})\b/);
+        if (!speciesId && idInLabel && names?.has(Number(idInLabel[1])) &&
+            normalize(names.get(Number(idInLabel[1]))) === normalize(speciesName))
+            speciesId = Number(idInLabel[1]);
+
+        const potencyLabel = plateValue(['potencia', 'potency']);
+        const p = potencyLabel.match(/\bP\s*([1-5])\b/i);
+        const qualityLabel = plateValue(['qualidade', 'quality']);
+        const note = body.querySelector('.fi-nota-num[data-nota]');
+        const rawNote = note?.dataset?.nota;
+        const grade = rawNote == null ? null : Number(rawNote);
+        const levelText = body.querySelector('.fi-nivel-chip')?.textContent || '';
+        const levelNumber = levelText.match(/(\d[\d.,\s]*)/);
+        const level = levelNumber ? Number(levelNumber[1].replace(/[^\d]/g, '')) : null;
+        const shinyLabel = [
+            hero.querySelector('.fi-nome')?.textContent || '',
+            hero.querySelector('.fi-selos-linha')?.textContent || ''
+        ].join(' ');
+        const shiny = /\bshiny\b/i.test(shinyLabel) ||
+            !!hero.querySelector('.fi-nome [class*="shiny"], .fi-selos-linha [class*="shiny"], .fi-selos-linha [title*="Shiny"]');
+        const aliases = {hp:'hp',atk:'atk',def:'def',spatk:'spAtk',spdef:'spDef',spd:'speed',speed:'speed'};
+        const ivs = {};
+        for (const row of body.querySelectorAll('.fi-stats-duo .fi-stat')) {
+            const label = normalize(row.querySelector('.fi-stat-nome')?.textContent || '')
+                .replace(/[^a-z]/g, '');
+            const key = aliases[label];
+            const iv = row.querySelector('.fi-iv')?.textContent?.match(/\bIV\s*(\d{1,2})\b/i);
+            if (key && iv && Number(iv[1]) >= 1 && Number(iv[1]) <= 32)
+                ivs[key] = Number(iv[1]);
+        }
+        const completeIvs = Object.keys(ivs).length === 6 ? ivs : null;
+        const bases = state.creatureBases?.get(speciesId);
+        const refined = {};
+        if (bases && body.querySelector('.fi-stats-refino')) {
+            for (const row of body.querySelectorAll('.fi-stats-refino .fi-stat')) {
+                const label = normalize(row.querySelector('.fi-stat-nome')?.textContent || '')
+                    .replace(/[^a-z]/g, '');
+                const key = aliases[label];
+                const shown = row.querySelector('.fi-stat-num')?.textContent || '';
+                const n = Number(shown.replace(/[^\d]/g, ''));
+                if (key && shown && Number.isSafeInteger(n) && Number.isFinite(bases[key]))
+                    refined[key] = Math.max(0, n - bases[key]);
             }
         }
-        const potency = body.match(/(?:Pot[eê]ncia|Potency)\s*[:=]?\s*([1-5])\b/i) ||
-            body.match(/\bP\s*[:=]?\s*([1-5])\b/i);
-        const score = body.match(/(?:Nota|Grade|Score)\s*[:=]?\s*(\d+(?:[.,]\d{1,3})?)\b/i) ||
-            body.match(/\bN\s*[:=]\s*(\d+(?:[.,]\d{1,3})?)\b/i);
-        const quality = body.match(/(?:Qualidade|Quality|\bQ\b)\s*[:=]\s*(\d+(?:[.,]\d{1,3})?)\b/i);
-        const level = body.match(/(?:N[ií]vel|Level|Lv\.?)\s*[:=#]?\s*(\d{1,7})\b/i);
-        // In the game's native sheet a Shiny is visibly labelled. A sheet
-        // without that badge is provisionally assumed ordinary, and the user
-        // can correct this in the estimate controls.
-        const shiny = /^shiny\b/i.test(heading) || /\bshiny\b/i.test(originalTitle) ||
-            /(?:Shiny)\s*[:=]\s*(?:sim|yes|true)\b/i.test(body);
+        const refinement = Object.keys(refined).length === 6 ? refined : null;
         return {
-            speciesId: Number.isSafeInteger(speciesId) && speciesId > 0 ? speciesId : null,
-            potencia: potency ? Number(potency[1]) : null,
-            nota: score ? Number(score[1].replace(',', '.')) : null,
-            qualidade: quality ? Number(quality[1].replace(',', '.')) : null,
-            level: level ? Number(level[1]) : null,
-            shiny, formId: null
+            speciesId: speciesId > 0 ? speciesId : null,
+            potencia: p ? Number(p[1]) : null,
+            nota: Number.isFinite(grade) && grade >= 0 && grade <= 10 ? grade : null,
+            qualidade: decimal(qualityLabel),
+            level: Number.isSafeInteger(level) && level > 0 ? level : null,
+            shiny, formId: null, ivs: completeIvs, refino: refinement
         };
     }
 
-    function pokemonSheetOffer(root) {
-        const ids = new Set();
-        for (const node of [root, ...root.querySelectorAll('[data-pokemon-id], [data-pokemonid]')]) {
-            const id = Number(node.dataset?.pokemonId ?? node.dataset?.pokemonid);
-            if (Number.isSafeInteger(id) && id > 0) ids.add(id);
-        }
-        if (ids.size !== 1) return null;
+    function pokemonSheetOffer(root, draft) {
+        if (!draft?.speciesId || draft.potencia == null || draft.shiny == null) return null;
         const matches = [];
         for (const currency of ['gold','orb']) {
             for (const offer of state.pokemonAutoOffers.get(currency)?.offers || []) {
-                if (ids.has(Number(offer?.pokemonId ?? offer?.ficha?.id)))
-                    matches.push(offer.ficha);
+                const ficha = offer?.ficha;
+                if (!ficha || speciesIdOf(ficha) !== draft.speciesId ||
+                    Number(ficha.potencia) !== draft.potencia ||
+                    ficha.shiny !== draft.shiny ||
+                    draft.level != null && Number(ficha.level) !== draft.level) continue;
+                if (draft.nota != null && pokemonScore(ficha) != null &&
+                    Math.abs(pokemonScore(ficha) - draft.nota) > 0.002) continue;
+                if (draft.qualidade != null && pokemonQuality(ficha) != null &&
+                    Math.abs(pokemonQuality(ficha) - draft.qualidade) > 0.002) continue;
+                const iv = pokemonIVs(ficha);
+                if (draft.ivs && iv && iv.some((value, i) =>
+                    value !== [draft.ivs.hp,draft.ivs.atk,draft.ivs.def,
+                        draft.ivs.spAtk,draft.ivs.spDef,draft.ivs.speed][i])) continue;
+                matches.push(ficha);
             }
         }
-        return matches.length && matches.every(f => f === matches[0]) ? matches[0] : null;
+        // A single unique market specimen can supplement the native sheet.
+        return matches.length === 1 ? matches[0] : null;
     }
 
     function pokemonSheetInputs(host) {
@@ -5624,7 +5743,7 @@
         if (!sheet || sheet.classList.contains('hidden') || sheet.getAttribute('aria-hidden') === 'true')
             return;
         const body = q('#ficha-corpo', sheet);
-        if (!body) return;
+        if (!body || !body.querySelector('.fi-placas-heroi .pk-selo-pot')) return;
         let host = q('#moth-sheet-valuation', body);
         const title = q('#ficha-titulo', sheet)?.textContent || '';
         const nativeText = [...body.childNodes].filter(node => node !== host)
@@ -5640,8 +5759,9 @@
                 updatePokemonSheetValues(host);
             return;
         }
-        const observed = pokemonSheetOffer(sheet);
-        const parsed = pokemonSheetDraft(nativeText, title, state.creatureNames);
+        const parsed = pokemonSheetDraft(sheet, state.creatureNames);
+        if (!parsed) return;
+        const observed = pokemonSheetOffer(sheet, parsed);
         // An exact market ficha is more complete than DOM text; preserve its
         // verified stats rather than throwing away Q/IVs when a field is edited.
         const draft = observed ? {
@@ -5686,7 +5806,7 @@
             '</select></label></div><p>' +
             escapeHtml(tr('Relative strength uses P bonus and scarcity, N, Q, IVs, level and refinement. Current species listings set the price scale; sparse data means a wide, indicative range.')) +
             '</p></details>';
-        host.mothObservedFicha = observed || null;
+        host.mothObservedFicha = {...parsed, ...(observed || {})};
         host.dataset.mothShinyAssumed = observed ? '0' : !parsed.shiny ? '1' : '0';
         host.dataset.mothSheetKey = key;
         if (!host.dataset.mothBound) {
@@ -7132,8 +7252,16 @@
         injectStyle();
         ensureSellPriceRecommendation();
         // Native #ficha is a separate modal, not the Community Market panel.
-        // Run every UI pass so owned and listed Pokémon show a valuation.
-        ensurePokemonSheetValuation();
+        // Valuation is advisory; errors in the sheet must never prevent
+        // scanning or executing previously authorized market rules.
+        try {
+            ensurePokemonSheetValuation();
+        } catch (error) {
+            if (Date.now() - Number(state.lastSheetErrorAt || 0) > 30000) {
+                state.lastSheetErrorAt = Date.now();
+                console.warn('[Moth Watch] Pokémon sheet valuation error:', error);
+            }
+        }
         if (state.watchOpen && state.lastLocale !== currentLocale()) renderWatch(true);
 
         /*
@@ -7412,8 +7540,20 @@
 
         state.scanTimer = setInterval(() => {
             adoptBridgeSocket();
-            ensureUi();
-            runMarketAutomation();
+            // A render exception must not skip buying, snatches and scans for
+            // every subsequent timer tick while a particular sheet is open.
+            try { ensureUi(); } catch (error) {
+                if (Date.now() - Number(state.lastUiTickErrorAt || 0) > 30000) {
+                    state.lastUiTickErrorAt = Date.now();
+                    console.warn('[Moth Watch] UI update failed:', error);
+                }
+            }
+            try { runMarketAutomation(); } catch (error) {
+                if (Date.now() - Number(state.lastAutomationErrorAt || 0) > 30000) {
+                    state.lastAutomationErrorAt = Date.now();
+                    console.warn('[Moth Watch] buying rule tick failed:', error);
+                }
+            }
             // Give queued rule listings first use of the shared request slot.
             if (!state.detailPending && state.detailQueue.some(job => state.ruleItemKeys.has(job.key))) {
                 pumpItemDetails();
@@ -7514,7 +7654,7 @@
             sheetObserver.observe(pokemonSheetBody, {childList: true, subtree: true});
         }
         ensureUi();
-        console.info('[Moth Watch] v0.6.15 loaded');
+        console.info('[Moth Watch] v0.6.16 loaded');
     }
 
     bootstrap();
