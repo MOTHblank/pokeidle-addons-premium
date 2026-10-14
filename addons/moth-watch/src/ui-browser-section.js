@@ -304,7 +304,10 @@
     }
 
     function updatePokemonSheetValues(host) {
-        const ficha = pokemonSheetInputs(host);
+        const fields = pokemonSheetInputs(host);
+        // Retain verified IVs, combat role, refinement and collectible flags from
+        // the actual market ficha while applying any user-edited fields.
+        const ficha = host.mothObservedFicha ? {...host.mothObservedFicha, ...fields} : fields;
         const output = host.querySelector('.moth-sheet-results');
         if (!output) return;
         const primary = ficha.shiny ? 'orb' : 'gold';
@@ -407,6 +410,7 @@
             '</select></label></div><p>' +
             escapeHtml(tr('Relative strength uses P bonus and scarcity, N, Q, IVs, level and refinement. Current species listings set the price scale; sparse data means a wide, indicative range.')) +
             '</p></details>';
+        host.mothObservedFicha = observed || null;
         host.dataset.mothShinyAssumed = observed ? '0' : !parsed.shiny ? '1' : '0';
         host.dataset.mothSheetKey = key;
         if (!host.dataset.mothBound) {
