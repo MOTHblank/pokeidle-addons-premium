@@ -3079,8 +3079,7 @@
         if (!manual && !currentRuleMatches(rule, candidate, quotedPrice)) return false;
         if (!candidate || !state.orderJournal?.sessionId ||
             !state.gameSocket || state.gameSocket.readyState !== 1 ||
-            state.orderJournal?.accountKey !== orderAccountKey() ||
-            state.orderJournal.orders.length >= 2500) return false;
+            state.orderJournal?.accountKey !== orderAccountKey()) return false;
         const pendingCount = [...(state.pendingBuys?.values() || [])]
             .reduce((n, entries) => n + entries.length, 0) ||
             (state.pendingBuys?.size ? 0 : Number(!!state.pendingBuy));
