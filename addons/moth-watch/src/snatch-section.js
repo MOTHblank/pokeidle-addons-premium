@@ -373,8 +373,8 @@
             if ((state.snatchManual.has(snatchKey(entry.candidate.kind,
                     entry.candidate.currency,entry.candidate.listingId)) ||
                 activeRuleById(entry.ruleId)) &&
-                entry.releaseAt > 0 && entry.releaseAt-now < 1200 &&
-                entry.releaseAt-now > -1500) return true;
+                entry.releaseAt > 0 && entry.releaseAt-now < 2000 &&
+                entry.releaseAt-now > -SNATCH_WINDOW_MS) return true;
         }
         return false;
     }
@@ -532,6 +532,16 @@
             const seconds=Math.max(1,Math.ceil((observation.releaseAt-serverNow())/1000));
             return {tone:'held',text:tr('Unlocks in {seconds}s',{seconds})};
         }
+        if (observation.releaseAt > 0 &&
+            serverNow() < observation.releaseAt + SNATCH_WINDOW_MS) {
+            const remaining = Math.max(1,Math.ceil(
+                (observation.releaseAt + SNATCH_WINDOW_MS-serverNow())/1000));
+            return {tone:'ready',text:tr('Snatch burst · {seconds}s left',{seconds:remaining})};
+        }
+        if (observation.needsVerification ||
+            !observation.lastVerifiedAt ||
+            Date.now()-observation.lastVerifiedAt >= 15000)
+            return {tone:'pending',text:tr('Checking exact listing status')};
         const retry = Math.ceil((Number(observation.retryAt||0)-Date.now())/1000);
         if (retry>0) return {tone:'pending',text:tr('Next attempt in {seconds}s',{seconds:retry})};
         if (!freshQuote(observation.candidate,true,true) && !snatchReleaseQuote(observation.candidate))
