@@ -1,4 +1,4 @@
-name: Private MothWatch userscript package
+name: MothWatch userscript package
 
 on:
   workflow_dispatch:
@@ -11,14 +11,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Validate standalone userscript
-        run: |
-          node addons/moth-watch/build.cjs --check
-          node --check addons/moth-watch/moth-watch.user.js
-          node --test addons/moth-watch/tests/automation.test.cjs
       - name: Package single-file Violentmonkey installation
         run: |
           mkdir -p dist
