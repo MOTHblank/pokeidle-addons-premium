@@ -100,6 +100,11 @@
         }
 
         if (message.t !== 'market') return;
+        if (message.aba === 'anuncio') {
+            // Exact per-listing status, including sold/cancelled listings.
+            snatchHandleSingleListing(message);
+            return;
+        }
         snatchObservePacket(message);
 
         if (message.mediaDiamante && typeof message.mediaDiamante === 'object') {
