@@ -316,8 +316,9 @@
             if (entry.releaseAt > server) {
                 // Use spare time BEFORE unlock to verify held listings. Do
                 // not compete with the four-second purchase burst.
-                if (entry.releaseAt - server <= SNATCH_PREPARE_MS &&
-                    now - Number(c.seenAt || 0) > 25000)
+                if (manual && (entry.needsVerification ||
+                    now - Number(entry.lastVerifiedAt || 0) > 45000 &&
+                    now - Number(c.seenAt || 0) > 15000))
                     snatchVerifyListing(key, manual, entry, now);
                 continue;
             }
@@ -387,6 +388,7 @@
         const now = Date.now();
         let wait = override || 10000;
         if (!override) {
+            if (state.snatchManual?.size) wait = Math.min(wait, 1000);
             if ([...state.snatchManual].some(([key]) => !state.snatchObserved.has(key)))
                 wait = Math.min(wait, 500);
             if (state.snatchVerifyPending)
