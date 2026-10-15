@@ -106,6 +106,9 @@ test('30s passive timeline exports allowlisted combat and anonymous slot/cast re
     assert.equal(h.model.report.summary.totalTrainerXp,13000);
     assert.equal(h.model.report.summary.playerAttackEvents,2);
     assert.equal(h.model.report.contextAtStart.lead.speciesId,9);
+    assert.equal(h.model.report.contextAtStart.lead.moveSource,'attacks');
+    assert.equal(h.model.report.contextAtStart.lead.attacks[0].cooldownMs,60000);
+    assert.equal(h.model.report.packetMarkers.length,4);
     assert.equal(h.model.report.contextAtStart.hunt.level,150);
     assert.equal(h.model.report.timeline[1].slot,'T1');
     assert.equal(h.model.report.timeline[2].cast,'C1');
@@ -152,4 +155,22 @@ test('battle hunt transition and later state delta update context without raw ga
     assert.equal(h.model.report.contextAtEnd.lead.level,23);
     assert.ok(h.model.report.warnings.some(w => w.includes('Hunt changed')));
     assert.equal(JSON.stringify(h.model.report).includes('BAD_VALUE'),false);
+});
+
+test('alternative golpes field is identified as loadout evidence, not silently missing',()=>{
+    const h=harness();
+    const socket=new h.page.WebSocket('wss://pokeidle.io/ws');
+    socket.emit({t:'welcome',estado:{cheio:true,huntSlug:'hoenn',activeId:7,
+        pokemons:[{id:7,speciesId:23,level:180,stats:{atk:800},
+            golpes:[{nome:'Raio',tipo:'ELECTRIC',categoria:'SPECIAL',
+                power:120,cooldownMs:35000}]}]}});
+    h.start();
+    h.advance(30000);
+    h.finish();
+    const lead=h.model.report.contextAtStart.lead;
+    assert.equal(lead.moveSource,'golpes');
+    assert.equal(lead.attacks[0].name,'Raio');
+    assert.equal(lead.attacks[0].power,120);
+    assert.equal(lead.attacks[0].cooldownMs,35000);
+    assert.equal(lead.attacks[0].type,'ELECTRIC');
 });
