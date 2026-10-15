@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/addons/hunt-atlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.20
+// @version      1.9.21
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.20');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.21');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -572,6 +572,8 @@
             'xp.ratingMeasured': 'measured',
             'xp.ratingModel': 'model',
             'xp.oneHitModel': '1-hit sim',
+            'xp.combatEvidence': '{hits} hits/kill · {basics}% basic attacks',
+            'xp.hitsShort': '{hits} hits',
             'xp.oneHitExplanation': 'Every sampled opponent fell in one hit. At this speed the model cannot distinguish hunts by enemy HP, defense or typing; travel, spawn timing and sustain remain uncertain.',
             'xp.sourceModel': 'personalized combat projection',
             'xp.sourceBaseline': 'unboosted static baseline',
@@ -933,6 +935,8 @@
             'xp.ratingMeasured': 'medido',
             'xp.ratingModel': 'modelo',
             'xp.oneHitModel': 'sim. 1 golpe',
+            'xp.combatEvidence': '{hits} golpes/abate · {basics}% Investida',
+            'xp.hitsShort': '{hits} golpes',
             'xp.oneHitExplanation': 'Cada adversário simulado caiu em um golpe. Nessa velocidade, o modelo não diferencia hunts por HP, defesa ou tipo; deslocamento, respawn e sustentação ainda são incertos.',
             'xp.sourceModel': 'projeção personalizada de combate',
             'xp.sourceBaseline': 'estimativa-base sem bônus',
@@ -1233,6 +1237,7 @@
         moveIndexPromise: null,
         moveIndexGeneratedAt: '',
         combatRevision: 0,
+        modelRevision: 0, // forecast inputs only, not every combat event
         battleDiagnostics: {
             playerEvents: 0, namedEvents: 0, unnamedEvents: 0,
             lastUnnamedKeys: [], lastSeenAt: 0,
@@ -2543,15 +2548,21 @@
                 [];
         }
 
-        record.hpSamples.push({
-            speciesId:
-                Number(
-                    target.speciesId
-                ) ||
-                null,
-            level,
-            maxHp
-        });
+        const speciesId = Number(target.speciesId) || null;
+        const previous = record.hpSamples.filter(row =>
+            row.speciesId === speciesId && row.level === level)
+            .slice(-16).map(row => row.maxHp);
+        const previousMedian = previous.length >= 2 ? median(previous) : null;
+        record.hpSamples.push({speciesId, level, maxHp});
+        const recent = [...previous.slice(-15), maxHp];
+        const nextMedian = recent.length >= 2 ? median(recent) : null;
+        // Recalculate every hunt only when enough same-target HP evidence
+        // first becomes available or its median materially changes.
+        if (nextMedian !== null && (previousMedian === null ||
+            Math.abs(nextMedian - previousMedian) >
+                Math.max(1, previousMedian * .02))) {
+            state.modelRevision++;
+        }
 
         if (
             record.hpSamples.length >
@@ -6550,6 +6561,7 @@
             state.moveIndexGeneratedAt = String(data.gerado || '');
             state.moveIndexStatus = 'ready';
             state.combatRevision++;
+            state.modelRevision++;
             state.combatProfileCache = null;
             queueRender();
         }).catch(error => {
@@ -7131,6 +7143,7 @@
                             'ready';
 
                         state.combatRevision++;
+                        state.modelRevision++;
                         state.combatProfileCache =
                             null;
 
@@ -8320,14 +8333,35 @@
 
         return value;
     }
-    function targetHpEstimate(speciesId, huntLevel) {
-        const baseHp = Number(speciesCombatMeta(speciesId)?.baseHp);
-        const level = Number(huntLevel);
-        // Wiki: wilds have 5x health; current-level stats scale by level/100.
-        // IV/quality and server rounding are unknown and are NOT learned from
-        // whichever unrelated species happened to be fought first.
-        return baseHp > 0 && level > 0 && Number.isFinite(level)
-            ? 5 * baseHp * level / 100 : null;
+    // The game's stat formula scales (base + 2*IV) by level/100, *not*
+    // base alone. Wild IVs/quality are hidden; use neutral IV=16 rather
+    // than implicitly assigning IV=0 and underestimating every defender.
+    function estimatedWildStat(base, level) {
+        const WILD_MODEL_IV = 16; // neutral IV assumption, not a known server IV
+        const stat = Number(base), lvl = Number(level);
+        return Number.isFinite(stat) && stat > 0 &&
+            Number.isFinite(lvl) && lvl > 0
+            ? (stat + 2 * WILD_MODEL_IV) * lvl / 100 : null;
+    }
+
+    // Only observed spawn maxHP for this exact hunt/species/level is eligible.
+    // Never transfer observed performance or another species' HP to this hunt.
+    function sampledHuntHp(hunt, speciesId, level) {
+        const record = hunt?.slug ? performanceRecord(hunt.slug, false) : null;
+        const matching = (record?.hpSamples || []).filter(sample =>
+            Number(sample?.speciesId) === Number(speciesId) &&
+            Number(sample?.level) === Number(level) &&
+            Number.isFinite(Number(sample?.maxHp)) &&
+            Number(sample.maxHp) > 0).slice(-16).map(row => Number(row.maxHp));
+        return matching.length >= 2 ? median(matching) : null;
+    }
+
+    function targetHpEstimate(speciesId, huntLevel, hunt = null) {
+        const observed = sampledHuntHp(hunt, speciesId, huntLevel);
+        if (observed !== null) return observed; // already includes wild ×5
+        const hp = estimatedWildStat(speciesCombatMeta(speciesId)?.baseHp,
+            huntLevel);
+        return hp !== null ? 5 * hp : null;
     }
 
     // Observed named attacks remain separate diagnostics, not inputs for\n    // extrapolating another enemy's XP/hour.
@@ -8387,10 +8421,9 @@
     }
 
     function estimatedWildDefense(meta, level, special) {
-        const base = battleStat(special ? meta?.baseSpDef : meta?.baseDef);
-        // Level-scaled base stat; wild IV/quality are not available from the
-        // species catalogue. Do not fit defence to another hunt's observed DPS.
-        return base ? Math.max(1, base * level / 100) : null;
+        // Apply the SAME expected wild-IV stat formula to DEF and Sp.Def.
+        // Unlike the player's real battle stats, these remain estimates.
+        return estimatedWildStat(special ? meta?.baseSpDef : meta?.baseDef, level);
     }
 
     function battleDamage(attackerLevel, power, attackStat, defenseStat,
@@ -8407,9 +8440,10 @@
             effectiveness * 0.925;
     }
 
-    function deterministicSpeciesCombat(speciesId, level, lead, moves, leadTypes) {
+    function deterministicSpeciesCombat(speciesId, level, lead, moves, leadTypes,
+                                         hunt = null) {
         const meta = speciesCombatMeta(speciesId);
-        const hp = targetHpEstimate(speciesId, level);
+        const hp = targetHpEstimate(speciesId, level, hunt);
         const enemyTypes = (state.typesBySpecies.get(Number(speciesId)) ||
             [meta?.type1, meta?.type2]).filter(Boolean)
             .map(type => String(type).toUpperCase());
@@ -8438,18 +8472,23 @@
         const basic = {name:'Investida', type:basicType,
             category:'PHYSICAL', power:30};
         const basicDamage = damageFor(basic);
-        const timedMoves = moves.map((move, index) => {
+        const moveModels = moves.map((move, index) => {
             const rawCd = battleStat(move.cooldownMs) ||
                 xpCooldownFromPower(move.power);
             const speed = speciesCombatMeta(lead?.speciesId)?.baseSpeed;
             const cooldown = xpMoveCooldown(rawCd, speed, speedIv,
                 Boolean(move.cooldownAdjusted || move.runtimeMove)) || rawCd;
             return {index, damage:damageFor(move), cooldown};
-        }).filter(move => move.damage !== null);
+        });
+        // Don't silently discard a move with missing category/defense/ATK,
+        // then report the basic attack as a complete personalized combat model.
+        const missingMoveDamage = moveModels.some(move => move.damage === null);
+        const timedMoves = moveModels.filter(move => move.damage !== null);
         const allDamage = [basicDamage, ...timedMoves.map(move => move.damage)]
             .filter(value => value !== null);
-        return {hp, basicDamage, timedMoves, maxDamage:allDamage.length
-            ? Math.max(...allDamage) : null, enemyTypes, meta};
+        return {hp, basicDamage, timedMoves, maxDamage:
+            !missingMoveDamage && basicDamage !== null && allDamage.length
+                ? Math.max(...allDamage) : null, enemyTypes, meta};
     }
 
     function damagePerAttackAgainst(speciesId) {
@@ -8469,7 +8508,7 @@
         const entries = species.map(row => {
             const weight = Math.max(1, Number(row?.pontos) || 1);
             const combat = deterministicSpeciesCombat(row?.pokeId, level,
-                lead, moves, leadTypes);
+                lead, moves, leadTypes, hunt);
             const hpKnown = combat.hp > 0 && Number.isFinite(combat.hp);
             const damageKnown = combat.maxDamage !== null;
             return {row, weight, ...combat, hpKnown, damageKnown};
@@ -8505,16 +8544,25 @@
         const moveMs = UPSTREAM_FALLBACK_MOVE_MS + UPSTREAM_WAVE_MS / mobs;
         const skillReady = moves.map(() => 0);
         let basicReady = 0, elapsed = 0, oneHitKills = 0;
-        const steps = mobs * 4; // 4 shared-cooldown waves; cached per loadout/catalog
-        let index = 0, upper = coverage.entries[0]?.weight || 0;
+        let totalHits = 0, basicHits = 0, skillHits = 0, combatMs = 0;
+        // Simulate repeated waves and ignore the first wave's artificially
+        // ready-at-t=0 burst. Use a coprime stride to interleave species
+        // according to spawn weights instead of fighting each species in a
+        // single long ordered block (which distorts cooldown availability).
+        const steps = mobs * 6, warmup = mobs;
+        const stride = steps / 2 + (mobs % 2 ? 2 : 1); // coprime with 6*mobs
+        let measuredStart = 0;
         for (let i = 0; i < steps; i++) {
-            const point = (i + .5) * coverage.total / steps;
+            if (i === warmup) measuredStart = elapsed;
+            const point = (((i * stride) % steps) + .5) *
+                coverage.total / steps;
+            let index = 0, upper = coverage.entries[0]?.weight || 0;
             while (point >= upper && index < coverage.entries.length - 1)
                 upper += coverage.entries[++index].weight;
             const target = coverage.entries[index];
             let hpLeft = target.hp;
             const start = elapsed;
-            let attacks = 0, landedHits = 0;
+            let attacks = 0, landedHits = 0, landedBasics = 0, landedSkills = 0;
             while (hpLeft > 0 && attacks++ < 350) {
                 let best = -1, damage = -1, next = Infinity;
                 for (let j = 0; j < target.timedMoves.length; j++) {
@@ -8527,11 +8575,13 @@
                 }
                 if (best >= 0 && damage > 0) {
                     landedHits++;
+                    landedSkills++;
                     hpLeft -= damage;
                     skillReady[best] = elapsed + (target.timedMoves.find(move => move.index === best)?.cooldown || 10000);
                     elapsed += globalMs;
                 } else if (target.basicDamage > 0 && basicReady <= elapsed) {
                     landedHits++;
+                    landedBasics++;
                     hpLeft -= target.basicDamage;
                     basicReady = elapsed + basicCooldown;
                     elapsed += globalMs;
@@ -8546,8 +8596,14 @@
             // Very long fights need unavailable-server sustain/cooldown details.
             // Report unknown instead of a misleading zero or huge computation.
             if (hpLeft > 0) return null;
-            if (landedHits === 1) oneHitKills++;
             const fightMs = elapsed - start;
+            if (i >= warmup) {
+                if (landedHits === 1) oneHitKills++;
+                totalHits += landedHits;
+                basicHits += landedBasics;
+                skillHits += landedSkills;
+                combatMs += fightMs;
+            }
             // Sustainability is not fully observable from source data. The
             // enemy's basic STAB/type hit gives a *limited* recovery allowance,
             // rather than reusing survival from some unrelated measured hunt.
@@ -8558,7 +8614,7 @@
             if (enemyAtk && enemyDef && leadHp && target.enemyTypes.length &&
                 leadTypes.length) {
                 const enemyBasic = battleDamage(Number(hunt.nivel), 30,
-                    enemyAtk * Number(hunt.nivel) / 100, enemyDef,
+                    estimatedWildStat(enemyAtk, Number(hunt.nivel)), enemyDef,
                     target.enemyTypes[0], target.enemyTypes, leadTypes);
                 const pressure = (enemyBasic || 0) * 1.8 *
                     Math.max(0, fightMs / 1400) / leadHp;
@@ -8567,12 +8623,17 @@
             }
             elapsed += moveMs;
         }
+        const sampledKills = steps - warmup;
         if (simulation) {
-            simulation.sampledKills = steps;
+            simulation.sampledKills = sampledKills;
             simulation.oneHitKills = oneHitKills;
-            simulation.allOneHit = oneHitKills === steps;
+            simulation.allOneHit = oneHitKills === sampledKills;
+            simulation.hitsPerKill = totalHits / sampledKills;
+            simulation.basicHitShare = totalHits ? basicHits / totalHits : null;
+            simulation.skillHitShare = totalHits ? skillHits / totalHits : null;
+            simulation.combatMsPerKill = combatMs / sampledKills;
         }
-        return elapsed / steps;
+        return (elapsed - measuredStart) / sampledKills;
     }
 
     // Residuals compare one hunt with its own frozen pre-measurement model.
@@ -8618,19 +8679,29 @@
     function huntXpEstimate(
         hunt
     ) {
+        // Most kill/attack packets change measured rates but not the stats,
+        // moves or target HP underlying every other hunt's prediction.
+        // Observations always bypass this cache at the top of this function.
         const cacheKey =
             [
                 leadSignature() || '',
-                state.combatRevision,
+                state.modelRevision,
                 state.combatCatalogStatus,
                 state.moveIndexStatus,
+                state.typeStatus,
+                state.huntAmplification,
+                state.playerLevel,
                 farmingSnapshotScope()
             ].join('|');
         if (state.estimateCacheKey !== cacheKey) {
             state.estimateCacheKey = cacheKey;
             state.estimateCache.clear();
         }
-        const huntKey = hunt?.slug || '';
+        const huntKey = hunt?.slug ? [
+            hunt.slug, hunt.nivel,
+            (hunt.especies || []).map(row =>
+                String(row?.pokeId) + ':' + String(row?.pontos ?? 1)).join(',')
+        ].join('|') : '';
         const record = performanceRecord(hunt?.slug, false);
         const observed = observedRates(record);
         const saved = savedObservedRates(hunt);
@@ -8808,6 +8879,9 @@
             source: knownMoves ? 'stat/move model' : 'stat/basic-attack model',
             oneHitSimulation: simulation.allOneHit === true,
             simulatedKills: simulation.sampledKills || 0,
+            modelHitsPerKill: simulation.hitsPerKill ?? null,
+            modelBasicHitShare: simulation.basicHitShare ?? null,
+            modelCombatMsPerKill: simulation.combatMsPerKill ?? null,
             confidence: moveConfidence,
             samples: 0, // No battle sample from another hunt affects this forecast.
             fallbackReason: 'wiki-scheduling-and-wild-stat-approximation',
@@ -12408,6 +12482,12 @@
         const displayEvidence = estimate => [
             tr('xp.sourceLabel', {source: xpSourceLabel(estimate)}),
             rangeLabel(estimate),
+            estimate?.modelHitsPerKill !== null &&
+                estimate?.modelHitsPerKill !== undefined
+                ? tr('xp.combatEvidence', {
+                    hits: estimate.modelHitsPerKill.toFixed(2),
+                    basics: Math.round((estimate.modelBasicHitShare || 0) * 100)
+                }) : null,
             estimate?.oneHitSimulation ? tr('xp.oneHitExplanation') : null,
             estimate?.observed ? null :
                 estimate?.bonusSource==='native-game-reported-partial-xp-bonuses'
@@ -12710,7 +12790,18 @@
                                         (row.xp.observed ? 'is-measured' : 'is-model') +
                                         '" title="' + escapeHtml(xpSourceLabel(row.xp)) + '">' +
                                         escapeHtml(tr(xpRatingOriginKey(row.xp, objective))) +
-                                        '</span>' : ''}${objective === 'xp' && row.xp.oneHitSimulation
+                                        '</span>' : ''}${objective === 'xp' &&
+                                        row.xp.modelHitsPerKill !== null &&
+                                        row.xp.modelHitsPerKill !== undefined &&
+                                        !row.xp.oneHitSimulation
+                                    ? '<span class="mha-xp-one-hit" title="' +
+                                        escapeHtml(tr('xp.combatEvidence', {
+                                            hits: row.xp.modelHitsPerKill.toFixed(2),
+                                            basics: Math.round((row.xp.modelBasicHitShare || 0) * 100)
+                                        })) + '">' +
+                                        escapeHtml(tr('xp.hitsShort', {
+                                            hits: row.xp.modelHitsPerKill.toFixed(1)
+                                        })) + '</span>' : ''}${objective === 'xp' && row.xp.oneHitSimulation
                                     ? '<span class="mha-xp-one-hit" title="' +
                                         escapeHtml(tr('xp.oneHitExplanation')) + '">' +
                                         escapeHtml(tr('xp.oneHitModel')) + '</span>'
@@ -13830,6 +13921,10 @@
                     observed: Boolean(
                         xp?.observed
                     ),
+                    oneHitSimulation: Boolean(xp?.oneHitSimulation),
+                    modelHitsPerKill: xp?.modelHitsPerKill ?? null,
+                    modelBasicHitShare: xp?.modelBasicHitShare ?? null,
+                    modelCombatMsPerKill: xp?.modelCombatMsPerKill ?? null,
                     source: String(
                         xp?.source ||
                         'learning'
@@ -13906,7 +14001,7 @@
             const here = currentHunt();
             const xp = here ? huntXpEstimate(here) : null;
             return {
-                version: '1.9.9',
+                version: '1.9.21',
                 indexes: {
                     locations: state.locationIndexStatus,
                     markerCount: state.locationsBySlug.size,

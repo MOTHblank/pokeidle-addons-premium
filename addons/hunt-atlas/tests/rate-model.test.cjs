@@ -8,7 +8,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'hunt-atlas.user.js'), 'utf8');
 const names = ['formatRate', 'formatXpRate', 'xpRatingOriginKey', 'xpGlobalAttackFloor', 'xpMoveCooldown', 'xpCooldownFromPower',
-  'targetHpEstimate', 'battleLeadTypes', 'battleMovesForLead', 'battleStat',
+  'median', 'estimatedWildStat', 'sampledHuntHp', 'targetHpEstimate', 'battleLeadTypes', 'battleMovesForLead', 'battleStat',
   'estimatedWildDefense', 'battleDamage', 'deterministicSpeciesCombat',
   'huntCombatCoverage', 'rawPredictedKillMs', 'savedObservedRates'];
 function functionBody(name) {
@@ -36,6 +36,7 @@ function makeContext({type = 'WATER'} = {}) {
     state: {speciesCombat:creatures, typesBySpecies:new Map(), huntPerf:new Map()},
     leadPokemon: () => lead,
     speciesCombatMeta: id => creatures.get(Number(id)) || null,
+    performanceRecord: slug => ctx.state.huntPerf.get('hp:'+slug) || null,
     movesForLead: () => lead.attacks,
     huntEffectiveness: (move,types) =>
       move === 'GROUND' && types.includes('FLYING') ? 0 :
@@ -141,4 +142,81 @@ test('normal differing combat matchups are not misclassified as all one-hit', ()
   ctx.rawPredictedKillMs(xatu, ctx.huntCombatCoverage(xatu), diagnostics);
   assert.ok(diagnostics.sampledKills > 0);
   assert.equal(diagnostics.allOneHit, false);
+});
+
+test('wild neutral-IV estimate includes the 2*IV term and 5x HP', () => {
+  const ctx = makeContext();
+  assert.equal(ctx.estimatedWildStat(100, 150), 198);
+  assert.equal(ctx.targetHpEstimate(2, 150), (160 + 32) * 1.5 * 5);
+  assert.equal(ctx.estimatedWildDefense(ctx.state.speciesCombat.get(2), 150, true),
+    (150 + 32) * 1.5);
+});
+
+test('observed HP only applies to the same hunt and exact spawn species/level', () => {
+  const ctx = makeContext();
+  ctx.state.huntPerf.set('hp:xatu', {
+    hpSamples: [
+      {speciesId:2,level:1800,maxHp:20000},
+      {speciesId:2,level:1800,maxHp:22000},
+      {speciesId:2,level:1801,maxHp:900000},
+      {speciesId:3,level:1800,maxHp:900000}
+    ]
+  });
+  assert.equal(ctx.targetHpEstimate(2, 1800, xatu), 21000);
+  assert.notEqual(ctx.targetHpEstimate(2, 1800, {
+    ...xatu, slug:'other-hunt'
+  }), 21000);
+  assert.notEqual(ctx.targetHpEstimate(3, 1800, xatu), 900000);
+});
+
+test('strong typed skill on 60s cooldown cannot one-hit every encounter', () => {
+  const ctx = makeContext();
+  ctx.leadPokemon().level = 150;
+  ctx.leadPokemon().stats.atk = 175;
+  ctx.leadPokemon().stats.spAtk = 280;
+  ctx.leadPokemon().attacks = [{
+    name:'Cyclonic Tide', type:'WATER', category:'SPECIAL',
+    power:600, cooldownMs:60000
+  }];
+  const resistant = {slug:'resistant',nivel:150,
+    especies:[{pokeId:2,pontos:16}]};
+  const vulnerable = {slug:'vulnerable',nivel:150,
+    especies:[{pokeId:3,pontos:16}]};
+  const hard = {}, easy = {};
+  const hardMs = ctx.rawPredictedKillMs(resistant,
+    ctx.huntCombatCoverage(resistant), hard);
+  const easyMs = ctx.rawPredictedKillMs(vulnerable,
+    ctx.huntCombatCoverage(vulnerable), easy);
+  assert.ok(Number.isFinite(hardMs) && Number.isFinite(easyMs));
+  assert.ok(hardMs > easyMs,
+    'type + HP/defense must make the tougher hunt slower to farm');
+  assert.ok(hard.hitsPerKill > 1, 'strongest move must not be used each kill');
+  assert.ok(hard.basicHitShare > 0, 'basic fallback must carry attacks during cooldown');
+  assert.ok(hard.skillHitShare < 1, 'ultimate must not be cast continuously');
+  assert.ok(hard.oneHitKills < hard.sampledKills);
+});
+
+test('ready skill cooldown changes the predicted fight difficulty', () => {
+  const ctx = makeContext();
+  ctx.leadPokemon().level = 150;
+  ctx.leadPokemon().stats.atk = 175;
+  ctx.leadPokemon().stats.spAtk = 280;
+  ctx.leadPokemon().attacks = [{
+    name:'Cyclonic Tide', type:'WATER', category:'SPECIAL',
+    power:600, cooldownMs:60000
+  }];
+  const longCooldown = ctx.rawPredictedKillMs(charizard);
+  ctx.leadPokemon().attacks[0].cooldownMs = 2000;
+  const shortCooldown = ctx.rawPredictedKillMs(charizard);
+  assert.ok(longCooldown > shortCooldown,
+    'more frequent effective skill use must improve sustained throughput');
+});
+
+test('missing Sp.Def or ability category is unknown, not a deceptive basic model', () => {
+  const ctx = makeContext();
+  ctx.state.speciesCombat.get(2).baseSpDef = null;
+  assert.equal(ctx.rawPredictedKillMs(xatu), null);
+  ctx.state.speciesCombat.get(2).baseSpDef = 150;
+  ctx.leadPokemon().attacks[0].category = 'UNSPECIFIED';
+  assert.equal(ctx.rawPredictedKillMs(xatu), null);
 });
