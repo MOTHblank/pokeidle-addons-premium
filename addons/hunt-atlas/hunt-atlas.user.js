@@ -8477,7 +8477,7 @@
         const moveMs = UPSTREAM_FALLBACK_MOVE_MS + UPSTREAM_WAVE_MS / mobs;
         const skillReady = moves.map(() => 0);
         let basicReady = 0, elapsed = 0;
-        const steps = mobs * 8; // 8 waves, no per-render high-frequency simulation
+        const steps = mobs * 4; // 4 shared-cooldown waves; cached per loadout/catalog
         let index = 0, upper = coverage.entries[0]?.weight || 0;
         for (let i = 0; i < steps; i++) {
             const point = (i + .5) * coverage.total / steps;
@@ -8487,7 +8487,7 @@
             let hpLeft = target.hp;
             const start = elapsed;
             let attacks = 0;
-            while (hpLeft > 0 && attacks++ < 2000) {
+            while (hpLeft > 0 && attacks++ < 350) {
                 let best = -1, damage = -1, next = Infinity;
                 for (let j = 0; j < target.timedMoves.length; j++) {
                     const move = target.timedMoves[j];
@@ -8513,7 +8513,9 @@
                     elapsed = wakeAt;
                 }
             }
-            if (hpLeft > 0) return Infinity;
+            // Very long fights need unavailable-server sustain/cooldown details.
+            // Report unknown instead of a misleading zero or huge computation.
+            if (hpLeft > 0) return null;
             const fightMs = elapsed - start;
             // Sustainability is not fully observable from source data. The
             // enemy's basic STAB/type hit gives a *limited* recovery allowance,
