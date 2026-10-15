@@ -18,7 +18,7 @@
     const NUM_KEYS = ['dano','ef','hpAlvo','hpAntes','hp','maxHp','hpMax',
         'level','nivel','speciesId','pokeId','xpTreinador','xpPokemon','xp',
         'power','cooldownMs','cd','tempo','duracao','velocidade','raio'];
-    const EVENT_KINDS = new Set(['spawn','ataque','morte','despawn','corpoExpirado',
+    const EVENT_KINDS = new Set(['hunt','spawn','ataque','morte','despawn','corpoExpirado',
         'cura','revive','troca','bossMorto']);
     const model = {
         phase: 'idle', started: 0, timer: null, clock: null,
@@ -269,6 +269,10 @@
             slot: token(model.slotRefs, event.slot ?? event.s, 'T', 200),
             ...compact(event)
         };
+        if (event.k === 'hunt') {
+            row.huntSlug = typeof event.slug === 'string' &&
+                /^[a-zA-Z0-9_-]{1,80}$/.test(event.slug) ? event.slug : null;
+        }
         if (event.k === 'ataque') {
             row.move = moveName(event);
             row.cast = castRef(event);
@@ -313,6 +317,12 @@
             for (const [i, ev] of message.ev.entries()) {
                 if (!ev || typeof ev !== 'object') continue;
                 const kind = typeof ev.k === 'string' ? ev.k : 'unknown';
+                // Native Hunt Atlas also learns the hunt from batalha.ev
+                // before the first corresponding estado delta arrives.
+                if (kind === 'hunt' && typeof ev.slug === 'string') {
+                    model.huntSlug = ev.slug.slice(0, 80);
+                    snapshotIfChanged(at);
+                }
                 model.counts[kind] = (model.counts[kind] || 0) + 1;
                 if (!model.eventSources.has(kind)) model.eventSources.add(kind);
                 if (!model.keys[kind]) model.keys[kind] = {};
@@ -447,7 +457,7 @@
             const left = Math.max(0, Math.ceil((DURATION_MS -
                 (performance.now()-model.started))/1000));
             statusNode.textContent = left + 's remaining · ' + model.battlePackets +
-                ' battle packets · ' + model.counts.morte + ' deaths';
+                ' battle packets · ' + (model.counts.morte || 0) + ' deaths';
         } else if (model.phase === 'done') {
             statusNode.textContent = 'Saved ' + model.report?.summary?.wildKills +
                 ' wild kills, ' + model.report?.summary?.playerAttackEvents +
