@@ -8534,7 +8534,7 @@
         // according to spawn weights instead of fighting each species in a
         // single long ordered block (which distorts cooldown availability).
         const steps = mobs * 6, warmup = mobs;
-        const stride = steps / 2 + 1; // coprime with steps (multiples of 4)
+        const stride = steps / 2 + (mobs % 2 ? 2 : 1); // coprime with 6*mobs
         let measuredStart = 0;
         for (let i = 0; i < steps; i++) {
             if (i === warmup) measuredStart = elapsed;
