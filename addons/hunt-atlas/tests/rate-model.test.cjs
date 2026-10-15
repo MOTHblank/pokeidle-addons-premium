@@ -7,7 +7,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'hunt-atlas.user.js'), 'utf8');
-const names = ['xpGlobalAttackFloor', 'xpMoveCooldown', 'xpCooldownFromPower',
+const names = ['xpRatingOriginKey', 'xpGlobalAttackFloor', 'xpMoveCooldown', 'xpCooldownFromPower',
   'targetHpEstimate', 'battleLeadTypes', 'battleMovesForLead', 'battleStat',
   'estimatedWildDefense', 'battleDamage', 'deterministicSpeciesCombat',
   'huntCombatCoverage', 'rawPredictedKillMs', 'savedObservedRates'];
@@ -97,4 +97,15 @@ test('measured records are not accidentally reused after changing lead/bonus ide
     }
   });
   assert.equal(ctx.savedObservedRates(xatu),null);
+});
+
+test('XP list source tag is localized by caller and never appears for other metrics', () => {
+  const ctx = makeContext();
+  assert.equal(ctx.xpRatingOriginKey({observed:true},'xp'),'xp.ratingMeasured');
+  assert.equal(ctx.xpRatingOriginKey({
+    observed:true,source:'saved measurement'
+  },'xp'),'xp.ratingMeasured');
+  assert.equal(ctx.xpRatingOriginKey({observed:false},'xp'),'xp.ratingModel');
+  assert.equal(ctx.xpRatingOriginKey({observed:false},'coins'),null);
+  assert.equal(ctx.xpRatingOriginKey(null,'xp'),null);
 });

@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/addons/hunt-atlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.18
+// @version      1.9.19
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.18');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.19');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -568,6 +568,9 @@
             'rare.huntContext': 'Base hunt: {hunt} (same Outland map across tiers)',
             'xp.sourceLabel': 'source: {source}',
             'xp.sourceMeasured': 'server kill rewards (observed)',
+            'xp.sourceSaved': 'saved server kill measurement',
+            'xp.ratingMeasured': 'measured',
+            'xp.ratingModel': 'model',
             'xp.sourceModel': 'personalized combat projection',
             'xp.sourceBaseline': 'unboosted static baseline',
             'xp.sourceImmunity': 'known immunity',
@@ -924,6 +927,9 @@
             'rare.huntContext': 'Hunt de base: {hunt} (a Outland usa o mesmo mapa em todos os tiers)',
             'xp.sourceLabel': 'fonte: {source}',
             'xp.sourceMeasured': 'recompensas do servidor (medidas)',
+            'xp.sourceSaved': 'medição do servidor salva',
+            'xp.ratingMeasured': 'medido',
+            'xp.ratingModel': 'modelo',
             'xp.sourceModel': 'projeção personalizada de combate',
             'xp.sourceBaseline': 'estimativa-base sem bônus',
             'xp.sourceImmunity': 'imunidade conhecida',
@@ -1820,6 +1826,13 @@
             .replace(/\.$/,'')+'%';
         return percent.toExponential(2)+'%';
     }
+    // The XP source indicator belongs to XP rankings, never to other metrics.
+    // Saved observations are still measurements, not speculative models.
+    function xpRatingOriginKey(estimate, objective) {
+        if (objective !== 'xp' || !estimate) return null;
+        return estimate.observed ? 'xp.ratingMeasured' : 'xp.ratingModel';
+    }
+
     function formatObjectiveValue(value,objective) {
         if(typeof value!=='number'||!Number.isFinite(value))return '—';
         if(['rare','shinyCatch','capture'].includes(objective))
@@ -10283,6 +10296,19 @@
                 font-size: 9px;
                 white-space: nowrap;
             }
+            /* Keep the evidence source next to the XP/h number, not in details. */
+            .mha-xp-origin {
+                display: inline-block;
+                margin-left: 5px;
+                font-size: 8px;
+                font-weight: 650;
+                line-height: 1.2;
+                white-space: nowrap;
+                vertical-align: baseline;
+                color: #a6a0a5;
+            }
+            .mha-xp-origin.is-measured { color: #a9dac2; }
+            .mha-xp-origin.is-model { color: #b3aab3; }
 
             .mha-meta {
                 display: flex;
@@ -12333,8 +12359,10 @@
         // unknown/unavailable. Never mistake a missing observation for zero.
         const usable=ranked.filter(row=>haMetricNumber(row.score)!==null);
         const best=usable[0]||null;
-        const xpSourceLabel = estimate => estimate?.observed
-            ? tr('xp.sourceMeasured')
+        const xpSourceLabel = estimate => estimate?.source === 'saved measurement'
+            ? tr('xp.sourceSaved')
+            : estimate?.observed
+                ? tr('xp.sourceMeasured')
             : estimate?.source === 'immune combat model'
                 ? tr('xp.sourceImmunity')
                 : estimate?.source === 'baseline model'
@@ -12642,7 +12670,12 @@
                                             value:formatObjectiveValue(row.score,objective)
                                         }
                                     )
-                                )}${row.target?' · '+escapeHtml(row.target):''}${objective==='xp'&&row.xp.incomplete?' · '+escapeHtml(tr('xp.incompleteShort',{percentage:row.xp.coverage})):''}</span>
+                                )}${xpRatingOriginKey(row.xp, objective)
+                                    ? '<span class="mha-xp-origin ' +
+                                        (row.xp.observed ? 'is-measured' : 'is-model') +
+                                        '" title="' + escapeHtml(xpSourceLabel(row.xp)) + '">' +
+                                        escapeHtml(tr(xpRatingOriginKey(row.xp, objective))) +
+                                        '</span>' : ''}${row.target?' · '+escapeHtml(row.target):''}${objective==='xp'&&row.xp.incomplete?' · '+escapeHtml(tr('xp.incompleteShort',{percentage:row.xp.coverage})):''}</span>
                                 <button
                                     type="button"
                                     class="mha-go ${here ? 'current' : ''}"
