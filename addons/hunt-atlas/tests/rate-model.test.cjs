@@ -205,9 +205,12 @@ test('ready skill cooldown changes the predicted fight difficulty', () => {
     name:'Cyclonic Tide', type:'WATER', category:'SPECIAL',
     power:600, cooldownMs:60000
   }];
-  const longCooldown = ctx.rawPredictedKillMs(charizard);
+  // This is a same-level hunt: the shared Charizard fixture is level 1800
+  // and would swamp a level-150 lead regardless of ability cooldown.
+  const target = {...charizard, nivel:150};
+  const longCooldown = ctx.rawPredictedKillMs(target);
   ctx.leadPokemon().attacks[0].cooldownMs = 2000;
-  const shortCooldown = ctx.rawPredictedKillMs(charizard);
+  const shortCooldown = ctx.rawPredictedKillMs(target);
   assert.ok(longCooldown > shortCooldown,
     'more frequent effective skill use must improve sustained throughput');
 });
@@ -219,4 +222,70 @@ test('missing Sp.Def or ability category is unknown, not a deceptive basic model
   ctx.state.speciesCombat.get(2).baseSpDef = 150;
   ctx.leadPokemon().attacks[0].category = 'UNSPECIFIED';
   assert.equal(ctx.rawPredictedKillMs(xatu), null);
+});
+
+test('staging integration preserves controller metrics and private distribution', () => {
+  for (const symbol of [
+    'function controllerMetrics(', 'metrics: controllerMetrics',
+    'function captureRarityForSpecies(', 'function savedObservedRates(',
+    'state.modelRevision', 'function deterministicSpeciesCombat(',
+    '@homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/addons/hunt-atlas'
+  ]) assert.ok(source.includes(symbol), 'missing integration: ' + symbol);
+});
+
+test('special-form capture rarity respects direct data and known Orre fallback', () => {
+  const sandbox = {
+    outlandNormalizeSpeciesId: id => id
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(functionBody('captureRarityForSpecies'), sandbox);
+  const rarities = new Map([[122, 5000], [13033, 8000]]);
+  assert.equal(sandbox.captureRarityForSpecies(rarities, 13122), 5000);
+  assert.equal(sandbox.captureRarityForSpecies(rarities, 13033), 8000);
+  assert.equal(sandbox.captureRarityForSpecies(rarities, 13177), null);
+});
+
+test('controller metrics still exports current-hunt XP, economy and capture coverage', () => {
+  const hunt = {slug:'kanto', nivel:150, area:'kanto',
+    especies:[{pokeId:122,pontos:10}]};
+  const observed = {kills:80,throws:30,captures:3,byBall:{4:20,5:10},
+    byBallCaught:{4:2,5:1},windowMs:120000,bySpecies:{}};
+  const uses = [];
+  const sandbox = {
+    state: {combatCatalogStatus:'ready', combatCatalogError:null,
+      hunts:[hunt],huntSceneKnown:true,activeSocket:{},
+      captureRarities:new Map([[122,5000]]),
+      captureBallRates:new Map([[4,{}]]),
+      playerLevel:250,outlandTierSeen:false,farmingSnapshot:{outlandTier:1}},
+    currentHunt:()=>hunt,
+    huntXpEstimate:()=>({value:46e6,observed:false,killsH:120}),
+    captureObservedForHunt:()=>observed,
+    huntEconomyEstimate:(h,x,o)=>{
+      uses.push(o===observed);return {realizedH:null,killCoinsH:100000};
+    },
+    capturePlanForHunt:(h,ball,x,o)=>{
+      uses.push(o===observed);
+      return {chance:ball===4?.1:.2,catchesH:15,
+        ballsPerCapture:10,shinyCaughtH:.03};
+    },
+    outlandNormalizeSpeciesId:id=>id,
+    rareForHunt:()=>null,
+    outlandNativeTier:x=>x,
+    syncFromControllerBridge:()=>{throw new Error('unnecessary bridge refresh');},
+    ensureCombatCatalog:()=>{throw new Error('unnecessary catalog refresh');}
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(functionBody('captureRarityForSpecies'), sandbox);
+  const start = source.indexOf('    function controllerMetrics(');
+  const end = source.indexOf('    page.__mothHuntAtlasControllerV1', start);
+  assert.ok(start >= 0 && end > start);
+  vm.runInContext(source.slice(start, end), sandbox);
+  const result = sandbox.controllerMetrics();
+  assert.equal(result.xpH,46e6);
+  assert.equal(result.coinsH,100000);
+  assert.equal(result.capturesH,15);
+  assert.equal(result.ultraChance,.1);
+  assert.equal(result.beastChance,.2);
+  assert.equal(result.captureInputs.coveredSpecies,1);
+  assert.ok(uses.length===3 && uses.every(Boolean));
 });

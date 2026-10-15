@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/addons/hunt-atlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.21
+// @version      1.9.22
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.21');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.22');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -1223,6 +1223,8 @@
         combatTargets: new Map(),
         speciesCombat: new Map(),
         combatCatalogStatus: 'idle',
+        combatCatalogError: null,
+        combatCatalogLastAttempt: 0,
         combatCatalogPromise: null,
         locationsBySlug: new Map(),
         locationsByRange: new Map(),
@@ -3655,6 +3657,17 @@
             byBall,byBallCaught,bySpecies,
             source:'observed-server/accepted-correlated'};
     }
+    function captureRarityForSpecies(rarities, speciesId) {
+        const id = Number(outlandNormalizeSpeciesId(speciesId));
+        if (!Number.isInteger(id) || id <= 0) return null;
+        const direct = rarities.get(id);
+        if (Number.isFinite(direct) && direct > 0) return direct;
+        if (id >= 13000) {
+            const base = rarities.get(id % 1000);
+            if (Number.isFinite(base) && base > 0) return base;
+        }
+        return null;
+    }
     function captureHuntChance(hunt,rarities,efficiency,mix=null,mixMode='kills') {
         if(!Array.isArray(hunt?.especies)||!hunt.especies.length)
             return {chance:null,coverage:0,source:'no-spawns'};
@@ -3665,7 +3678,7 @@
             const weight=measured?(mix?.[id]?.[mixMode]??0):
                 Math.max(1,Number(row.pontos)||1);
             total+=weight;
-            const rarity=rarities.get(id);
+            const rarity=captureRarityForSpecies(rarities,id);
             const chance=captureWikiChance(rarity,efficiency);
             if(chance!==null){covered+=weight;weighted+=weight*chance;}
         }
@@ -5086,6 +5099,11 @@
                             }))
                             : []
                 }));
+            }
+
+            if (snapshot?.marketCatalogReady &&
+                !state.captureBallRates.size && Array.isArray(snapshot.catalogoBolas)) {
+                farmApplyRuntimeCatalog({catalogoBolas:snapshot.catalogoBolas});
             }
 
             if (gameState && typeof gameState === 'object') {
@@ -6861,11 +6879,11 @@
         };
     }
 
-    function capturePlanForHunt(hunt,ballId=4,xp=huntXpEstimate(hunt)) {
+    function capturePlanForHunt(hunt,ballId=4,xp=huntXpEstimate(hunt),observedOverride=undefined) {
         if(!hunt)return null;
         const ball=captureInfoForBall(ballId);
         if(!ball)return null;
-        const observed=captureObservedForHunt(hunt);
+        const observed=observedOverride === undefined ? captureObservedForHunt(hunt) : observedOverride;
         const mixKills=observed?Object.values(observed.bySpecies)
             .reduce((sum,row)=>sum+row.kills,0):0;
         const mixThrows=observed?Object.values(observed.bySpecies)
@@ -6909,7 +6927,7 @@
             Math.min(1,target.throws/target.kills):
             observed?Math.min(1,observed.throws/Math.max(1,observed.kills)):null;
         return captureSpeciesForecast(hunt,species.id,
-            state.captureRarities.get(Number(outlandNormalizeSpeciesId(species.id))),
+            captureRarityForSpecies(state.captureRarities,species.id),
             ball.efficiency,estimate?.killsH??null,{
                 mix,acceptedFraction:acceptance,
                 hypotheticalLure:state.filters.shinyLurePreview
@@ -6983,13 +7001,14 @@
         }
     }
 
-    function huntEconomyEstimate(hunt, xp = huntXpEstimate(hunt)) {
+    function huntEconomyEstimate(hunt, xp = huntXpEstimate(hunt), observedOverride=undefined) {
         const killsH = Number.isFinite(xp?.killsH) ? xp.killsH : null;
         const modelKillGoldH = farmGoldPrediction(hunt,killsH);
         const current = isHuntHere(hunt?.slug);
         const record = current ? performanceRecord(hunt?.slug,false) : null;
         const rates = current ? observedRates(record) : null;
-        const observedMix = current ? captureObservedForHunt(hunt) : null;
+        const observedMix = current ?
+            (observedOverride === undefined ? captureObservedForHunt(hunt) : observedOverride) : null;
         const attributed = observedMix ? Object.values(observedMix.bySpecies)
             .reduce((n,row)=>n+(Number(row?.kills)||0),0) : 0;
         // Use measured mix only if all 30+ kills have species attribution.
@@ -7039,8 +7058,14 @@
             return state.combatCatalogPromise;
         }
 
+        // Avoid refetching unavailable assets every time the controller reads.
+        if (state.combatCatalogStatus === 'error' &&
+            Date.now() - state.combatCatalogLastAttempt < 5 * 60000)
+            return Promise.resolve();
+        state.combatCatalogLastAttempt = Date.now();
         state.combatCatalogStatus =
             'loading';
+        state.combatCatalogError = null;
 
         const load =
             url =>
@@ -7068,105 +7093,59 @@
                         }
                     );
 
-        state.combatCatalogPromise =
-            Promise.all([
-                load(
-                    '/assets/creatures.json'
-                ),
-                load(
-                    '/assets/creatures-novos.json'
-                ).catch(
-                    () => null
-                ),
-                load(
-                    '/assets/creatures-outland-novos.json'
-                ).catch(
-                    () => null
-                ),
-                load(
-                    '/assets/creatures-audit-overrides.json'
-                ).catch(
-                    () => null
-                ),
-                load('/assets/items.json').catch(() => null)
-            ])
-                .then(
-                    ([
-                        base,
-                        novos,
-                        outland,
-                        audit,
-                        items
-                    ]) => {
-                        for (
-                            const data of [
-                                base,
-                                novos,
-                                outland
-                            ]
-                        ) {
-                            for (
-                                const creature of
-                                data?.creatures ||
-                                []
-                            ) {
-                                mergeCombatCreature(
-                                    creature
-                                );
-                            }
+        // Serial fetching/merging avoids retaining all five parsed
+        // catalogs in memory simultaneously in each Firefox profile.
+        state.combatCatalogPromise = (async () => {
+            const inputs = [
+                ['/assets/creatures.json', 'creatures', true],
+                ['/assets/creatures-novos.json', 'creatures', false],
+                ['/assets/creatures-outland-novos.json', 'creatures', false],
+                ['/assets/creatures-audit-overrides.json', 'audit', false],
+                ['/assets/items.json', 'items', false]
+            ];
+            for (const [url, kind, required] of inputs) {
+                let data;
+                try {
+                    data = await load(url);
+                } catch (error) {
+                    if (required) throw error;
+                    if (kind === 'items') state.itemCatalogStatus = 'unknown';
+                    continue;
+                }
+                if (kind === 'creatures') {
+                    for (const creature of data?.creatures || [])
+                        mergeCombatCreature(creature);
+                } else if (kind === 'audit') {
+                    for (const override of data?.overrides || [])
+                        mergeCombatCreature(override);
+                } else {
+                    state.itemsByName.clear();
+                    state.itemsById.clear();
+                    if (Array.isArray(data?.items)) {
+                        for (const item of data.items) {
+                            const id = Number(item?.id);
+                            if (!Number.isInteger(id) || !item.name) continue;
+                            state.itemsById.set(id, item);
+                            state.itemsByName.set(String(item.name).toLowerCase(), item);
                         }
-
-                        for (
-                            const override of
-                            audit?.overrides ||
-                            []
-                        ) {
-                            mergeCombatCreature(
-                                override
-                            );
-                        }
-
-                        state.itemsByName.clear();
-                        state.itemsById.clear();
-                        if (Array.isArray(items?.items)) {
-                            for (const item of items.items) {
-                                const id = Number(item?.id);
-                                if (!Number.isInteger(id) || !item.name) continue;
-                                state.itemsById.set(id, item);
-                                state.itemsByName.set(String(item.name).toLowerCase(), item);
-                            }
-                            state.itemCatalogStatus = 'raw-upstream-catalog';
-                        } else state.itemCatalogStatus = 'unknown';
-                        rebuildNpcLootCatalog();
-
-                        state.combatCatalogStatus =
-                            'ready';
-
-                        state.combatRevision++;
-                        state.modelRevision++;
-                        state.combatProfileCache =
-                            null;
-
-                        queueRender();
-                    }
-                )
-                .catch(
-                    error => {
-                        state.combatCatalogStatus =
-                            'error';
-
-                        console.warn(
-                            '[PokéIdle Hunt Atlas] combat catalog failed',
-                            error
-                        );
-                    }
-                )
-                .finally(
-                    () => {
-                        state.combatCatalogPromise =
-                            null;
-                    }
-                );
+                        state.itemCatalogStatus = 'raw-upstream-catalog';
+                    } else state.itemCatalogStatus = 'unknown';
+                }
+            }
+            rebuildNpcLootCatalog();
+            state.combatCatalogStatus = 'ready';
+            state.combatCatalogError = null;
+            state.combatRevision++;
+            state.modelRevision++;
+            state.combatProfileCache = null;
+            queueRender();
+        })().catch(error => {
+            state.combatCatalogStatus = 'error';
+            state.combatCatalogError = String(error?.message || error);
+            console.warn('[PokéIdle Hunt Atlas] combat catalog failed', error);
+        }).finally(() => {
+            state.combatCatalogPromise = null;
+        });
 
         return state.combatCatalogPromise;
     }
@@ -13987,9 +13966,92 @@
         };
     }
 
+    function controllerMetrics() {
+        // The controller can read metrics without anyone opening HuntAtlas.
+        // Start a one-time catalog load if the initial startup load has not
+        // finished. Never block the synchronous Bridge snapshot.
+        if (state.combatCatalogStatus !== 'ready' &&
+            state.combatCatalogStatus !== 'loading') ensureCombatCatalog();
+        // Restore game state from the Bridge when our WebSocket hook missed
+        // the initial welcome frame; no additional socket is opened.
+        if (!state.hunts.length || !state.huntSceneKnown || !state.activeSocket)
+            syncFromControllerBridge();
+        const hunt = currentHunt();
+        if (!hunt) return null;
+        const xp = huntXpEstimate(hunt);
+        // Reuse one bounded receipt window and XP result for all metrics.
+        const observed = captureObservedForHunt(hunt);
+        const economy = huntEconomyEstimate(hunt, xp, observed);
+        const ultra = capturePlanForHunt(hunt, 4, xp, observed);
+        const beast = capturePlanForHunt(hunt, 5, xp, observed);
+        const tier = state.outlandTierSeen ? state.farmingSnapshot.outlandTier : null;
+        const isOutland = String(hunt.area || '').toLowerCase() === 'outland';
+        const rare = isOutland && tier != null ? rareForHunt(hunt,
+            outlandNativeTier(tier, state.playerLevel), state.playerLevel,
+            Number.isFinite(xp?.killsH) ? xp.killsH : null) : null;
+        const finite = n => typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : null;
+        // Incomplete rarity catalogs must not suppress directly observed
+        // capture statistics. The server-correlated receipt window is scoped
+        // to the current hunt, and only accepted throws count as attempts.
+        const empiricalChance = ballId => {
+            const throws = finite(observed?.byBall?.[ballId]);
+            const caught = finite(observed?.byBallCaught?.[ballId]);
+            return throws > 0 && caught !== null ? caught / throws : null;
+        };
+        const ultraObserved = empiricalChance(4);
+        const beastObserved = empiricalChance(5);
+        const ultraChance = finite(ultra?.chance) ?? ultraObserved;
+        const beastChance = finite(beast?.chance) ?? beastObserved;
+        const capturesH = finite(ultra?.catchesH) ?? finite(observed?.capturesH);
+        const ballsPerCapture = finite(ultra?.ballsPerCapture) ??
+            (finite(observed?.captures) > 0 && finite(observed?.throws) !== null
+                ? observed.throws / observed.captures : null);
+        const entries = Array.isArray(hunt.especies) ? hunt.especies : [];
+        const missing = entries.map(row => Number(outlandNormalizeSpeciesId(row.pokeId)))
+            .filter(id => !Number.isInteger(id) ||
+                captureRarityForSpecies(state.captureRarities, id) === null);
+        const captureInputs = {
+            catalog: state.combatCatalogStatus,
+            catalogError: state.combatCatalogError || null,
+            rarityEntries: state.captureRarities.size,
+            huntSpecies: entries.length,
+            coveredSpecies: entries.length - missing.length,
+            missingSpeciesIds: missing.filter(Number.isInteger).slice(0, 20),
+            ballCatalog: state.captureBallRates.size > 0 ? 'game' : 'wiki-default',
+            observations: observed ? {
+                kills: observed.kills, throws: observed.throws,
+                captures: observed.captures
+            } : null
+        };
+        return {
+            version: 2, huntSlug: String(hunt.slug || ''),
+            captureInputs,
+            xpH: finite(xp?.value), xpMeasured: Boolean(xp?.observed),
+            coinsH: finite(economy?.realizedH ?? economy?.killCoinsH),
+            coinsMeasured: finite(economy?.realizedH) !== null,
+            capturesH,
+            ultraChance, beastChance,
+            captureSource: finite(ultra?.catchesH) !== null ? 'wiki-model' :
+                capturesH !== null ? 'observed' : 'unavailable',
+            ultraSource: finite(ultra?.chance) !== null ? 'wiki-model' :
+                ultraObserved !== null ? 'observed' : 'unavailable',
+            beastSource: finite(beast?.chance) !== null ? 'wiki-model' :
+                beastObserved !== null ? 'observed' : 'unavailable',
+            shinyCaughtH: finite(ultra?.shinyCaughtH),
+            shinyUnavailableReason: isOutland ? 'outland-eligibility-unverified' :
+                ultra?.chance == null ? 'capture-rarity-incomplete' : null,
+            ballsPerCapture,
+            activeOutlandTier: isOutland && tier != null ? tier : null,
+            rareDrops: Array.isArray(rare?.drops) ? rare.drops.slice(0, 6)
+                .map(row => ({name: String(row.name || row.id || ''),
+                    unitsH: finite(row.unitsH)})) : []
+        };
+    }
+
     page.__mothHuntAtlasControllerV1 = {
         version: 1,
-        snapshot: controllerSnapshot
+        snapshot: controllerSnapshot,
+        metrics: controllerMetrics
     };
 
     // Experimental, read-only instrumentation for later player tests.
@@ -14001,7 +14063,7 @@
             const here = currentHunt();
             const xp = here ? huntXpEstimate(here) : null;
             return {
-                version: '1.9.21',
+                version: '1.9.22',
                 indexes: {
                     locations: state.locationIndexStatus,
                     markerCount: state.locationsBySlug.size,
@@ -14130,6 +14192,14 @@
 
     function bootstrap() {
         injectStyles();
+        // Capture rarity/ball modeling must work even with the Atlas closed.
+        // Reuses the existing cached catalog loader; no timer or game scan.
+        // Defer one catalog load until initial game rendering has settled.
+        // Never schedule recurring work to keep the catalog updated.
+        if (typeof page.requestIdleCallback === 'function')
+            page.requestIdleCallback(() => ensureCombatCatalog(), {timeout: 10000});
+        else
+            setTimeout(() => ensureCombatCatalog(), 4000);
         ensureButton();
         installMapObserver();
         scheduleMapSync();
@@ -14152,7 +14222,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.17 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.22 experimental loaded'
         );
     }
 
