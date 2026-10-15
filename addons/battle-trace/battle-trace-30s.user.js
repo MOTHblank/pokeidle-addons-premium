@@ -29,7 +29,8 @@
         activeConfirmed: false, lastActiveId: null, huntSlug: null,
         previousStateKey: '', leadRefs: new Map(), slotRefs: new Map(),
         castRefs: new Map(), pending: [], playerLevel: null,
-        packetNo: 0, wrapped: false, eventSources: new Set(), bonuses: {}
+        packetNo: 0, wrapped: false, eventSources: new Set(), bonuses: {},
+        packetMarkers: []
     };
     const own = (obj, key) => Boolean(obj && Object.prototype.hasOwnProperty.call(obj, key));
     const finite = value => typeof value === 'number' && Number.isFinite(value)
@@ -117,11 +118,22 @@
     function sanitizePokemon(pk) {
         if (!pk || typeof pk !== 'object') return null;
         const iv = pk.ivs || pk.iv || {};
-        const attacks = Array.isArray(pk.attacks) ? pk.attacks.slice(0, 12)
+        // Some game builds publish moves under 'golpes' rather than 'attacks'.
+        // Keep the source field so a missing loadout isn't mistaken for no skills.
+        const key = ['attacks','golpes','moves'].find(name =>
+            Array.isArray(pk[name])) || null;
+        const attacks = key ? pk[key].slice(0, 12)
             .map(sanitizeMove).filter(Boolean) : [];
         return {
             speciesId: id(pk.speciesId), level: finite(pk.level),
+            quality: finite(pk.quality ?? pk.qualidade),
+            heldItemId: id(pk.heldItemId),
+            fieldNames: Object.keys(pk).filter(k =>
+                /^[a-zA-Z_]{1,48}$/.test(k)).slice(0, 70),
+            statFieldNames: Object.keys(pk.stats || {}).filter(k =>
+                /^[a-zA-Z_]{1,48}$/.test(k)).slice(0, 40),
             stats: compact(pk.stats, ['hp','atk','def','spAtk','spDef','speed']),
+            moveSource: key,
             ivs: compact(iv, ['hp','atk','def','spAtk','spDef','speed','spd']),
             speedIV: finite(pk.speedIV ?? pk.speedIv ?? iv.speed ?? iv.spd),
             types: Array.isArray(pk.tipos) ? pk.tipos.slice(0, 2)
@@ -316,6 +328,12 @@
         if (message.t === 'batalha' && Array.isArray(message.ev)) {
             model.battlePackets++;
             const number = ++model.packetNo;
+            if (model.packetMarkers.length < 2500)
+                model.packetMarkers.push({
+                    ms: relative(at), packet: number, events: message.ev.length,
+                    serverNumericMarkers: compact(message,
+                        ['tick','tempo','ts','tms','simTime','frame','step','dt','tickMs'])
+                });
             recordKeyCounts(model.keys, message);
             for (const [i, ev] of message.ev.entries()) {
                 if (!ev || typeof ev !== 'object') continue;
@@ -438,6 +456,7 @@
                 stateDuringPage: model.statePackets, welcomeDuringPage: model.welcomePackets},
             eventsByKind: {...model.counts},
             observedFieldNamesByKind: model.keys,
+            packetMarkers: model.packetMarkers.slice(),
             omittedEvents: model.droppedRows,
             timeline: model.rows.slice()
         };
@@ -509,6 +528,7 @@
         model.rows = []; model.stateRows = []; model.report = null;
         model.packets = 0; model.battlePackets = 0; model.packetNo = 0;
         model.counts = {}; model.keys = {}; model.droppedRows = 0;
+        model.packetMarkers = [];
         model.previousStateKey = '';
         model.slotRefs = new Map(); model.castRefs = new Map();
         model.atlasStart = readAtlas();
