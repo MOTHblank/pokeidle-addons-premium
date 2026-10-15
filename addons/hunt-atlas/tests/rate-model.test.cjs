@@ -424,8 +424,8 @@ test('XP/hour must use only trainer XP, never the upstream combined streams', ()
   // valid trainer XP/kill; separate channels must remain distinct.
   const kills = 1283;
   const trainerXp = 18574, pokemonXp = 18574;
-  assert.equal(calc(kills, trainerXp), 23830642);
-  assert.equal(calc(kills, pokemonXp), 23830642);
+  assert.equal(calc(kills, trainerXp), 23830442);
+  assert.equal(calc(kills, pokemonXp), 23830442);
   assert.notEqual(calc(kills, trainerXp), calc(kills, trainerXp + pokemonXp));
   assert.equal(calc(0, trainerXp), 0);
   assert.equal(calc(Number.NaN, trainerXp), null);
