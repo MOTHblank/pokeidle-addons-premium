@@ -8463,18 +8463,23 @@
         const basic = {name:'Investida', type:basicType,
             category:'PHYSICAL', power:30};
         const basicDamage = damageFor(basic);
-        const timedMoves = moves.map((move, index) => {
+        const moveModels = moves.map((move, index) => {
             const rawCd = battleStat(move.cooldownMs) ||
                 xpCooldownFromPower(move.power);
             const speed = speciesCombatMeta(lead?.speciesId)?.baseSpeed;
             const cooldown = xpMoveCooldown(rawCd, speed, speedIv,
                 Boolean(move.cooldownAdjusted || move.runtimeMove)) || rawCd;
             return {index, damage:damageFor(move), cooldown};
-        }).filter(move => move.damage !== null);
+        });
+        // Don't silently discard a move with missing category/defense/ATK,
+        // then report the basic attack as a complete personalized combat model.
+        const missingMoveDamage = moveModels.some(move => move.damage === null);
+        const timedMoves = moveModels.filter(move => move.damage !== null);
         const allDamage = [basicDamage, ...timedMoves.map(move => move.damage)]
             .filter(value => value !== null);
-        return {hp, basicDamage, timedMoves, maxDamage:allDamage.length
-            ? Math.max(...allDamage) : null, enemyTypes, meta};
+        return {hp, basicDamage, timedMoves, maxDamage:
+            !missingMoveDamage && basicDamage !== null && allDamage.length
+                ? Math.max(...allDamage) : null, enemyTypes, meta};
     }
 
     function damagePerAttackAgainst(speciesId) {
