@@ -35,6 +35,9 @@
     const finite = value => typeof value === 'number' && Number.isFinite(value)
         ? value : null;
     const id = value => {
+        // In game state, null activeId means "temporarily no fighter".
+        // Number(null) is 0, which would erase the last confirmed lead.
+        if (value === null || value === undefined || value === '') return null;
         const v = Number(value);
         return Number.isSafeInteger(v) && v >= 0 ? v : null;
     };
