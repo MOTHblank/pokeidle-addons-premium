@@ -292,6 +292,14 @@ It records target HP samples, per-type **observed neutralized damage** (`dano / 
 
 The addons are intentionally low-resource and run long sessions. This is a design contract, **not a request to add high-frequency polling, expensive full simulations every redraw or new global WebSocket hooks**. Reuse existing event collection; batch/recompute on meaningful state or catalog changes.
 
+### Hunt Atlas v1.9.18 implementation note (2026-10-15)
+
+- **Modeled** XP/h no longer receives cross-hunt calibration derived from observed kills on another target. Each enemy uses its own catalog HP/DEF/Sp.Def, typing, the live lead's ATK/Sp.Atk and level, eligible runtime/catalog moves (including known Elemental TM), STAB, hunt type amplification, Speed-IV/global and skill cooldown timing. Repeated modeled encounters share move readiness. Basic Investida is physical, uses the first type except on immunity, and uses its 2-second Speed-IV cooldown.
+- Wild HP is estimated from catalog base HP, current hunt level and the documented **×5** multiplier, without transplanting measured target HP scaling from other hunts. Unknown IV/quality, healing, AoE geometry, movement pathing and the unavailable server AI keep this an **approximation**, not an exact game simulator.
+- **Measured** XP/h from accepted kill receipts is stored per hunt, exact lead/loadout/level and XP/bonus scope. Once a representative window is available, its snapshot remains on disk after leaving or reloading the hunt. A live measurement of the same matchup takes precedence; changing level, equipment or bonus scope creates a new prediction context rather than rewriting old evidence.
+- Missing opponent stats, type data or lead damage inputs result in **unknown**, not the same plausible-looking baseline rate assigned to many different enemies. A known full immunity results in zero model throughput. Measurements from a different hunt never change this model's projected rate.
+- Regression coverage: `node --test addons/hunt-atlas/tests/rate-model.test.cjs`. The fixture checks asymmetric Xatu/Charizard difficulty, immunity, saved measured-rate isolation, context separation and missing-data handling. In-game calibration and performance still require live observations.
+
 ## 11. Compact proposed data contract — not an existing game packet
 
 ```ts

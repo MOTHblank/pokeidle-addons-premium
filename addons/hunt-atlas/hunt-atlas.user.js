@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/addons/hunt-atlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.17
+// @version      1.9.18
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.17');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.18');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -1174,7 +1174,6 @@
         captureBonusEvidence: {},
         captureChanceEvidence: {seen:0,min:null,max:null},
         inventoryForCosts: new Map(),
-        calibrationEvidence: new Map(),
         hunts: [],
         playerLevel: 0,
         currentHuntSlug: null,
@@ -2005,6 +2004,7 @@
             sessionToken: state.farmingSessionToken,
             snapshotScope: farmingSnapshotScope(),
             rateWindow: null,
+            lastMeasured: null,
             captureWindow: null,
             huntSlug,
             signature:
@@ -4318,8 +4318,8 @@
             // A ranking must not privilege an uncertain cold-start estimate
             // merely because its point estimate is slightly larger.
             const quality = x => x?.observed ? 3
-                : x?.source === 'named-move model' && x?.coverage === 100 ? 2
-                : x?.source === 'combat model' && x?.coverage === 100 ? 1 : 0;
+                : x?.source === 'stat/move model' && x?.coverage === 100 ? 2
+                : x?.source === 'stat/basic-attack model' && x?.coverage === 100 ? 1 : 0;
             if (quality(a) !== quality(b)) return quality(b) - quality(a);
         }
         return bv - av;
@@ -4414,6 +4414,11 @@
         record.rateWindow = appendFarmingKill(record.rateWindow,
             {at: now, trainerXp, pokemonXp, gold,
                 killGold:receipt.killCoins, autoSale:receipt.autoSaleCoins});
+        const stableRate = farmingObservedRates(record.rateWindow, now);
+        if (stableRate?.trainerXpH !== null && stableRate?.trainerXpH !== undefined &&
+            stableRate.samples >= 6 && stableRate.windowMs >= 60000) {
+            record.lastMeasured = {...stableRate, measuredAt: now};
+        }
 
         const hunt =
             currentHunt();
@@ -5226,7 +5231,6 @@
             state.xpBonusState = {};
             state.nativeXpContext = {};
             state.captureChanceEvidence = {seen:0,min:null,max:null};
-            state.calibrationEvidence.clear();
             state.combatTargets.clear();
             state.lastLeadPokemon = null;
             state.activePokemonId = null;
@@ -6567,6 +6571,16 @@
                 creature?.name ||
                 previous.name ||
                 null,
+            baseAtk: Number.isFinite(Number(creature?.baseAtk)) && Number(creature.baseAtk) > 0
+                ? Number(creature.baseAtk) : previous.baseAtk,
+            baseDef: Number.isFinite(Number(creature?.baseDef)) && Number(creature.baseDef) > 0
+                ? Number(creature.baseDef) : previous.baseDef,
+            baseSpAtk: Number.isFinite(Number(creature?.baseSpAtk)) && Number(creature.baseSpAtk) > 0
+                ? Number(creature.baseSpAtk) : previous.baseSpAtk,
+            baseSpDef: Number.isFinite(Number(creature?.baseSpDef)) && Number(creature.baseSpDef) > 0
+                ? Number(creature.baseSpDef) : previous.baseSpDef,
+            baseSpeed: Number.isFinite(Number(creature?.baseSpeed)) && Number(creature.baseSpeed) > 0
+                ? Number(creature.baseSpeed) : previous.baseSpeed,
             baseHp:
                 Number.isFinite(
                     Number(
@@ -8279,58 +8293,17 @@
 
         return value;
     }
-    function targetHpEstimate(
-        speciesId,
-        huntLevel,
-        profile
-    ) {
-        const level =
-            Math.max(
-                1,
-                Number(
-                    huntLevel
-                ) ||
-                1
-            );
-
-        const meta =
-            speciesCombatMeta(
-                speciesId
-            );
-
-        const baseHp =
-            Number(
-                meta?.baseHp
-            );
-
-        if (
-            profile?.hpScale &&
-            Number.isFinite(
-                baseHp
-            ) &&
-            baseHp > 0
-        ) {
-            return (
-                baseHp *
-                level *
-                profile.hpScale
-            );
-        }
-
-        if (
-            profile?.hpPerLevel
-        ) {
-            return (
-                level *
-                profile.hpPerLevel
-            );
-        }
-
-        return null;
+    function targetHpEstimate(speciesId, huntLevel) {
+        const baseHp = Number(speciesCombatMeta(speciesId)?.baseHp);
+        const level = Number(huntLevel);
+        // Wiki: wilds have 5x health; current-level stats scale by level/100.
+        // IV/quality and server rounding are unknown and are NOT learned from
+        // whichever unrelated species happened to be fought first.
+        return baseHp > 0 && level > 0 && Number.isFinite(level)
+            ? 5 * baseHp * level / 100 : null;
     }
 
-
-    // Forecasts individual observed attacks with index-assisted smoothing.
+    // Observed named attacks remain separate diagnostics, not inputs for\n    // extrapolating another enemy's XP/hour.
     // Never assume a LEARNABLE index move was equipped or fired. Missing
     // events use the old per-type estimator unchanged.
 
@@ -8349,208 +8322,261 @@
         return 'low';
     }
 
-    function damagePerAttackAgainst(speciesId, profile) {
-        const defender = speciesCombatMeta(speciesId);
-        const types = (state.typesBySpecies.get(Number(speciesId)) ||
-            [defender?.type1, defender?.type2].filter(Boolean))
+    function battleLeadTypes(lead = leadPokemon()) {
+        const meta = speciesCombatMeta(lead?.speciesId);
+        const raw = Array.isArray(lead?.tipos) && lead.tipos.length
+            ? lead.tipos : state.typesBySpecies.get(Number(lead?.speciesId)) ||
+                [meta?.type1, meta?.type2];
+        return [...new Set(raw.filter(Boolean).map(type => String(type).toUpperCase()))];
+    }
+
+    function battleMovesForLead(lead = leadPokemon()) {
+        if (!lead) return [];
+        const live = Array.isArray(lead.attacks) ? lead.attacks.filter(move =>
+            Number(move?.power) > 0 && move?.type) : [];
+        const candidates = live.length ? live : movesForLead(lead);
+        const moves = candidates.filter(move => Number(move?.power) > 0 &&
+            (Number(move.learnLevel) || 1) <= Number(lead.level))
+            .map(move => ({...move, runtimeMove: live.length > 0,
+                type: String(move.type).toUpperCase(),
+                category: String(move.category || move.categoria || '').toUpperCase()}));
+        const types = battleLeadTypes(lead);
+        // The TM is not necessarily in the ordinary species learnset.
+        // Only add it if the *owned* lead reports the equipped upgrade.
+        if (lead.tmElemental && !moves.some(move => move.tmElemental ||
+            /^TM\s/i.test(String(move.name || '')))) {
+            const type = typeof lead.tmElemental === 'string' &&
+                types.includes(lead.tmElemental.toUpperCase())
+                ? lead.tmElemental.toUpperCase() : types[0];
+            if (type) moves.push({name:'TM '+type, type, category:'SPECIAL',
+                power:2800, cooldownMs:60000, tmElemental:true});
+        }
+        return moves.slice(0, 24);
+    }
+
+    function battleStat(value) {
+        const n = Number(value);
+        return Number.isFinite(n) && n > 0 ? n : null;
+    }
+
+    function estimatedWildDefense(meta, level, special) {
+        const base = battleStat(special ? meta?.baseSpDef : meta?.baseDef);
+        // Level-scaled base stat; wild IV/quality are not available from the
+        // species catalogue. Do not fit defence to another hunt's observed DPS.
+        return base ? Math.max(1, base * level / 100) : null;
+    }
+
+    function battleDamage(attackerLevel, power, attackStat, defenseStat,
+                          moveType, attackerTypes, defenderTypes) {
+        if (!(attackerLevel > 0) || !(power > 0) ||
+            !(attackStat > 0) || !(defenseStat > 0) ||
+            !defenderTypes.length || !moveType) return null;
+        const effectiveness = huntEffectiveness(moveType, defenderTypes);
+        if (effectiveness === 0) return 0;
+        const stab = attackerTypes.includes(moveType) ? 1.5 : 1;
+        // Middle of the documented 0.85..1.0 damage roll; not a measured hit.
+        return (((2 * attackerLevel / 5 + 2) * power *
+            attackStat / defenseStat) / 50 + 2) * stab *
+            effectiveness * 0.925;
+    }
+
+    function deterministicSpeciesCombat(speciesId, level, lead, moves, leadTypes) {
+        const meta = speciesCombatMeta(speciesId);
+        const hp = targetHpEstimate(speciesId, level);
+        const enemyTypes = (state.typesBySpecies.get(Number(speciesId)) ||
+            [meta?.type1, meta?.type2]).filter(Boolean)
             .map(type => String(type).toUpperCase());
-        const effectiveness = type => types.length
-            ? huntEffectiveness(type, types) : 1;
-
-        // Historical records before v1.9 do not contain per-cast samples.
-        const legacyTypeDamage = () => {
-            let weighted = 0, count = 0;
-            for (const [type, row] of Object.entries(profile?.moveDamage || {})) {
-                const samples = Math.max(1, Number(row.samples) || 1);
-                weighted += samples * (Number(row.damage) || 0) *
-                    effectiveness(type);
-                count += samples;
-            }
-            return count ? weighted / count : null;
+        const player = lead?.stats || {};
+        const leadLevel = Number(lead?.level);
+        const iv = lead?.speedIV ?? lead?.speedIv ??
+            lead?.ivs?.speed ?? lead?.iv?.speed;
+        const speedIv = Number(iv);
+        const def = estimatedWildDefense(meta, level, false);
+        const spDef = estimatedWildDefense(meta, level, true);
+        const damageFor = move => {
+            const category = String(move?.category || '').toUpperCase();
+            const special = category === 'SPECIAL' || category === 'ESPECIAL';
+            const physical = category === 'PHYSICAL' || category === 'FISICO' ||
+                category === 'FÍSICO';
+            if (!physical && !special) return null;
+            return battleDamage(leadLevel, Number(move.power),
+                battleStat(special ? player.spAtk : player.atk),
+                special ? spDef : def, move.type, leadTypes, enemyTypes);
         };
+        // Investida is PHYSICAL and takes the first type, using the second
+        // ONLY on first-type immunity (not whichever yields more damage).
+        const basicType = leadTypes[0] &&
+            huntEffectiveness(leadTypes[0], enemyTypes) === 0
+            ? leadTypes[1] || leadTypes[0] : leadTypes[0];
+        const basic = {name:'Investida', type:basicType,
+            category:'PHYSICAL', power:30};
+        const basicDamage = damageFor(basic);
+        const timedMoves = moves.map((move, index) => {
+            const rawCd = battleStat(move.cooldownMs) ||
+                xpCooldownFromPower(move.power);
+            const speed = speciesCombatMeta(lead?.speciesId)?.baseSpeed;
+            const cooldown = xpMoveCooldown(rawCd, speed, speedIv,
+                Boolean(move.cooldownAdjusted || move.runtimeMove)) || rawCd;
+            return {index, damage:damageFor(move), cooldown};
+        }).filter(move => move.damage !== null);
+        const allDamage = [basicDamage, ...timedMoves.map(move => move.damage)]
+            .filter(value => value !== null);
+        return {hp, basicDamage, timedMoves, maxDamage:allDamage.length
+            ? Math.max(...allDamage) : null, enemyTypes, meta};
+    }
 
-        const samples = (profile?.attackObservations || [])
-            .filter(row => Number(row.neutralDamage) > 0 &&
-                Number.isFinite(Number(row.neutralDamage)) &&
-                typeof row.type === 'string')
-            .slice(-1100);
-        if (!samples.length) return legacyTypeDamage();
-
-        // Unlike the earlier implementation, named and unnamed observations
-        // are from ONE stream, so an attack is never counted twice.
-        const recognized = movesForLead();
-        const byName = new Map(recognized.map(move =>
-            [moveNameKey(move.name), move]));
-        const groups = new Map();
-        for (const row of samples) {
-            if (!row.name) continue;
-            const move = byName.get(moveNameKey(row.name));
-            if (!move || move.type !== row.type || !(move.power > 0)) continue;
-            const key = move.type + ':' + move.category;
-            const g = groups.get(key) || { sum: 0, n: 0 };
-            g.sum += row.neutralDamage / move.power;
-            g.n++;
-            groups.set(key, g);
-        }
-
-        const namedSamples = samples.filter(row => row.name).length;
-        // A weak 5% prior can improve a sparse named sample using the
-        // species-specific power, but cannot override observed damage.
-        const canSmooth = moveModelConfidence(profile) !== 'low' &&
-            namedSamples >= 5;
-        let total = 0;
-        for (const row of samples) {
-            let neutral = Number(row.neutralDamage);
-            const move = row.name ? byName.get(moveNameKey(row.name)) : null;
-            const group = move && groups.get(move.type + ':' + move.category);
-            if (canSmooth && move?.type === row.type &&
-                move.power > 0 && group?.n >= 6) {
-                const observedForMove = Number(
-                    profile?.observedNamedMoves?.[moveNameKey(row.name)]?.samples
-                ) || 0;
-                if (observedForMove < 4) {
-                    const prior = group.sum / group.n * move.power;
-                    // Bound to ±5% even when the index is badly outdated.
-                    const bounded = Math.max(neutral * 0.95,
-                        Math.min(neutral * 1.05, prior));
-                    neutral = neutral * 0.92 + bounded * 0.08;
-                }
-            }
-            total += neutral * effectiveness(row.type);
-        }
-        return total / samples.length;
+    function damagePerAttackAgainst(speciesId) {
+        const lead = leadPokemon();
+        const model = deterministicSpeciesCombat(speciesId,
+            Number(speciesCombatMeta(speciesId)?.huntLevel) || 1,
+            lead, battleMovesForLead(lead), battleLeadTypes(lead));
+        return model.maxDamage;
     }
 
     // Coverage is spawn-weighted. An unknown high-frequency enemy cannot
     // vanish from the denominator of an XP/h prediction.
-    function huntCombatCoverage(hunt, profile) {
+    function huntCombatCoverage(hunt) {
+        const lead = leadPokemon(), level = Number(hunt?.nivel);
+        const moves = battleMovesForLead(lead), leadTypes = battleLeadTypes(lead);
         const species = Array.isArray(hunt?.especies) ? hunt.especies : [];
         const entries = species.map(row => {
-            const weight = Math.max(1, Number(row?.pontos || 1));
-            const hp = profile
-                ? targetHpEstimate(row?.pokeId, hunt.nivel, profile) : null;
-            const damage = profile
-                ? damagePerAttackAgainst(row?.pokeId, profile) : null;
-            const hpKnown = Number.isFinite(hp) && hp > 0;
-            const damageKnown = Number.isFinite(damage) && damage >= 0;
-            return { row, weight, hp, damage, hpKnown, damageKnown };
+            const weight = Math.max(1, Number(row?.pontos) || 1);
+            const combat = deterministicSpeciesCombat(row?.pokeId, level,
+                lead, moves, leadTypes);
+            const hpKnown = combat.hp > 0 && Number.isFinite(combat.hp);
+            const damageKnown = combat.maxDamage !== null;
+            return {row, weight, ...combat, hpKnown, damageKnown};
         });
         const total = entries.reduce((sum, row) => sum + row.weight, 0);
         const covered = entries.reduce((sum, row) =>
             sum + (row.hpKnown && row.damageKnown ? row.weight : 0), 0);
-        return {
-            entries, total, covered,
+        return {entries, total, covered,
             percentage: total ? Math.round(100 * covered / total) : 0,
             complete: total > 0 && covered === total,
             missingHp: entries.filter(row => !row.hpKnown).reduce(
                 (sum, row) => sum + row.weight, 0),
             missingDamage: entries.filter(row => !row.damageKnown).reduce(
                 (sum, row) => sum + row.weight, 0),
-            blocked: entries.some(row =>
-                row.hpKnown && row.damageKnown && row.damage === 0)
-        };
+            blocked: entries.some(row => row.hpKnown && row.damageKnown &&
+                row.maxDamage === 0)};
     }
 
-    function rawPredictedKillMs(hunt, profile) {
-        if (!hunt || !profile || !profile.moveSamples ||
-            (!profile.hpScale && !profile.hpPerLevel)) return null;
-        const coverage = huntCombatCoverage(hunt, profile);
-        // Preserve the existing known-immunity protection.
+    function rawPredictedKillMs(hunt, coverage = huntCombatCoverage(hunt)) {
         if (coverage.blocked) return Infinity;
-        // Missing enemies may be slower than covered ones; do not
-        // renormalize their weights into an optimistic personalized model.
         if (!coverage.complete) return null;
-
-        const mobsPerWave = Math.max(1, Math.min(16, coverage.total));
-        const lead = typeof leadPokemon === 'function' ? leadPokemon() : null;
+        const lead = leadPokemon(), player = lead?.stats || {};
+        const leadTypes = battleLeadTypes(lead);
+        const moves = battleMovesForLead(lead);
         const iv = lead?.speedIV ?? lead?.speedIv ??
             lead?.ivs?.speed ?? lead?.iv?.speed;
-        const firstAttackMs = typeof xpGlobalAttackFloor === 'function'
-            ? xpGlobalAttackFloor(iv) : UPSTREAM_GLOBAL_ATTACK_MS;
-        const transitionMs =
-            (Number(profile.movementMs) || 600) + UPSTREAM_WAVE_MS / mobsPerWave;
-        const castCadenceMs = xpForecastCastCadence(
-            profile, firstAttackMs, UPSTREAM_FALLBACK_MOVE_MS
-        );
-        let weightedMs = 0;
-        for (const row of coverage.entries) {
-            const attacksNeeded = Math.max(1, Math.ceil(row.hp / row.damage));
-            const killMs = transitionMs + firstAttackMs +
-                Math.max(0, attacksNeeded - 1) * castCadenceMs;
-            weightedMs += killMs * row.weight;
+        const globalMs = xpGlobalAttackFloor(iv);
+        const basicCooldown = Math.max(400, 2000 -
+            (Number.isInteger(Number(iv)) && Number(iv) >= 1 && Number(iv) <= 32
+                ? Number(iv) * 10 : 0));
+        const mobs = Math.max(1, Math.min(16, coverage.total));
+        const moveMs = UPSTREAM_FALLBACK_MOVE_MS + UPSTREAM_WAVE_MS / mobs;
+        const skillReady = moves.map(() => 0);
+        let basicReady = 0, elapsed = 0;
+        const steps = mobs * 4; // 4 shared-cooldown waves; cached per loadout/catalog
+        let index = 0, upper = coverage.entries[0]?.weight || 0;
+        for (let i = 0; i < steps; i++) {
+            const point = (i + .5) * coverage.total / steps;
+            while (point >= upper && index < coverage.entries.length - 1)
+                upper += coverage.entries[++index].weight;
+            const target = coverage.entries[index];
+            let hpLeft = target.hp;
+            const start = elapsed;
+            let attacks = 0;
+            while (hpLeft > 0 && attacks++ < 350) {
+                let best = -1, damage = -1, next = Infinity;
+                for (let j = 0; j < target.timedMoves.length; j++) {
+                    const move = target.timedMoves[j];
+                    if (skillReady[move.index] <= elapsed && move.damage > damage) {
+                        best = move.index; damage = move.damage;
+                    } else if (skillReady[move.index] > elapsed) {
+                        next = Math.min(next, skillReady[move.index]);
+                    }
+                }
+                if (best >= 0 && damage > 0) {
+                    hpLeft -= damage;
+                    skillReady[best] = elapsed + (target.timedMoves.find(move => move.index === best)?.cooldown || 10000);
+                    elapsed += globalMs;
+                } else if (target.basicDamage > 0 && basicReady <= elapsed) {
+                    hpLeft -= target.basicDamage;
+                    basicReady = elapsed + basicCooldown;
+                    elapsed += globalMs;
+                } else {
+                    const wakeAt = Math.min(next, target.basicDamage > 0
+                        ? basicReady : Infinity);
+                    if (!(wakeAt > elapsed) || !Number.isFinite(wakeAt))
+                        return Infinity;
+                    elapsed = wakeAt;
+                }
+            }
+            // Very long fights need unavailable-server sustain/cooldown details.
+            // Report unknown instead of a misleading zero or huge computation.
+            if (hpLeft > 0) return null;
+            const fightMs = elapsed - start;
+            // Sustainability is not fully observable from source data. The
+            // enemy's basic STAB/type hit gives a *limited* recovery allowance,
+            // rather than reusing survival from some unrelated measured hunt.
+            const meta = target.meta;
+            const enemyAtk = battleStat(meta?.baseAtk);
+            const enemyDef = battleStat(player.def);
+            const leadHp = battleStat(player.hp);
+            if (enemyAtk && enemyDef && leadHp && target.enemyTypes.length &&
+                leadTypes.length) {
+                const enemyBasic = battleDamage(Number(hunt.nivel), 30,
+                    enemyAtk * Number(hunt.nivel) / 100, enemyDef,
+                    target.enemyTypes[0], target.enemyTypes, leadTypes);
+                const pressure = (enemyBasic || 0) * 1.8 *
+                    Math.max(0, fightMs / 1400) / leadHp;
+                elapsed += Math.min(fightMs * 2,
+                    fightMs * Math.max(0, pressure - .2) * .5);
+            }
+            elapsed += moveMs;
         }
-        return weightedMs / coverage.total;
+        return elapsed / steps;
     }
 
-    // Validation is out-of-sample: freeze an early model estimate BEFORE
-    // sustained kills are available, then compare with later actual results.
-    function calibrationContextKey() {
-        const lead = leadSignature();
-        return lead ? lead + '|' + farmingSnapshotScope() : null;
-    }
-
-    function recordForecastResidual(hunt, record, observed, now = Date.now()) {
+    // Residuals compare one hunt with its own frozen pre-measurement model.
+    // They never change any other species' attack power or predicted rates.
+    function recordForecastResidual(hunt, record, observed) {
         const prediction = record?.predictedBeforeMeasurement;
-        if (!hunt || !prediction || !observed || !(observed.samples >= 6) ||
+        if (!hunt || !prediction || !observed || observed.samples < 6 ||
             observed.windowMs < 60000 ||
-            prediction.hunt !== hunt.slug || prediction.scope !== farmingSnapshotScope())
-            return null;
-        const residual = xpForecastResidual(prediction.killMs, observed.killMs);
-        if (!residual) return null;
-        const key = calibrationContextKey();
-        if (!key) return null;
-        let cases = state.calibrationEvidence.get(key);
-        if (!cases) {
-            cases = new Map();
-            state.calibrationEvidence.set(key, cases);
-        }
-        const previous = cases.get(hunt.slug);
-        if (!previous || now - previous.at >= 60000) {
-            cases.set(hunt.slug, {ratio: residual.ratio, errorPct: residual.errorPct,
-                at: now, samples: observed.samples, source: prediction.source});
-            while (cases.size > 12) cases.delete(cases.keys().next().value);
-            while (state.calibrationEvidence.size > 4)
-                state.calibrationEvidence.delete(state.calibrationEvidence.keys().next().value);
-            state.estimateCache.clear();
-            // This mutation is deliberately outside the per-kill handler to
-            // avoid costly recomputation on every high-frequency battle event.
-        }
-        return residual;
-    }
-
-    function predictionCalibration(profile) {
-        const key = calibrationContextKey();
-        const cases = key ? state.calibrationEvidence.get(key) : null;
-        const ratios = cases ? [...cases.values()].filter(row =>
-            Date.now() - row.at < 90 * 60000 && row.samples >= 6)
-                .map(row => row.ratio) : [];
-        const ratio = robustMean(ratios);
-        return ratio && ratios.length
-            ? Math.max(.65, Math.min(1.65, ratio)) : 1;
+            prediction.hunt !== hunt.slug ||
+            prediction.scope !== farmingSnapshotScope()) return null;
+        return xpForecastResidual(prediction.killMs, observed.killMs);
     }
 
     function calibrationDiagnostics() {
-        const key = calibrationContextKey();
-        const cases = key ? state.calibrationEvidence.get(key) : null;
-        const values = cases ? [...cases.values()].filter(row =>
-            Date.now() - row.at < 90 * 60000) : [];
-        // Quantile of genuinely later-measured, per-hunt forecast errors.
-        // At least three distinct hunts are required before using the error
-        // to widen extrapolated ranges; one repeated session is not evidence.
-        const sortedErrors = values.map(row => Math.abs(row.errorPct))
-            .filter(Number.isFinite).sort((a,b)=>a-b);
-        const p80 = sortedErrors.length >= 3
-            ? sortedErrors[Math.ceil(.8 * sortedErrors.length)-1] : null;
-        return {
-            hunts: values.length,
-            p80ErrorPct: p80,
-            medianErrorPct: sortedErrors.length
-                ? Math.round(median(sortedErrors))
-                : null,
-            source: 'personalized-model-validation',
-            // Transferring between hunts is an experimental heuristic.
-            confidence: values.length >= 3 ? 'medium' : 'low'
-        };
+        return {hunts: 0, p80ErrorPct: null, medianErrorPct: null,
+            source: 'per-hunt-only', confidence: 'unknown'};
+    }
+
+    function savedObservedRates(hunt) {
+        const slug = hunt?.slug, signature = leadSignature();
+        const scope = farmingSnapshotScope();
+        if (!slug || !signature) return null;
+        let latest = null;
+        for (const record of state.huntPerf.values()) {
+            if (record?.version !== 5 || record.huntSlug !== slug ||
+                record.signature !== signature || record.snapshotScope !== scope)
+                continue;
+            // Backfill compatible v1.9.17 historical windows where possible.
+            const historical = record.lastMeasured ||
+                (record.rateWindow?.lastAt
+                    ? farmingObservedRates(record.rateWindow,
+                        Number(record.rateWindow.lastAt)) : null);
+            if (historical?.trainerXpH === null ||
+                historical?.trainerXpH === undefined ||
+                historical.samples < 6 || historical.windowMs < 60000)
+                continue;
+            const at = Number(historical.measuredAt || record.updatedAt || 0);
+            if (!latest || at > latest.at) latest = {at, rate:historical};
+        }
+        return latest?.rate || null;
     }
 
     function huntXpEstimate(
@@ -8558,73 +8584,62 @@
     ) {
         const cacheKey =
             [
-                leadSignature() ||
-                    '',
+                leadSignature() || '',
                 state.combatRevision,
                 state.combatCatalogStatus,
+                state.moveIndexStatus,
                 farmingSnapshotScope()
             ].join('|');
-
-        if (
-            state.estimateCacheKey !==
-            cacheKey
-        ) {
-            state.estimateCacheKey =
-                cacheKey;
-
+        if (state.estimateCacheKey !== cacheKey) {
+            state.estimateCacheKey = cacheKey;
             state.estimateCache.clear();
         }
+        const huntKey = hunt?.slug || '';
+        const record = performanceRecord(hunt?.slug, false);
+        const observed = observedRates(record);
+        const saved = savedObservedRates(hunt);
+        const chosenObserved = observed?.trainerXpH !== null &&
+            observed?.trainerXpH !== undefined ? observed : saved;
+        const savedOnly = chosenObserved === saved && chosenObserved !== observed;
 
-        const huntKey =
-            hunt?.slug ||
-            '';
 
-        const record =
-            performanceRecord(
-                hunt?.slug,
-                false
-            );
-
-        const observed =
-            observedRates(
-                record
-            );
 
         /*
          * Always check the live measurement before using a cached model.
          * Measurements evolve during a hunt and must take precedence.
          */
-        if (observed && observed.trainerXpH !== null) {
-            const residual = recordForecastResidual(hunt, record, observed);
+        if (chosenObserved && chosenObserved.trainerXpH !== null) {
+            const residual = savedOnly ? null :
+                recordForecastResidual(hunt, record, chosenObserved);
             const result = {
                 value:
-                    observed.trainerXpH,
-                pokemonValue: observed.pokemonXpH,
-                killGoldH: observed.killGoldH,
-                autoSaleH: observed.autoSaleH,
-                trainerKnown: observed.trainerKnown,
-                pokemonKnown: observed.pokemonKnown,
+                    chosenObserved.trainerXpH,
+                pokemonValue: chosenObserved.pokemonXpH,
+                killGoldH: chosenObserved.killGoldH,
+                autoSaleH: chosenObserved.autoSaleH,
+                trainerKnown: chosenObserved.trainerKnown,
+                pokemonKnown: chosenObserved.pokemonKnown,
                 goldValue:
-                    observed.goldH,
+                    chosenObserved.goldH,
                 goldSource: 'observed-server/combined-receipt',
                 killsH:
-                    observed.killsH,
+                    chosenObserved.killsH,
                 killMs:
-                    observed.killMs,
+                    chosenObserved.killMs,
                 observed:
                     true,
                 source:
-                    'measured',
-                confidence: observed.confidence,
-                samples: observed.samples,
-                windowMs: observed.windowMs,
-                denominator: observed.denominator,
+                    savedOnly ? 'saved measurement' : 'measured',
+                confidence: chosenObserved.confidence,
+                samples: chosenObserved.samples,
+                windowMs: chosenObserved.windowMs,
+                denominator: chosenObserved.denominator,
                 bonusSource: 'observed-server/event',
                 residualErrorPct: residual?.errorPct ?? null,
                 fallbackReason: null,
-                range: xpPredictionBand({value: observed.trainerXpH,
-                    observed: true, samples: observed.samples,
-                    windowMs: observed.windowMs})
+                range: xpPredictionBand({value: chosenObserved.trainerXpH,
+                    observed: true, samples: chosenObserved.samples,
+                    windowMs: chosenObserved.windowMs})
             };
             return result;
         }
@@ -8659,11 +8674,8 @@
                 return value;
             };
 
-        const profile =
-            combatProfile();
-
-        const coverage = huntCombatCoverage(hunt, profile);
-        const rawKillMs = rawPredictedKillMs(hunt, profile);
+        const coverage = huntCombatCoverage(hunt);
+        const rawKillMs = rawPredictedKillMs(hunt, coverage);
         const coverageFields = {
             coverage: coverage.percentage,
             coveredPoints: coverage.covered,
@@ -8678,69 +8690,41 @@
             killsH: 0, killMs: Infinity, observed: false,
             source: 'immune combat model', confidence: 'low',
             fallbackReason: 'known-immunity',
-            samples: Number(profile?.moveSamples) || 0,
+            samples: 0,
             ...coverageFields
         };
 
-        /*
-         * Never hide recommendations while combat data is warming up. The
-         * upstream Hunt Analyser uses a stable baseline: 900 ms attack floor,
-         * 600 ms average movement, 2 s average move cooldown, and a 2.6 s
-         * wave pause spread across up to 16 spawns. Replace this baseline with
-         * the personalized combat model as soon as measured data is usable.
-         */
+        // A universal time-per-kill is not a real comparison between species.
+        // If a lead stat, target HP, defense or elemental type is missing,
+        // rank it as unknown rather than giving every enemy the same XP/h.
         const hasPersonalizedModel =
-            Boolean(
-                profile &&
-                Number.isFinite(rawKillMs) && rawKillMs > 0
-            );
-        const moveConfidence = moveModelConfidence(profile);
-
-        const species =
-            Array.isArray(hunt?.especies)
-                ? hunt.especies
-                : [];
-
-        const spawnPoints =
-            species.reduce(
-                (sum, row) =>
-                    sum +
-                    Math.max(
-                        1,
-                        Number(row?.pontos || 1)
-                    ),
-                0
-            ) || 1;
-
-        const mobsPerWave =
-            Math.max(
-                1,
-                Math.min(
-                    16,
-                    spawnPoints
-                )
-            );
-
-        const baselineKillMs =
-            UPSTREAM_GLOBAL_ATTACK_MS +
-            UPSTREAM_FALLBACK_MOVE_MS +
-            2000 +
-            UPSTREAM_WAVE_MS / mobsPerWave;
+            Number.isFinite(rawKillMs) && rawKillMs > 0;
+        const lead = leadPokemon();
+        const liveMoves = Array.isArray(lead?.attacks) &&
+            lead.attacks.some(move => Number(move?.power) > 0);
+        const knownMoves = battleMovesForLead(lead).length;
+        const moveConfidence = hasPersonalizedModel &&
+            liveMoves && coverage.complete ? 'medium' : 'low';
+        if (!hasPersonalizedModel) {
+            return {value:null, pokemonValue:null, goldValue:null,
+                killsH:null, killMs:null, observed:false,
+                source:'incomplete combat model', confidence:'unknown',
+                samples:0, fallbackReason: !lead ? 'no-lead' :
+                    !coverage.complete ? 'incomplete-spawn-coverage' :
+                    'unavailable-combat-stats',
+                ...coverageFields};
+        }
 
         if (record && hasPersonalizedModel && !record.predictedBeforeMeasurement &&
-            profile.moveSamples >= 6 && !(record.rateWindow?.rows?.reduce(
+            !(record.rateWindow?.rows?.reduce(
                 (count, row) => count + row.kills, 0) >= 6)) {
             record.predictedBeforeMeasurement = {
                 hunt: hunt.slug, scope: farmingSnapshotScope(),
-                killMs: rawKillMs, source: 'personalized-model'
+                killMs: rawKillMs, source: 'stat/move model'
             };
         }
 
-        const killMs =
-            hasPersonalizedModel
-                ? rawKillMs *
-                    predictionCalibration(profile)
-                : baselineKillMs;
+        const killMs = rawKillMs;
 
         const killsH =
             3600000 /
@@ -8784,24 +8768,15 @@
                 pokemon:nativeBonus.pokemon},
             bonusCaveat: 'uses game-reported XP bonus fields and upstream timed rules; '+
                 'catch-up threshold transitions and missing boost catalog remain unverified',
-            source:
-                !hasPersonalizedModel
-                    ? 'baseline model'
-                    : moveConfidence === 'low'
-                        ? 'combat model'
-                        : 'named-move model',
-            confidence: hasPersonalizedModel ? moveConfidence : 'low',
-            samples:
-                Number(profile?.moveSamples) || 0,
-            fallbackReason: !profile ? 'no-lead-combat-samples'
-                : !coverage.complete ? 'incomplete-spawn-coverage'
-                : !hasPersonalizedModel ? 'insufficient-personalized-model'
-                : 'observed-attacks-with-unknown-live-scheduler',
+            source: knownMoves ? 'stat/move model' : 'stat/basic-attack model',
+            confidence: moveConfidence,
+            samples: 0, // No battle sample from another hunt affects this forecast.
+            fallbackReason: 'wiki-scheduling-and-wild-stat-approximation',
             calibration: calibrationDiagnostics(),
             ...coverageFields
         };
-        forecast.validationCount = forecast.calibration.hunts;
-        forecast.validationErrorPct = forecast.calibration.p80ErrorPct;
+        forecast.validationCount = 0;
+        forecast.validationErrorPct = null;
         forecast.range = xpPredictionBand(forecast);
         return remember(forecast);
     }
