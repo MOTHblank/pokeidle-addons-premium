@@ -1237,6 +1237,7 @@
         moveIndexPromise: null,
         moveIndexGeneratedAt: '',
         combatRevision: 0,
+        modelRevision: 0, // forecast inputs only, not every combat event
         battleDiagnostics: {
             playerEvents: 0, namedEvents: 0, unnamedEvents: 0,
             lastUnnamedKeys: [], lastSeenAt: 0,
@@ -2556,6 +2557,8 @@
             level,
             maxHp
         });
+        // HP evidence is an actual model input. Ordinary attack events are not.
+        state.modelRevision++;
 
         if (
             record.hpSamples.length >
@@ -6554,6 +6557,7 @@
             state.moveIndexGeneratedAt = String(data.gerado || '');
             state.moveIndexStatus = 'ready';
             state.combatRevision++;
+            state.modelRevision++;
             state.combatProfileCache = null;
             queueRender();
         }).catch(error => {
@@ -7135,6 +7139,7 @@
                             'ready';
 
                         state.combatRevision++;
+                        state.modelRevision++;
                         state.combatProfileCache =
                             null;
 
@@ -8670,12 +8675,18 @@
     function huntXpEstimate(
         hunt
     ) {
+        // Most kill/attack packets change measured rates but not the stats,
+        // moves or target HP underlying every other hunt's prediction.
+        // Observations always bypass this cache at the top of this function.
         const cacheKey =
             [
                 leadSignature() || '',
-                state.combatRevision,
+                state.modelRevision,
                 state.combatCatalogStatus,
                 state.moveIndexStatus,
+                state.typeStatus,
+                state.huntAmplification,
+                state.playerLevel,
                 farmingSnapshotScope()
             ].join('|');
         if (state.estimateCacheKey !== cacheKey) {
