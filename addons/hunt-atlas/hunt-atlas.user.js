@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/addons/hunt-atlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.19
+// @version      1.9.20
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.19');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.20');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -571,6 +571,8 @@
             'xp.sourceSaved': 'saved server kill measurement',
             'xp.ratingMeasured': 'measured',
             'xp.ratingModel': 'model',
+            'xp.oneHitModel': '1-hit sim',
+            'xp.oneHitExplanation': 'Every sampled opponent fell in one hit. At this speed the model cannot distinguish hunts by enemy HP, defense or typing; travel, spawn timing and sustain remain uncertain.',
             'xp.sourceModel': 'personalized combat projection',
             'xp.sourceBaseline': 'unboosted static baseline',
             'xp.sourceImmunity': 'known immunity',
@@ -930,6 +932,8 @@
             'xp.sourceSaved': 'medição do servidor salva',
             'xp.ratingMeasured': 'medido',
             'xp.ratingModel': 'modelo',
+            'xp.oneHitModel': 'sim. 1 golpe',
+            'xp.oneHitExplanation': 'Cada adversário simulado caiu em um golpe. Nessa velocidade, o modelo não diferencia hunts por HP, defesa ou tipo; deslocamento, respawn e sustentação ainda são incertos.',
             'xp.sourceModel': 'projeção personalizada de combate',
             'xp.sourceBaseline': 'estimativa-base sem bônus',
             'xp.sourceImmunity': 'imunidade conhecida',
@@ -1794,6 +1798,16 @@
         if(n>=.000001)return sign+n.toFixed(7).replace(/0+$/,'').replace(/\.$/,'');
         return sign+n.toExponential(2);
     }
+    // XP/h needs enough precision to expose materially different level-150+
+    // hunts; the generic compact rate rounds 10m+ values to whole millions.
+    function formatXpRate(value) {
+        if (typeof value !== 'number' || !Number.isFinite(value))
+            return '—';
+        const magnitude = Math.abs(value);
+        if (magnitude >= 1e6 && magnitude < 1e9)
+            return (value / 1e6).toFixed(2) + 'm';
+        return formatRate(value);
+    }
     // A complete value+unit: do not append "/h" to event rates.
     // "~1 / N d" means an average interval, never a drop guarantee.
     function formatEventRate(value) {
@@ -1837,7 +1851,7 @@
         if(typeof value!=='number'||!Number.isFinite(value))return '—';
         if(['rare','shinyCatch','capture'].includes(objective))
             return formatEventRate(value);
-        return formatRate(value)+'/h';
+        return (objective === 'xp' ? formatXpRate(value) : formatRate(value))+'/h';
     }
     // HA RARE RATE UI PURE END.
 
@@ -8474,7 +8488,8 @@
                 row.maxDamage === 0)};
     }
 
-    function rawPredictedKillMs(hunt, coverage = huntCombatCoverage(hunt)) {
+    function rawPredictedKillMs(hunt, coverage = huntCombatCoverage(hunt),
+                                simulation = null) {
         if (coverage.blocked) return Infinity;
         if (!coverage.complete) return null;
         const lead = leadPokemon(), player = lead?.stats || {};
@@ -8489,7 +8504,7 @@
         const mobs = Math.max(1, Math.min(16, coverage.total));
         const moveMs = UPSTREAM_FALLBACK_MOVE_MS + UPSTREAM_WAVE_MS / mobs;
         const skillReady = moves.map(() => 0);
-        let basicReady = 0, elapsed = 0;
+        let basicReady = 0, elapsed = 0, oneHitKills = 0;
         const steps = mobs * 4; // 4 shared-cooldown waves; cached per loadout/catalog
         let index = 0, upper = coverage.entries[0]?.weight || 0;
         for (let i = 0; i < steps; i++) {
@@ -8499,7 +8514,7 @@
             const target = coverage.entries[index];
             let hpLeft = target.hp;
             const start = elapsed;
-            let attacks = 0;
+            let attacks = 0, landedHits = 0;
             while (hpLeft > 0 && attacks++ < 350) {
                 let best = -1, damage = -1, next = Infinity;
                 for (let j = 0; j < target.timedMoves.length; j++) {
@@ -8511,10 +8526,12 @@
                     }
                 }
                 if (best >= 0 && damage > 0) {
+                    landedHits++;
                     hpLeft -= damage;
                     skillReady[best] = elapsed + (target.timedMoves.find(move => move.index === best)?.cooldown || 10000);
                     elapsed += globalMs;
                 } else if (target.basicDamage > 0 && basicReady <= elapsed) {
+                    landedHits++;
                     hpLeft -= target.basicDamage;
                     basicReady = elapsed + basicCooldown;
                     elapsed += globalMs;
@@ -8529,6 +8546,7 @@
             // Very long fights need unavailable-server sustain/cooldown details.
             // Report unknown instead of a misleading zero or huge computation.
             if (hpLeft > 0) return null;
+            if (landedHits === 1) oneHitKills++;
             const fightMs = elapsed - start;
             // Sustainability is not fully observable from source data. The
             // enemy's basic STAB/type hit gives a *limited* recovery allowance,
@@ -8548,6 +8566,11 @@
                     fightMs * Math.max(0, pressure - .2) * .5);
             }
             elapsed += moveMs;
+        }
+        if (simulation) {
+            simulation.sampledKills = steps;
+            simulation.oneHitKills = oneHitKills;
+            simulation.allOneHit = oneHitKills === steps;
         }
         return elapsed / steps;
     }
@@ -8688,7 +8711,8 @@
             };
 
         const coverage = huntCombatCoverage(hunt);
-        const rawKillMs = rawPredictedKillMs(hunt, coverage);
+        const simulation = {};
+        const rawKillMs = rawPredictedKillMs(hunt, coverage, simulation);
         const coverageFields = {
             coverage: coverage.percentage,
             coveredPoints: coverage.covered,
@@ -8782,6 +8806,8 @@
             bonusCaveat: 'uses game-reported XP bonus fields and upstream timed rules; '+
                 'catch-up threshold transitions and missing boost catalog remain unverified',
             source: knownMoves ? 'stat/move model' : 'stat/basic-attack model',
+            oneHitSimulation: simulation.allOneHit === true,
+            simulatedKills: simulation.sampledKills || 0,
             confidence: moveConfidence,
             samples: 0, // No battle sample from another hunt affects this forecast.
             fallbackReason: 'wiki-scheduling-and-wild-stat-approximation',
@@ -10309,6 +10335,12 @@
             }
             .mha-xp-origin.is-measured { color: #a9dac2; }
             .mha-xp-origin.is-model { color: #b3aab3; }
+            .mha-xp-one-hit {
+                margin-left: 4px;
+                color: #a1a0af;
+                font-size: 8px;
+                white-space: nowrap;
+            }
 
             .mha-meta {
                 display: flex;
@@ -12191,7 +12223,7 @@
                         : 'hunt.modeledXp',
                     {
                         value:
-                            formatRate(
+                            formatXpRate(
                                 xpInfo.value
                             )
                     }
@@ -12199,6 +12231,8 @@
                 : tr(
                     'xp.baseline'
                 );
+        const xpModelLabel = xpInfo?.oneHitSimulation
+            ? ' · ' + tr('xp.oneHitModel') : '';
 
         const meta=speciesCombatMeta(species.id);
         const rarity=captureRarityFromCatalog(meta);
@@ -12247,7 +12281,7 @@
             String(hunt.area||'').toUpperCase(),
             tr('hunt.level',{level:Number(hunt.nivel)||0}),
             tr(unlocked?'hunt.unlocked':'hunt.locked'),
-            xpLabel,
+            xpLabel + xpModelLabel,
             catchCard
         ].join(' · ');
         const moreSub=[
@@ -12369,11 +12403,12 @@
                     ? tr('xp.sourceBaseline')
                     : tr('xp.sourceModel');
         const rangeLabel = estimate => estimate?.range
-            ? tr('xp.ranged', {low: formatRate(estimate.range.low),
-                high: formatRate(estimate.range.high)}) : '';
+            ? tr('xp.ranged', {low: formatXpRate(estimate.range.low),
+                high: formatXpRate(estimate.range.high)}) : '';
         const displayEvidence = estimate => [
             tr('xp.sourceLabel', {source: xpSourceLabel(estimate)}),
             rangeLabel(estimate),
+            estimate?.oneHitSimulation ? tr('xp.oneHitExplanation') : null,
             estimate?.observed ? null :
                 estimate?.bonusSource==='native-game-reported-partial-xp-bonuses'
                     ? tr('xp.native.modeled') : tr('xp.unboosted'),
@@ -12675,7 +12710,11 @@
                                         (row.xp.observed ? 'is-measured' : 'is-model') +
                                         '" title="' + escapeHtml(xpSourceLabel(row.xp)) + '">' +
                                         escapeHtml(tr(xpRatingOriginKey(row.xp, objective))) +
-                                        '</span>' : ''}${row.target?' · '+escapeHtml(row.target):''}${objective==='xp'&&row.xp.incomplete?' · '+escapeHtml(tr('xp.incompleteShort',{percentage:row.xp.coverage})):''}</span>
+                                        '</span>' : ''}${objective === 'xp' && row.xp.oneHitSimulation
+                                    ? '<span class="mha-xp-one-hit" title="' +
+                                        escapeHtml(tr('xp.oneHitExplanation')) + '">' +
+                                        escapeHtml(tr('xp.oneHitModel')) + '</span>'
+                                    : ''}${row.target?' · '+escapeHtml(row.target):''}${objective==='xp'&&row.xp.incomplete?' · '+escapeHtml(tr('xp.incompleteShort',{percentage:row.xp.coverage})):''}</span>
                                 <button
                                     type="button"
                                     class="mha-go ${here ? 'current' : ''}"
@@ -13179,7 +13218,7 @@
                                     : 'xp.currentModeled',
                                 {
                                     value:
-                                        formatRate(
+                                        formatXpRate(
                                             currentXp.value
                                         )
                                 }
