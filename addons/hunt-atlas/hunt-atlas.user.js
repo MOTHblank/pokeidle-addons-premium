@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/addons/hunt-atlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.23
+// @version      1.9.24
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.23');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.24');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -2550,7 +2550,7 @@
         const nextMedian = recent.length >= 2 ? median(recent) : null;
         // Recalculate every hunt only when enough same-target HP evidence
         // first becomes available or its median materially changes.
-        if (nextMedian !== null && (previousMedian === null ||
+        if (nextMedian !== null && (previousMedian === null || previous.length < 6 && recent.length >= 6 ||
             Math.abs(nextMedian - previousMedian) >
                 Math.max(1, previousMedian * .02))) {
             state.modelRevision++;
@@ -8318,13 +8318,21 @@
 
     // Only observed spawn maxHP for this exact hunt/species/level is eligible.
     // Never transfer observed performance or another species' HP to this hunt.
-    function sampledHuntHp(hunt, speciesId, level) {
+    // Only this lead/hunt/species/level's confirmed runtime maxHP samples.
+    // A real wave can have almost 2x HP spread for the SAME spawn species;
+    // its median alone must not turn every encounter into a one-hit kill.
+    function sampledHuntHpValues(hunt, speciesId, level) {
         const record = hunt?.slug ? performanceRecord(hunt.slug, false) : null;
-        const matching = (record?.hpSamples || []).filter(sample =>
+        return (record?.hpSamples || []).filter(sample =>
             Number(sample?.speciesId) === Number(speciesId) &&
             Number(sample?.level) === Number(level) &&
             Number.isFinite(Number(sample?.maxHp)) &&
-            Number(sample.maxHp) > 0).slice(-16).map(row => Number(row.maxHp));
+            Number(sample.maxHp) > 0).slice(-16)
+            .map(row => Number(row.maxHp));
+    }
+
+    function sampledHuntHp(hunt, speciesId, level) {
+        const matching = sampledHuntHpValues(hunt, speciesId, level);
         return matching.length >= 2 ? median(matching) : null;
     }
 
@@ -8416,6 +8424,7 @@
                                          hunt = null) {
         const meta = speciesCombatMeta(speciesId);
         const hp = targetHpEstimate(speciesId, level, hunt);
+        const observedHp = sampledHuntHpValues(hunt, speciesId, level);
         const enemyTypes = (state.typesBySpecies.get(Number(speciesId)) ||
             [meta?.type1, meta?.type2]).filter(Boolean)
             .map(type => String(type).toUpperCase());
@@ -8458,7 +8467,8 @@
         const timedMoves = moveModels.filter(move => move.damage !== null);
         const allDamage = [basicDamage, ...timedMoves.map(move => move.damage)]
             .filter(value => value !== null);
-        return {hp, basicDamage, timedMoves, maxDamage:
+        return {hp, hpSamples: observedHp.length >= 6 ? observedHp : null,
+            basicDamage, timedMoves, maxDamage:
             !missingMoveDamage && basicDamage !== null && allDamage.length
                 ? Math.max(...allDamage) : null, enemyTypes, meta};
     }
@@ -8515,6 +8525,25 @@
         return rawKillMs + Math.max(0, upstreamTypical - idealOneHit);
     }
 
+    // Cycle through actual HPs rather than applying a single median to an
+    // entire wave. Fewer than six matched spawns are too noisy to use.
+    // Estimated HP remains a fallback for hunts with no local observations.
+    function xpTargetHpForEncounter(target, visit) {
+        const samples = target?.hpSamples;
+        return Array.isArray(samples) && samples.length >= 6
+            ? samples[visit % samples.length] : target.hp;
+    }
+
+    // The published combat damage formula rolls uniformly within 0.85..1.
+    // Its 0.925 mean is already in battleDamage; these four deterministic
+    // samples span the interval without random forecasts or extra CPU work.
+    // This preserves threshold effects: an expected one-hit does not mean
+    // EVERY hit will be strong enough to kill.
+    function xpDamageRollFactor(encounter, hit) {
+        const rolls = [0.85, 0.90, 0.95, 1.00];
+        return rolls[(encounter + 3 * hit) % rolls.length] / 0.925;
+    }
+
     function rawPredictedKillMs(hunt, coverage = huntCombatCoverage(hunt),
                                 simulation = null) {
         if (coverage.blocked) return Infinity;
@@ -8533,6 +8562,8 @@
         const skillReady = moves.map(() => 0);
         let basicReady = 0, elapsed = 0, oneHitKills = 0;
         let totalHits = 0, basicHits = 0, skillHits = 0, combatMs = 0;
+        let sampledHpFights = 0;
+        const targetVisits = new Map();
         // Simulate repeated waves and ignore the first wave's artificially
         // ready-at-t=0 burst. Use a coprime stride to interleave species
         // according to spawn weights instead of fighting each species in a
@@ -8548,7 +8579,9 @@
             while (point >= upper && index < coverage.entries.length - 1)
                 upper += coverage.entries[++index].weight;
             const target = coverage.entries[index];
-            let hpLeft = target.hp;
+            const visits = targetVisits.get(index) || 0;
+            targetVisits.set(index, visits + 1);
+            let hpLeft = xpTargetHpForEncounter(target, visits);
             const start = elapsed;
             let attacks = 0, landedHits = 0, landedBasics = 0, landedSkills = 0;
             while (hpLeft > 0 && attacks++ < 350) {
@@ -8564,13 +8597,14 @@
                 if (best >= 0 && damage > 0) {
                     landedHits++;
                     landedSkills++;
-                    hpLeft -= damage;
+                    hpLeft -= damage * xpDamageRollFactor(i, landedHits - 1);
                     skillReady[best] = elapsed + (target.timedMoves.find(move => move.index === best)?.cooldown || 10000);
                     elapsed += globalMs;
                 } else if (target.basicDamage > 0 && basicReady <= elapsed) {
                     landedHits++;
                     landedBasics++;
-                    hpLeft -= target.basicDamage;
+                    hpLeft -= target.basicDamage *
+                        xpDamageRollFactor(i, landedHits - 1);
                     basicReady = elapsed + basicCooldown;
                     elapsed += globalMs;
                 } else {
@@ -8587,6 +8621,7 @@
             const fightMs = elapsed - start;
             if (i >= warmup) {
                 if (landedHits === 1) oneHitKills++;
+                if (target.hpSamples?.length >= 6) sampledHpFights++;
                 totalHits += landedHits;
                 basicHits += landedBasics;
                 skillHits += landedSkills;
@@ -8614,6 +8649,7 @@
         const sampledKills = steps - warmup;
         if (simulation) {
             simulation.sampledKills = sampledKills;
+            simulation.sampledHpFights = sampledHpFights;
             simulation.oneHitKills = oneHitKills;
             simulation.allOneHit = oneHitKills === sampledKills;
             simulation.hitsPerKill = totalHits / sampledKills;
@@ -8861,7 +8897,7 @@
                         state.playerLevel).trainer,
                 idealKillMs: simulation.idealKillMs ?? null,
                 pacingAllowanceMs: simulation.pacingAllowanceMs ?? null,
-                modelVersion: '1.9.23',
+                modelVersion: '1.9.24',
                 leadId: lead?.id ?? null
             };
         }
@@ -8914,6 +8950,7 @@
             oneHitSimulation: simulation.allOneHit === true,
             simulatedKills: simulation.sampledKills || 0,
             modelHitsPerKill: simulation.hitsPerKill ?? null,
+            modelSampledHpFights: simulation.sampledHpFights || 0,
             modelBasicHitShare: simulation.basicHitShare ?? null,
             modelCombatMsPerKill: simulation.combatMsPerKill ?? null,
             modelIdealKillMs: simulation.idealKillMs ?? null,
@@ -14131,7 +14168,7 @@
             const here = currentHunt();
             const xp = here ? huntXpEstimate(here) : null;
             return {
-                version: '1.9.23',
+                version: '1.9.24',
                 indexes: {
                     locations: state.locationIndexStatus,
                     markerCount: state.locationsBySlug.size,
@@ -14299,7 +14336,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.23 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.24 experimental loaded'
         );
     }
 
