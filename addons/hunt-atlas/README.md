@@ -2,7 +2,7 @@
 
 This is the **premium experiment**, separate from the Hunt Atlas shipped through `pokeidle-addons`. Changes are not synchronized automatically. It replaces PokéIdle's **Map** view with a searchable hunt/Pokémon list—not a graphical map.
 
-**Parity check (v1.9.22):** The experimental script and the public `addons/hunt-atlas.user.js` currently have identical functional code. Only repository links and update metadata differ. The public script uses authenticated userscript-manager auto-update URLs; this private experimental copy remains **manual-update only**. Future experiments should start from the latest public implementation and promote changes explicitly after validation, without overwriting public-only controller features.
+**Parity check (v1.9.23):** The experimental script and the public `addons/hunt-atlas.user.js` currently have identical functional code. Only repository links and update metadata differ. This version also prevents strongest-owned Pokémon substitution when the active fighter is briefly unknown, applies a conservative upstream Hunt Analyser pacing heuristic to unmeasured forecasts, and exposes same-hunt model-vs-measurement diagnostics for large XP/hour misses. The public script uses authenticated userscript-manager auto-update URLs; this private experimental copy remains **manual-update only**. Future experiments should start from the latest public implementation and promote changes explicitly after validation, without overwriting public-only controller features.
 
 ![Hunt Atlas preview](assets/map-preview.png)
 

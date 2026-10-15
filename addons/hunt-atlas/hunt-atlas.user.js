@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/addons/hunt-atlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.22
+// @version      1.9.23
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.22');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.23');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -573,6 +573,7 @@
             'xp.ratingModel': 'model',
             'xp.oneHitModel': '1-hit sim',
             'xp.combatEvidence': '{hits} hits/kill · {basics}% basic attacks',
+            'xp.forecastAudit': 'Earlier model {modeled}/h vs measured {measured}/h ({factor}×); kills/h {estimatedKills} vs {actualKills}',
             'xp.hitsShort': '{hits} hits',
             'xp.oneHitExplanation': 'Every sampled opponent fell in one hit. At this speed the model cannot distinguish hunts by enemy HP, defense or typing; travel, spawn timing and sustain remain uncertain.',
             'xp.sourceModel': 'personalized combat projection',
@@ -936,6 +937,7 @@
             'xp.ratingModel': 'modelo',
             'xp.oneHitModel': 'sim. 1 golpe',
             'xp.combatEvidence': '{hits} golpes/abate · {basics}% Investida',
+            'xp.forecastAudit': 'Modelo anterior {modeled}/h vs medido {measured}/h ({factor}×); abates/h {estimatedKills} vs {actualKills}',
             'xp.hitsShort': '{hits} golpes',
             'xp.oneHitExplanation': 'Cada adversário simulado caiu em um golpe. Nessa velocidade, o modelo não diferencia hunts por HP, defesa ou tipo; deslocamento, respawn e sustentação ainda são incertos.',
             'xp.sourceModel': 'projeção personalizada de combate',
@@ -1863,32 +1865,20 @@
     // HA RARE RATE UI PURE END.
 
     function leadPokemon() {
-        const active =
-            state.pokemons.get(
-                Number(
-                    state.activePokemonId
-                )
-            );
-
-        const available =
-            active ||
-            state.strongestPokemon ||
-            null;
-
-        /*
-         * The game can briefly publish activeId=null between fights or while
-         * changing targets. Keep the last valid lead for recommendations
-         * instead of blanking the XP panel during that transient state.
-         */
-        if (available) {
-            state.lastLeadPokemon = available;
+        // Only the game's activeId establishes which Pokémon is fighting.
+        // The strongest *owned* Pokémon is not necessarily the hunting lead,
+        // and substituting it can inflate modeled damage and XP/hour by 3x+.
+        // When the game briefly publishes activeId=null between attacks,
+        // retain the last CONFIRMED fielded Pokémon for the same hunt.
+        const id = state.activePokemonId;
+        if (id !== null && id !== undefined) {
+            const active = state.pokemons.get(Number(id)) || null;
+            if (active) state.lastLeadPokemon = active;
+            // If activeId is known but its stats have not arrived yet, do
+            // not silently switch to a different Pokémon.
+            return active;
         }
-
-        return (
-            available ||
-            state.lastLeadPokemon ||
-            null
-        );
+        return state.lastLeadPokemon || null;
     }
 
     function leadLoadoutSignature(
@@ -4886,6 +4876,9 @@
             if (state.currentHuntSlug !== gameState.huntSlug) {
                 state.rateGeneration++;
                 state.farmingLedger = makeFarmingLedger();
+                // A previous hunt's lead is not proof of the next hunt's
+                // fielded Pokémon until an activeId confirms it.
+                state.lastLeadPokemon = null;
             }
             state.currentHuntSlug =
                 typeof gameState.huntSlug ===
@@ -8506,6 +8499,22 @@
                 row.maxDamage === 0)};
     }
 
+    // The deterministic attack loop predicts an optimistic, continuously
+    // available chain of targets. Upstream hunt-analyser.mjs uses 900 ms global
+    // attack + 600 ms travel + 2000 ms average action cooldown + 2600 ms/wave.
+    // Preserve all target-specific extra combat time, but restore the missing
+    // average action/pacing delay from the upstream hunt-level heuristic.
+    // This is a conservative *model*, not a calibrated server timer.
+    function xpPacedKillMs(rawKillMs, mobs, speedIv) {
+        if (!(rawKillMs > 0) || !Number.isFinite(rawKillMs)) return rawKillMs;
+        const wave = UPSTREAM_WAVE_MS / Math.max(1, Math.min(16, mobs));
+        const idealOneHit = xpGlobalAttackFloor(speedIv) +
+            UPSTREAM_FALLBACK_MOVE_MS + wave;
+        const upstreamTypical = UPSTREAM_GLOBAL_ATTACK_MS +
+            UPSTREAM_FALLBACK_MOVE_MS + 2000 + wave;
+        return rawKillMs + Math.max(0, upstreamTypical - idealOneHit);
+    }
+
     function rawPredictedKillMs(hunt, coverage = huntCombatCoverage(hunt),
                                 simulation = null) {
         if (coverage.blocked) return Infinity;
@@ -8612,11 +8621,45 @@
             simulation.skillHitShare = totalHits ? skillHits / totalHits : null;
             simulation.combatMsPerKill = combatMs / sampledKills;
         }
-        return (elapsed - measuredStart) / sampledKills;
+        const idealKillMs = (elapsed - measuredStart) / sampledKills;
+        const pacedKillMs = xpPacedKillMs(idealKillMs, mobs, iv);
+        if (simulation) {
+            simulation.idealKillMs = idealKillMs;
+            simulation.pacingAllowanceMs = pacedKillMs - idealKillMs;
+        }
+        return pacedKillMs;
     }
 
     // Residuals compare one hunt with its own frozen pre-measurement model.
     // They never change any other species' attack power or predicted rates.
+    // Explain large forecast misses without transferring a kill-rate
+    // multiplier from one hunt to unrelated enemies or future lead loadouts.
+    function xpForecastAudit(frozen, observed) {
+        const modeledMs = Number(frozen?.killMs);
+        const actualMs = Number(observed?.killMs);
+        const measuredXpH = Number(observed?.trainerXpH);
+        if (!(modeledMs > 0) || !Number.isFinite(modeledMs) ||
+            !(actualMs > 0) || !Number.isFinite(actualMs) ||
+            !(measuredXpH > 0) || !Number.isFinite(measuredXpH)) return null;
+        const modeledKillsH = 3600000 / modeledMs;
+        const observedKillsH = 3600000 / actualMs;
+        const estimatedPerKill = Number(frozen?.trainerXpPerKill);
+        const modeledXpH = estimatedPerKill > 0 &&
+            Number.isFinite(estimatedPerKill)
+            ? estimatedPerKill * modeledKillsH : null;
+        return {
+            version: frozen.modelVersion || 'prior-model',
+            modeledKillMs: modeledMs, measuredKillMs: actualMs,
+            modeledKillsH, measuredKillsH: observedKillsH,
+            killRateOverestimate: modeledKillsH / observedKillsH,
+            modeledTrainerXpH: modeledXpH, measuredTrainerXpH: measuredXpH,
+            xpRateOverestimate: modeledXpH === null ? null :
+                modeledXpH / measuredXpH,
+            modeledXpPerKill: estimatedPerKill > 0 ? estimatedPerKill : null,
+            measuredXpPerKill: measuredXpH / observedKillsH
+        };
+    }
+
     function recordForecastResidual(hunt, record, observed) {
         const prediction = record?.predictedBeforeMeasurement;
         if (!hunt || !prediction || !observed || observed.samples < 6 ||
@@ -8697,6 +8740,10 @@
         if (chosenObserved && chosenObserved.trainerXpH !== null) {
             const residual = savedOnly ? null :
                 recordForecastResidual(hunt, record, chosenObserved);
+            const frozen = record?.predictedBeforeMeasurement;
+            const audit = frozen?.hunt === hunt?.slug &&
+                frozen.scope === farmingSnapshotScope()
+                ? xpForecastAudit(frozen, chosenObserved) : null;
             const result = {
                 value:
                     chosenObserved.trainerXpH,
@@ -8722,6 +8769,7 @@
                 denominator: chosenObserved.denominator,
                 bonusSource: 'observed-server/event',
                 residualErrorPct: residual?.errorPct ?? null,
+                forecastAudit: audit,
                 fallbackReason: null,
                 range: xpPredictionBand({value: chosenObserved.trainerXpH,
                     observed: true, samples: chosenObserved.samples,
@@ -8807,7 +8855,14 @@
                 (count, row) => count + row.kills, 0) >= 6)) {
             record.predictedBeforeMeasurement = {
                 hunt: hunt.slug, scope: farmingSnapshotScope(),
-                killMs: rawKillMs, source: 'stat/move model'
+                killMs: rawKillMs, source: 'stat/move model',
+                trainerXpPerKill: xpDoNivel(hunt?.nivel || 1) *
+                    nativeXpBonusReading(state.nativeXpContext,
+                        state.playerLevel).trainer,
+                idealKillMs: simulation.idealKillMs ?? null,
+                pacingAllowanceMs: simulation.pacingAllowanceMs ?? null,
+                modelVersion: '1.9.23',
+                leadId: lead?.id ?? null
             };
         }
 
@@ -8861,6 +8916,8 @@
             modelHitsPerKill: simulation.hitsPerKill ?? null,
             modelBasicHitShare: simulation.basicHitShare ?? null,
             modelCombatMsPerKill: simulation.combatMsPerKill ?? null,
+            modelIdealKillMs: simulation.idealKillMs ?? null,
+            modelPacingAllowanceMs: simulation.pacingAllowanceMs ?? null,
             confidence: moveConfidence,
             samples: 0, // No battle sample from another hunt affects this forecast.
             fallbackReason: 'wiki-scheduling-and-wild-stat-approximation',
@@ -12461,6 +12518,15 @@
         const displayEvidence = estimate => [
             tr('xp.sourceLabel', {source: xpSourceLabel(estimate)}),
             rangeLabel(estimate),
+            estimate?.forecastAudit?.xpRateOverestimate !== null &&
+                estimate?.forecastAudit?.xpRateOverestimate !== undefined
+                ? tr('xp.forecastAudit', {
+                    modeled: formatXpRate(estimate.forecastAudit.modeledTrainerXpH),
+                    measured: formatXpRate(estimate.forecastAudit.measuredTrainerXpH),
+                    factor: estimate.forecastAudit.xpRateOverestimate.toFixed(2),
+                    estimatedKills: Math.round(estimate.forecastAudit.modeledKillsH),
+                    actualKills: Math.round(estimate.forecastAudit.measuredKillsH)
+                }) : null,
             estimate?.modelHitsPerKill !== null &&
                 estimate?.modelHitsPerKill !== undefined
                 ? tr('xp.combatEvidence', {
@@ -13904,6 +13970,8 @@
                     modelHitsPerKill: xp?.modelHitsPerKill ?? null,
                     modelBasicHitShare: xp?.modelBasicHitShare ?? null,
                     modelCombatMsPerKill: xp?.modelCombatMsPerKill ?? null,
+                    modelIdealKillMs: xp?.modelIdealKillMs ?? null,
+                    modelPacingAllowanceMs: xp?.modelPacingAllowanceMs ?? null,
                     source: String(
                         xp?.source ||
                         'learning'
@@ -14063,7 +14131,7 @@
             const here = currentHunt();
             const xp = here ? huntXpEstimate(here) : null;
             return {
-                version: '1.9.22',
+                version: '1.9.23',
                 indexes: {
                     locations: state.locationIndexStatus,
                     markerCount: state.locationsBySlug.size,
@@ -14171,6 +14239,15 @@
                     residualErrorPct: xp?.residualErrorPct ?? null,
                     speedIvRule: 'wiki-derived; runtime scheduling not confirmed',
                     source: xp?.source || 'none',
+                    leadId: lead?.id ?? null,
+                    leadSpeciesId: lead?.speciesId ?? null,
+                    leadSource: lead ? 'confirmed-active-or-last-fielded' :
+                        'unknown-no-confirmed-active',
+                    idealKillMs: xp?.modelIdealKillMs ?? null,
+                    pacingAllowanceMs: xp?.modelPacingAllowanceMs ?? null,
+                    measuredKillMs: xp?.observed ? xp.killMs : null,
+                    measuredTrainerXpH: xp?.observed ? xp.value : null,
+                    forecastAudit: xp?.forecastAudit ?? null,
                     moveConfidence: moveModelConfidence(profile),
                     trainerXpH: Math.round(xp?.value || 0),
                     killsH: Math.round(xp?.killsH || 0),
@@ -14222,7 +14299,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.22 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.23 experimental loaded'
         );
     }
 
