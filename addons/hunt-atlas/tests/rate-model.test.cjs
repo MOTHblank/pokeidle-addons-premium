@@ -7,7 +7,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'hunt-atlas.user.js'), 'utf8');
-const names = ['xpRatingOriginKey', 'xpGlobalAttackFloor', 'xpMoveCooldown', 'xpCooldownFromPower',
+const names = ['formatRate', 'formatXpRate', 'xpRatingOriginKey', 'xpGlobalAttackFloor', 'xpMoveCooldown', 'xpCooldownFromPower',
   'targetHpEstimate', 'battleLeadTypes', 'battleMovesForLead', 'battleStat',
   'estimatedWildDefense', 'battleDamage', 'deterministicSpeciesCombat',
   'huntCombatCoverage', 'rawPredictedKillMs', 'savedObservedRates'];
@@ -108,4 +108,37 @@ test('XP list source tag is localized by caller and never appears for other metr
   assert.equal(ctx.xpRatingOriginKey({observed:false},'xp'),'xp.ratingModel');
   assert.equal(ctx.xpRatingOriginKey({observed:false},'coins'),null);
   assert.equal(ctx.xpRatingOriginKey(null,'xp'),null);
+});
+
+test('XP display preserves meaningful differences above ten million/hour', () => {
+  const ctx = makeContext();
+  assert.equal(ctx.formatRate(46_123_456), '46m'); // legacy rounding
+  assert.equal(ctx.formatXpRate(46_123_456), '46.12m');
+  assert.equal(ctx.formatXpRate(46_345_678), '46.35m');
+  assert.equal(ctx.formatXpRate(null), '—');
+});
+
+test('one-hit saturated matchups report the limitation instead of fictitious differences', () => {
+  const ctx = makeContext();
+  // Both sampled enemies fall in exactly one hit at this damage ceiling.
+  ctx.leadPokemon().stats.atk = 1e8;
+  ctx.leadPokemon().stats.spAtk = 1e8;
+  const xatuSim = {}, charizardSim = {};
+  const xatuRate = ctx.rawPredictedKillMs(xatu, ctx.huntCombatCoverage(xatu), xatuSim);
+  const charizardRate = ctx.rawPredictedKillMs(
+    charizard, ctx.huntCombatCoverage(charizard), charizardSim);
+  assert.ok(Number.isFinite(xatuRate) && xatuRate > 0);
+  assert.equal(xatuSim.allOneHit, true);
+  assert.equal(charizardSim.allOneHit, true);
+  assert.equal(xatuSim.oneHitKills, xatuSim.sampledKills);
+  assert.equal(charizardSim.oneHitKills, charizardSim.sampledKills);
+  assert.equal(xatuRate, charizardRate);
+});
+
+test('normal differing combat matchups are not misclassified as all one-hit', () => {
+  const ctx = makeContext();
+  const diagnostics = {};
+  ctx.rawPredictedKillMs(xatu, ctx.huntCombatCoverage(xatu), diagnostics);
+  assert.ok(diagnostics.sampledKills > 0);
+  assert.equal(diagnostics.allOneHit, false);
 });
