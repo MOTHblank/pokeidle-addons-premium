@@ -1826,6 +1826,13 @@
             .replace(/\.$/,'')+'%';
         return percent.toExponential(2)+'%';
     }
+    // The XP source indicator belongs to XP rankings, never to other metrics.
+    // Saved observations are still measurements, not speculative models.
+    function xpRatingOriginKey(estimate, objective) {
+        if (objective !== 'xp' || !estimate) return null;
+        return estimate.observed ? 'xp.ratingMeasured' : 'xp.ratingModel';
+    }
+
     function formatObjectiveValue(value,objective) {
         if(typeof value!=='number'||!Number.isFinite(value))return '—';
         if(['rare','shinyCatch','capture'].includes(objective))
@@ -12663,12 +12670,11 @@
                                             value:formatObjectiveValue(row.score,objective)
                                         }
                                     )
-                                )}${objective === 'xp'
+                                )}${xpRatingOriginKey(row.xp, objective)
                                     ? '<span class="mha-xp-origin ' +
                                         (row.xp.observed ? 'is-measured' : 'is-model') +
                                         '" title="' + escapeHtml(xpSourceLabel(row.xp)) + '">' +
-                                        escapeHtml(tr(row.xp.observed
-                                            ? 'xp.ratingMeasured' : 'xp.ratingModel')) +
+                                        escapeHtml(tr(xpRatingOriginKey(row.xp, objective))) +
                                         '</span>' : ''}${row.target?' · '+escapeHtml(row.target):''}${objective==='xp'&&row.xp.incomplete?' · '+escapeHtml(tr('xp.incompleteShort',{percentage:row.xp.coverage})):''}</span>
                                 <button
                                     type="button"
