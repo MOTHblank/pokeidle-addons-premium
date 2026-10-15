@@ -211,3 +211,12 @@ test('ready skill cooldown changes the predicted fight difficulty', () => {
   assert.ok(longCooldown > shortCooldown,
     'more frequent effective skill use must improve sustained throughput');
 });
+
+test('missing Sp.Def or ability category is unknown, not a deceptive basic model', () => {
+  const ctx = makeContext();
+  ctx.state.speciesCombat.get(2).baseSpDef = null;
+  assert.equal(ctx.rawPredictedKillMs(xatu), null);
+  ctx.state.speciesCombat.get(2).baseSpDef = 150;
+  ctx.leadPokemon().attacks[0].category = 'UNSPECIFIED';
+  assert.equal(ctx.rawPredictedKillMs(xatu), null);
+});
