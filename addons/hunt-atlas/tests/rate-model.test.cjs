@@ -10,7 +10,8 @@ const source = fs.readFileSync(path.join(__dirname, '..', 'hunt-atlas.user.js'),
 const names = ['formatRate', 'formatXpRate', 'xpRatingOriginKey', 'xpGlobalAttackFloor', 'xpMoveCooldown', 'xpCooldownFromPower',
   'median', 'estimatedWildStat', 'sampledHuntHp', 'targetHpEstimate', 'battleLeadTypes', 'battleMovesForLead', 'battleStat',
   'estimatedWildDefense', 'battleDamage', 'deterministicSpeciesCombat',
-  'huntCombatCoverage', 'xpPacedKillMs', 'rawPredictedKillMs', 'savedObservedRates'];
+  'huntCombatCoverage', 'xpTargetHpForEncounter', 'xpDamageRollFactor',
+  'sampledHuntHpValues', 'xpPacedKillMs', 'rawPredictedKillMs', 'savedObservedRates'];
 function functionBody(name) {
   const start = source.indexOf('    function ' + name + '(');
   assert.ok(start >= 0, 'production function missing: ' + name);
@@ -339,7 +340,7 @@ test('a 46m predicted vs 13m measured miss is decomposed without clipping', () =
   vm.createContext(context);
   vm.runInContext(functionBody('xpForecastAudit'), context);
   const before = {
-    killMs: 1_800, trainerXpPerKill: 23_000, modelVersion:'1.9.23'
+    killMs: 1_800, trainerXpPerKill: 23_000, modelVersion:'1.9.24'
   };
   const actual = {killMs: 6_000, trainerXpH:13_000_000};
   const audit = context.xpForecastAudit(before,actual);
@@ -351,4 +352,62 @@ test('a 46m predicted vs 13m measured miss is decomposed without clipping', () =
   assert.equal(audit.modeledXpPerKill,23_000);
   assert.equal(audit.measuredXpPerKill,13e6 / 600);
   assert.equal(context.xpForecastAudit({killMs:0},actual),null);
+});
+
+
+test('30-second Furious Scyther trace retains the actual same-species HP distribution', () => {
+  // Battle trace: 15 level-150 spawns at 7.381s. Even one species has
+  // 6,480..12,060 HP (1.86x), and the session needed 23 attacks for 11 kills.
+  const observedHp = [6840,10440,10260,7020,7740,9000,6480,10620,
+    12060,9180,12060,8100,10080,10260,7740];
+  const ctx = makeContext({type:'ROCK'});
+  ctx.state.speciesCombat.set(2006, {
+    baseHp:1192,baseAtk:90,baseDef:100,baseSpDef:100,
+    type1:'BUG',type2:'FLYING'
+  });
+  ctx.leadPokemon().level = 327;
+  ctx.leadPokemon().stats.atk = 1054;
+  ctx.leadPokemon().stats.spAtk = 828;
+  ctx.leadPokemon().speedIV = 27;
+  ctx.leadPokemon().attacks = [{name:'Rock Slide',type:'ROCK',
+    category:'PHYSICAL',power:80,cooldownMs:30000}];
+  const hunt = {slug:'furious_scyther',nivel:150,
+    especies:[{pokeId:2006,pontos:15}]};
+  ctx.state.huntPerf.set('hp:furious_scyther', {
+    hpSamples: observedHp.map(maxHp=>({speciesId:2006,level:150,maxHp}))
+  });
+  const coverage = ctx.huntCombatCoverage(hunt);
+  assert.equal(coverage.percentage,100);
+  assert.equal(coverage.entries[0].hp,9180,'median still available as fallback');
+  assert.equal(coverage.entries[0].hpSamples.length,15);
+  const visits=observedHp.map((_,i)=>
+    ctx.xpTargetHpForEncounter(coverage.entries[0],i));
+  assert.deepEqual(visits,observedHp);
+  assert.equal(ctx.xpTargetHpForEncounter(coverage.entries[0],15),6840);
+  const diag={};
+  const ms=ctx.rawPredictedKillMs(hunt,coverage,diag);
+  assert.ok(Number.isFinite(ms) && ms>0);
+  assert.equal(diag.sampledHpFights,diag.sampledKills);
+  assert.equal(ms,ctx.rawPredictedKillMs(hunt,coverage,{}),
+    'forecast is deterministic, not Math.random-dependent');
+
+  const other={...hunt,slug:'another_hunt'};
+  assert.equal(ctx.huntCombatCoverage(other).entries[0].hpSamples,null,
+    'local HP evidence must not transfer across hunts');
+  assert.equal(ctx.sampledHuntHpValues(hunt,2006,151).length,0,
+    'local HP evidence must match the exact level');
+});
+
+test('damage rolls account for near-threshold extra attacks without inventing cooldowns', () => {
+  const ctx=makeContext();
+  const rolls=[0,1,2,3].map(i=>ctx.xpDamageRollFactor(i,0)*0.925);
+  for(let i=0;i<rolls.length;i++)
+    assert.ok(Math.abs(rolls[i]-(0.85+i*0.05))<1e-10);
+  const baseline=94;
+  assert.ok(baseline*ctx.xpDamageRollFactor(0,0)<100,
+    'low damage roll fails the nominal near-one-hit threshold');
+  assert.ok(baseline*ctx.xpDamageRollFactor(3,0)>100,
+    'high damage roll passes the same threshold');
+  assert.equal(ctx.xpTargetHpForEncounter({hp:100,hpSamples:[50,200]},0),100,
+    'fewer than six recorded spawns must not drive the forecast');
 });
