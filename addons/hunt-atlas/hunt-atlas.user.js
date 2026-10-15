@@ -573,6 +573,7 @@
             'xp.ratingModel': 'model',
             'xp.oneHitModel': '1-hit sim',
             'xp.combatEvidence': '{hits} hits/kill · {basics}% basic attacks',
+            'xp.hitsShort': '{hits} hits',
             'xp.oneHitExplanation': 'Every sampled opponent fell in one hit. At this speed the model cannot distinguish hunts by enemy HP, defense or typing; travel, spawn timing and sustain remain uncertain.',
             'xp.sourceModel': 'personalized combat projection',
             'xp.sourceBaseline': 'unboosted static baseline',
@@ -935,6 +936,7 @@
             'xp.ratingModel': 'modelo',
             'xp.oneHitModel': 'sim. 1 golpe',
             'xp.combatEvidence': '{hits} golpes/abate · {basics}% Investida',
+            'xp.hitsShort': '{hits} golpes',
             'xp.oneHitExplanation': 'Cada adversário simulado caiu em um golpe. Nessa velocidade, o modelo não diferencia hunts por HP, defesa ou tipo; deslocamento, respawn e sustentação ainda são incertos.',
             'xp.sourceModel': 'projeção personalizada de combate',
             'xp.sourceBaseline': 'estimativa-base sem bônus',
@@ -12766,14 +12768,16 @@
                                         escapeHtml(tr(xpRatingOriginKey(row.xp, objective))) +
                                         '</span>' : ''}${objective === 'xp' &&
                                         row.xp.modelHitsPerKill !== null &&
-                                        row.xp.modelHitsPerKill !== undefined
+                                        row.xp.modelHitsPerKill !== undefined &&
+                                        !row.xp.oneHitSimulation
                                     ? '<span class="mha-xp-one-hit" title="' +
                                         escapeHtml(tr('xp.combatEvidence', {
                                             hits: row.xp.modelHitsPerKill.toFixed(2),
                                             basics: Math.round((row.xp.modelBasicHitShare || 0) * 100)
                                         })) + '">' +
-                                        escapeHtml(row.xp.modelHitsPerKill.toFixed(1)) +
-                                        ' hits</span>' : ''}${objective === 'xp' && row.xp.oneHitSimulation
+                                        escapeHtml(tr('xp.hitsShort', {
+                                            hits: row.xp.modelHitsPerKill.toFixed(1)
+                                        })) + '</span>' : ''}${objective === 'xp' && row.xp.oneHitSimulation
                                     ? '<span class="mha-xp-one-hit" title="' +
                                         escapeHtml(tr('xp.oneHitExplanation')) + '">' +
                                         escapeHtml(tr('xp.oneHitModel')) + '</span>'
