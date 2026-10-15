@@ -8325,8 +8325,8 @@
     // The game's stat formula scales (base + 2*IV) by level/100, *not*
     // base alone. Wild IVs/quality are hidden; use neutral IV=16 rather
     // than implicitly assigning IV=0 and underestimating every defender.
-    const WILD_MODEL_IV = 16;
     function estimatedWildStat(base, level) {
+        const WILD_MODEL_IV = 16; // neutral IV assumption, not a known server IV
         const stat = Number(base), lvl = Number(level);
         return Number.isFinite(stat) && stat > 0 &&
             Number.isFinite(lvl) && lvl > 0
