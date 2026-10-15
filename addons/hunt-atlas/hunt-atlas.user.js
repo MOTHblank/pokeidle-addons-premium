@@ -2548,17 +2548,21 @@
                 [];
         }
 
-        record.hpSamples.push({
-            speciesId:
-                Number(
-                    target.speciesId
-                ) ||
-                null,
-            level,
-            maxHp
-        });
-        // HP evidence is an actual model input. Ordinary attack events are not.
-        state.modelRevision++;
+        const speciesId = Number(target.speciesId) || null;
+        const previous = record.hpSamples.filter(row =>
+            row.speciesId === speciesId && row.level === level)
+            .slice(-16).map(row => row.maxHp);
+        const previousMedian = previous.length >= 2 ? median(previous) : null;
+        record.hpSamples.push({speciesId, level, maxHp});
+        const recent = [...previous.slice(-15), maxHp];
+        const nextMedian = recent.length >= 2 ? median(recent) : null;
+        // Recalculate every hunt only when enough same-target HP evidence
+        // first becomes available or its median materially changes.
+        if (nextMedian !== null && (previousMedian === null ||
+            Math.abs(nextMedian - previousMedian) >
+                Math.max(1, previousMedian * .02))) {
+            state.modelRevision++;
+        }
 
         if (
             record.hpSamples.length >
