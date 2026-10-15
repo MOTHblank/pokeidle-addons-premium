@@ -300,6 +300,16 @@ The addons are intentionally low-resource and run long sessions. This is a desig
 - Missing opponent stats, type data or lead damage inputs result in **unknown**, not the same plausible-looking baseline rate assigned to many different enemies. A known full immunity results in zero model throughput. Measurements from a different hunt never change this model's projected rate.
 - Regression coverage: `node --test addons/hunt-atlas/tests/rate-model.test.cjs`. The fixture checks asymmetric Xatu/Charizard difficulty, immunity, saved measured-rate isolation, context separation and missing-data handling. In-game calibration and performance still require live observations.
 
+### Hunt Atlas v1.9.21 combat difficulty correction (2026-10-15)
+
+The previous cold-start model scaled wild HP/defenses from `base * huntLevel/100`. This implicitly gave every wild **IV 0**, even though the documented Pokémon stat equation contains `base + 2*IV`. The underestimation exaggerated predicted damage and made distinct opponents incorrectly collapse into one-hit fights.
+
+- **Wild stat default:** expected `(base + 2*16) * level/100`, with ×5 applied **only** to the HP estimate. IV=16 is an explicit neutral **assumption**, not verified wild server IV/quality, and not a claim to simulate individual rolls.
+- **Same-target live evidence:** if at least two explicit spawn HP samples exist for the *same saved hunt, species ID and level*, use the median actual maxHP instead of the catalog HP guess. Do **not** multiply observed HP again or reuse damage/throughput from unrelated hunts.
+- **Sustained move readiness:** simulate six weighted, interleaved waves with one warm-up wave excluded from the score. Maintain individual skill cooldowns and physical Investida fallback, choosing ready moves based on expected type/defense-aware damage. This removes the front-loaded, all-skills-ready bias and the misleading long sequential blocks of one species.
+- **Visibility:** modeled results show expected hits/kill and basic-hit proportion; the one-hit warning remains only when **every** scored encounter is genuinely a one-hit fight. The browser snapshot includes those diagnostics.
+- **Limits:** no authoritative combat-server module is available in the inspected mirror. Wild IV/quality, target positioning, reliable cooldown persistence through swaps, true effective HP variation, AoE/cast grouping, healing and potion behavior must be checked with runtime events. Do not treat the exact modeled XP/hour as measured fact.
+
 ## 11. Compact proposed data contract — not an existing game packet
 
 ```ts
