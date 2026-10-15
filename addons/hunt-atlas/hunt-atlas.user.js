@@ -1174,7 +1174,6 @@
         captureBonusEvidence: {},
         captureChanceEvidence: {seen:0,min:null,max:null},
         inventoryForCosts: new Map(),
-        calibrationEvidence: new Map(),
         hunts: [],
         playerLevel: 0,
         currentHuntSlug: null,
@@ -5232,7 +5231,6 @@
             state.xpBonusState = {};
             state.nativeXpContext = {};
             state.captureChanceEvidence = {seen:0,min:null,max:null};
-            state.calibrationEvidence.clear();
             state.combatTargets.clear();
             state.lastLeadPokemon = null;
             state.activePokemonId = null;
@@ -8339,7 +8337,8 @@
         const candidates = live.length ? live : movesForLead(lead);
         const moves = candidates.filter(move => Number(move?.power) > 0 &&
             (Number(move.learnLevel) || 1) <= Number(lead.level))
-            .map(move => ({...move, type: String(move.type).toUpperCase(),
+            .map(move => ({...move, runtimeMove: live.length > 0,
+                type: String(move.type).toUpperCase(),
                 category: String(move.category || move.categoria || '').toUpperCase()}));
         const types = battleLeadTypes(lead);
         // The TM is not necessarily in the ordinary species learnset.
@@ -8417,7 +8416,7 @@
                 xpCooldownFromPower(move.power);
             const speed = speciesCombatMeta(lead?.speciesId)?.baseSpeed;
             const cooldown = xpMoveCooldown(rawCd, speed, speedIv,
-                Boolean(move.cooldownAdjusted)) || rawCd;
+                Boolean(move.cooldownAdjusted || move.runtimeMove)) || rawCd;
             return {index, damage:damageFor(move), cooldown};
         }).filter(move => move.damage !== null);
         const allDamage = [basicDamage, ...timedMoves.map(move => move.damage)]
@@ -8462,8 +8461,7 @@
                 row.maxDamage === 0)};
     }
 
-    function rawPredictedKillMs(hunt) {
-        const coverage = huntCombatCoverage(hunt);
+    function rawPredictedKillMs(hunt, coverage = huntCombatCoverage(hunt)) {
         if (coverage.blocked) return Infinity;
         if (!coverage.complete) return null;
         const lead = leadPokemon(), player = lead?.stats || {};
@@ -8473,7 +8471,8 @@
             lead?.ivs?.speed ?? lead?.iv?.speed;
         const globalMs = xpGlobalAttackFloor(iv);
         const basicCooldown = Math.max(400, 2000 -
-            (Number.isInteger(Number(iv)) ? Number(iv) * 10 : 0));
+            (Number.isInteger(Number(iv)) && Number(iv) >= 1 && Number(iv) <= 32
+                ? Number(iv) * 10 : 0));
         const mobs = Math.max(1, Math.min(16, coverage.total));
         const moveMs = UPSTREAM_FALLBACK_MOVE_MS + UPSTREAM_WAVE_MS / mobs;
         const skillReady = moves.map(() => 0);
@@ -8673,9 +8672,8 @@
                 return value;
             };
 
-        const profile = combatProfile(); // display-only combat diagnostics
         const coverage = huntCombatCoverage(hunt);
-        const rawKillMs = rawPredictedKillMs(hunt);
+        const rawKillMs = rawPredictedKillMs(hunt, coverage);
         const coverageFields = {
             coverage: coverage.percentage,
             coveredPoints: coverage.covered,
@@ -8694,13 +8692,9 @@
             ...coverageFields
         };
 
-        /*
-         * Never hide recommendations while combat data is warming up. The
-         * upstream Hunt Analyser uses a stable baseline: 900 ms attack floor,
-         * 600 ms average movement, 2 s average move cooldown, and a 2.6 s
-         * wave pause spread across up to 16 spawns. Replace this baseline with
-         * the personalized combat model as soon as measured data is usable.
-         */
+        // A universal time-per-kill is not a real comparison between species.
+        // If a lead stat, target HP, defense or elemental type is missing,
+        // rank it as unknown rather than giving every enemy the same XP/h.
         const hasPersonalizedModel =
             Number.isFinite(rawKillMs) && rawKillMs > 0;
         const lead = leadPokemon();
@@ -8709,37 +8703,15 @@
         const knownMoves = battleMovesForLead(lead).length;
         const moveConfidence = hasPersonalizedModel &&
             liveMoves && coverage.complete ? 'medium' : 'low';
-
-        const species =
-            Array.isArray(hunt?.especies)
-                ? hunt.especies
-                : [];
-
-        const spawnPoints =
-            species.reduce(
-                (sum, row) =>
-                    sum +
-                    Math.max(
-                        1,
-                        Number(row?.pontos || 1)
-                    ),
-                0
-            ) || 1;
-
-        const mobsPerWave =
-            Math.max(
-                1,
-                Math.min(
-                    16,
-                    spawnPoints
-                )
-            );
-
-        const baselineKillMs =
-            UPSTREAM_GLOBAL_ATTACK_MS +
-            UPSTREAM_FALLBACK_MOVE_MS +
-            2000 +
-            UPSTREAM_WAVE_MS / mobsPerWave;
+        if (!hasPersonalizedModel) {
+            return {value:null, pokemonValue:null, goldValue:null,
+                killsH:null, killMs:null, observed:false,
+                source:'incomplete combat model', confidence:'unknown',
+                samples:0, fallbackReason: !lead ? 'no-lead' :
+                    !coverage.complete ? 'incomplete-spawn-coverage' :
+                    'unavailable-combat-stats',
+                ...coverageFields};
+        }
 
         if (record && hasPersonalizedModel && !record.predictedBeforeMeasurement &&
             !(record.rateWindow?.rows?.reduce(
@@ -8750,8 +8722,7 @@
             };
         }
 
-        const killMs =
-            hasPersonalizedModel ? rawKillMs : baselineKillMs;
+        const killMs = rawKillMs;
 
         const killsH =
             3600000 /
@@ -8795,15 +8766,10 @@
                 pokemon:nativeBonus.pokemon},
             bonusCaveat: 'uses game-reported XP bonus fields and upstream timed rules; '+
                 'catch-up threshold transitions and missing boost catalog remain unverified',
-            source: !hasPersonalizedModel
-                ? 'baseline model'
-                : knownMoves ? 'stat/move model' : 'stat/basic-attack model',
-            confidence: hasPersonalizedModel ? moveConfidence : 'low',
+            source: knownMoves ? 'stat/move model' : 'stat/basic-attack model',
+            confidence: moveConfidence,
             samples: 0, // No battle sample from another hunt affects this forecast.
-            fallbackReason: !lead ? 'no-lead'
-                : !coverage.complete ? 'incomplete-spawn-coverage'
-                : !hasPersonalizedModel ? 'unavailable-combat-stats'
-                : 'wiki-scheduling-and-wild-stat-approximation',
+            fallbackReason: 'wiki-scheduling-and-wild-stat-approximation',
             calibration: calibrationDiagnostics(),
             ...coverageFields
         };
