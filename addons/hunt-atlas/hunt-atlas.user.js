@@ -8693,7 +8693,11 @@
             state.estimateCacheKey = cacheKey;
             state.estimateCache.clear();
         }
-        const huntKey = hunt?.slug || '';
+        const huntKey = hunt?.slug ? [
+            hunt.slug, hunt.nivel,
+            (hunt.especies || []).map(row =>
+                String(row?.pokeId) + ':' + String(row?.pontos ?? 1)).join(',')
+        ].join('|') : '';
         const record = performanceRecord(hunt?.slug, false);
         const observed = observedRates(record);
         const saved = savedObservedRates(hunt);
