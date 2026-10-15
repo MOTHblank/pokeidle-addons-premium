@@ -340,7 +340,7 @@ test('a 46m predicted vs 13m measured miss is decomposed without clipping', () =
   vm.createContext(context);
   vm.runInContext(functionBody('xpForecastAudit'), context);
   const before = {
-    killMs: 1_800, trainerXpPerKill: 23_000, modelVersion:'1.9.24'
+    killMs: 1_800, trainerXpPerKill: 23_000, modelVersion:'1.9.25'
   };
   const actual = {killMs: 6_000, trainerXpH:13_000_000};
   const audit = context.xpForecastAudit(before,actual);
@@ -410,4 +410,44 @@ test('damage rolls account for near-threshold extra attacks without inventing co
     'high damage roll passes the same threshold');
   assert.equal(ctx.xpTargetHpForEncounter({hp:100,hpSamples:[50,200]},0),100,
     'fewer than six recorded spawns must not drive the forecast');
+});
+
+
+test('XP/hour must use only trainer XP, never the upstream combined streams', () => {
+  const vmContext = {};
+  vm.createContext(vmContext);
+  vm.runInContext(functionBody('xpSingleStreamRate'), vmContext);
+  const calc = vmContext.xpSingleStreamRate;
+
+  // The supplied Furious Scyther trace carries BOTH XP channels at 18,574
+  // per kill. Neither 18,574 + 18,574 nor the 37,148 combined reward is a
+  // valid trainer XP/kill; separate channels must remain distinct.
+  const kills = 1283;
+  const trainerXp = 18574, pokemonXp = 18574;
+  assert.equal(calc(kills, trainerXp), 23830442);
+  assert.equal(calc(kills, pokemonXp), 23830442);
+  assert.notEqual(calc(kills, trainerXp), calc(kills, trainerXp + pokemonXp));
+  assert.equal(calc(0, trainerXp), 0);
+  assert.equal(calc(Number.NaN, trainerXp), null);
+
+  // The same symptom occurs for normal level-100 Scyther: modeled 20m/h
+  // versus observed ~9.9m/h is a KPH/timing discrepancy, not 2 XP streams.
+  assert.equal(calc(1200, 6008), 7209600);
+  assert.equal(calc(2400, 6008), 14419200);
+});
+
+test('modeled one-hit cadence includes the upstream action pacing allowance', () => {
+  const ctx=makeContext();
+  // A 1.5-second modeled kill would give ~2.4k kills/h even if only the
+  // trainer XP channel is used. A 16-mob wave must include action downtime.
+  const paced=ctx.xpPacedKillMs(1500, 16, 27);
+  assert.ok(paced > 3500, '1.5s old-model cadence cannot be trusted as KPH');
+  assert.equal(ctx.xpPacedKillMs(1500,16,27),paced);
+});
+
+test('the public forecast has explicit, separate trainer and Pokemon formulas', () => {
+  assert.ok(source.includes('value: xpSingleStreamRate(killsH, trainerXpPerKill)'));
+  assert.ok(source.includes('pokemonValue: xpSingleStreamRate(killsH, pokemonXpPerKill)'));
+  assert.ok(source.includes('trainerXpPerKill: xp?.trainerXpPerKill ?? null'));
+  assert.ok(source.includes('// @version      1.9.25'));
 });

@@ -2,7 +2,7 @@
 
 This is the **premium experiment**, separate from the Hunt Atlas shipped through `pokeidle-addons`. Changes are not synchronized automatically. It replaces PokéIdle's **Map** view with a searchable hunt/Pokémon list—not a graphical map.
 
-**Parity check (v1.9.24):** The experimental script and the public `addons/hunt-atlas.user.js` currently have identical functional code. Only repository links and update metadata differ. This version also prevents strongest-owned Pokémon substitution when the active fighter is briefly unknown, applies a conservative upstream Hunt Analyser pacing heuristic to unmeasured forecasts, and exposes same-hunt model-vs-measurement diagnostics for large XP/hour misses. This version also replays observed same-hunt spawn HP distributions (six or more exact species/level samples) and deterministic game-range damage rolls instead of pretending every enemy has median HP and suffers mean damage on every strike. The public script uses authenticated userscript-manager auto-update URLs; this private experimental copy remains **manual-update only**. Future experiments should start from the latest public implementation and promote changes explicitly after validation, without overwriting public-only controller features.
+**Parity check (v1.9.25):** The experimental script and the public `addons/hunt-atlas.user.js` currently have identical functional code. Only repository links and update metadata differ. This version also prevents strongest-owned Pokémon substitution when the active fighter is briefly unknown, applies a conservative upstream Hunt Analyser pacing heuristic to unmeasured forecasts, and exposes same-hunt model-vs-measurement diagnostics for large XP/hour misses. This version also replays observed same-hunt spawn HP distributions (six or more exact species/level samples) and deterministic game-range damage rolls instead of pretending every enemy has median HP and suffers mean damage on every strike. The public script uses authenticated userscript-manager auto-update URLs; this private experimental copy remains **manual-update only**. Future experiments should start from the latest public implementation and promote changes explicitly after validation, without overwriting public-only controller features.
 
 ![Hunt Atlas preview](assets/map-preview.png)
 
@@ -50,7 +50,7 @@ Não há envio automático desse resumo. Funcionamento visual, precisão em jogo
 3. **Disable any other Hunt Atlas copy** in the same profile to avoid duplicate map/WebSocket hooks.
 4. Reload [PokéIdle](https://pokeidle.io/app) and open **Map**.
 
-Updates are manual; private repository files are not a reliable unauthenticated userscript update feed.
+Updates are manual; private repository files are not a reliable unauthenticated userscript update feed. XP/h rankings now explicitly use trainer XP per kill × kills/h, never trainer+Pokémon combined; per-kill values are shown in hunt details. The public repository's formerly stale v1.9.21 `huntatlas/` compatibility script is now aligned with the canonical public script and includes auto-update URLs.
 
 ### Features and limits
 
