@@ -13897,6 +13897,10 @@
                     observed: Boolean(
                         xp?.observed
                     ),
+                    oneHitSimulation: Boolean(xp?.oneHitSimulation),
+                    modelHitsPerKill: xp?.modelHitsPerKill ?? null,
+                    modelBasicHitShare: xp?.modelBasicHitShare ?? null,
+                    modelCombatMsPerKill: xp?.modelCombatMsPerKill ?? null,
                     source: String(
                         xp?.source ||
                         'learning'
@@ -13973,7 +13977,7 @@
             const here = currentHunt();
             const xp = here ? huntXpEstimate(here) : null;
             return {
-                version: '1.9.9',
+                version: '1.9.21',
                 indexes: {
                     locations: state.locationIndexStatus,
                     markerCount: state.locationsBySlug.size,
