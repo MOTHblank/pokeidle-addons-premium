@@ -1,11 +1,15 @@
 // ==UserScript==
 // @name         PokéIdle Upstream Scraper & Exporter
 // @namespace    moth.pokeidle
-// @version      1.2.0
-// @description  Captures public PokéIdle client assets into a TAR and verified manifest, with limits and cancellation.
+// @version      1.3.0
+// @description  Investigates and downloads PokéIdle client files, item icons and observed sprites with verified manifests.
 // @match        https://pokeidle.io/*
 // @match        https://www.pokeidle.io/*
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @connect      pokexguides.com
+// @connect      www.pokexguides.com
+// @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/upstream-scraper/scraper-exporter.user.js
+// @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/upstream-scraper/scraper-exporter.user.js
 // @noframes
 // @run-at       document-idle
 // ==/UserScript==
@@ -22,9 +26,15 @@
     const MAX_TEXT_BYTES = 3 * 1024 * 1024;
     const MAX_TOTAL_BYTES = 64 * 1024 * 1024;
     const FETCH_TIMEOUT_MS = 15000;
+    const MAX_IMAGE_FILES = 1200;
+    const MAX_IMAGE_DISCOVERED = 3000;
+    const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+    const MAX_IMAGE_TOTAL_BYTES = 96 * 1024 * 1024;
+    const IMAGE_EXTENSIONS = /\.(?:png|gif|webp|jpe?g|avif)(?:$|[?#])/i;
 
     // In-memory list of actual public asset URLs (not response bodies).
     const observedAssets = new Set();
+    const observedImages = new Set();
     const state = {
         running: false,
         cancelRequested: false,
@@ -32,6 +42,15 @@
         complete: false,
         files: new Map(),
         errors: [],
+        imageFiles: new Map(),
+        imageCandidates: new Map(),
+        imageFailures: [],
+        externalImages: new Set(),
+        imageStatus: 'Images not scanned yet',
+        imageComplete: false,
+        imageAttempted: 0,
+        imageDiscovered: 0,
+        imageCapped: false,
         unresolvedDynamicPaths: new Set(),
         status: 'Not scanned yet',
         attempted: 0,
@@ -152,6 +171,11 @@
     }
 
     function observeAsset(entry) {
+        if (['img', 'image', 'css', 'link', 'script', 'other'].includes(entry?.initiatorType) &&
+            IMAGE_EXTENSIONS.test(entry.name || '')) {
+            const image = normalizeImageUrl(entry.name);
+            if (image && observedImages.size < MAX_IMAGE_DISCOVERED) observedImages.add(image);
+        }
         if (!['script', 'link', 'css', 'fetch', 'xmlhttprequest'].includes(entry?.initiatorType)) return;
         const url = normalizeUrl(entry.name);
         if (!url || !isTextCandidate(url)) return;
