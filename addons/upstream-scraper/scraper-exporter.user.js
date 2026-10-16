@@ -1,11 +1,15 @@
 // ==UserScript==
 // @name         PokéIdle Upstream Scraper & Exporter
 // @namespace    moth.pokeidle
-// @version      1.2.0
-// @description  Captures public PokéIdle client assets into a TAR and verified manifest, with limits and cancellation.
+// @version      1.3.0
+// @description  Investigates and downloads PokéIdle client files, item icons and observed sprites with verified manifests.
 // @match        https://pokeidle.io/*
 // @match        https://www.pokeidle.io/*
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @connect      pokexguides.com
+// @connect      www.pokexguides.com
+// @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/upstream-scraper/scraper-exporter.user.js
+// @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/upstream-scraper/scraper-exporter.user.js
 // @noframes
 // @run-at       document-idle
 // ==/UserScript==
@@ -22,9 +26,15 @@
     const MAX_TEXT_BYTES = 3 * 1024 * 1024;
     const MAX_TOTAL_BYTES = 64 * 1024 * 1024;
     const FETCH_TIMEOUT_MS = 15000;
+    const MAX_IMAGE_FILES = 1200;
+    const MAX_IMAGE_DISCOVERED = 3000;
+    const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+    const MAX_IMAGE_TOTAL_BYTES = 96 * 1024 * 1024;
+    const IMAGE_EXTENSIONS = /\.(?:png|gif|webp|jpe?g|avif)(?:$|[?#])/i;
 
     // In-memory list of actual public asset URLs (not response bodies).
     const observedAssets = new Set();
+    const observedImages = new Set();
     const state = {
         running: false,
         cancelRequested: false,
@@ -32,6 +42,15 @@
         complete: false,
         files: new Map(),
         errors: [],
+        imageFiles: new Map(),
+        imageCandidates: new Map(),
+        imageFailures: [],
+        externalImages: new Set(),
+        imageStatus: 'Images not scanned yet',
+        imageComplete: false,
+        imageAttempted: 0,
+        imageDiscovered: 0,
+        imageCapped: false,
         unresolvedDynamicPaths: new Set(),
         status: 'Not scanned yet',
         attempted: 0,
@@ -152,6 +171,11 @@
     }
 
     function observeAsset(entry) {
+        if (['img', 'image', 'css', 'link', 'script', 'other'].includes(entry?.initiatorType) &&
+            IMAGE_EXTENSIONS.test(entry.name || '')) {
+            const image = normalizeImageUrl(entry.name);
+            if (image && observedImages.size < MAX_IMAGE_DISCOVERED) observedImages.add(image);
+        }
         if (!['script', 'link', 'css', 'fetch', 'xmlhttprequest'].includes(entry?.initiatorType)) return;
         const url = normalizeUrl(entry.name);
         if (!url || !isTextCandidate(url)) return;
@@ -377,6 +401,402 @@
         }
 
         return [...discovered];
+    }
+
+
+    // Artwork is gathered from observed requests and explicitly identified
+    // public catalog records. Never equate a sprite looktype with a species ID.
+    const PUBLIC_ART_HOSTS = new Set(['pokexguides.com', 'www.pokexguides.com']);
+
+    function normalizeImageUrl(input, base = location.href) {
+        try {
+            if (!input || isDynamicTemplate(input)) return null;
+            const url = new URL(String(input).trim(), base);
+            if (url.protocol !== 'https:' || url.username || url.password ||
+                url.href.length > 850 || !IMAGE_EXTENSIONS.test(url.pathname) ||
+                [...url.searchParams.keys()].some(key =>
+                    !/^(?:v|ver|version|build|hash|t|_|cache)$/i.test(key)) ||
+                /\/(?:api|auth|account|user|profile|session|private)(?:\/|$)/i.test(url.pathname)) {
+                return null;
+            }
+            if (url.origin !== location.origin && !PUBLIC_ART_HOSTS.has(url.hostname)) {
+                if (state.externalImages.size < 100) {
+                    state.externalImages.add(url.hostname); // no personal URL paths
+                }
+                return null;
+            }
+            url.hash = '';
+            return url.href;
+        } catch { return null; }
+    }
+
+    function addImageCandidate(value, source, mapping = null, base = location.href) {
+        const url = normalizeImageUrl(value, base);
+        if (!url) return;
+        let candidate = state.imageCandidates.get(url);
+        if (!candidate) {
+            if (state.imageCandidates.size >= MAX_IMAGE_DISCOVERED) {
+                state.imageCapped = true;
+                return;
+            }
+            candidate = { url, sources: new Set(), mappings: new Map() };
+            state.imageCandidates.set(url, candidate);
+        }
+        if (candidate.sources.size < 12) candidate.sources.add(source);
+        if (mapping && Number.isSafeInteger(mapping.id) && mapping.id > 0 &&
+            mapping.id <= 10000000 && ['item', 'ball', 'pokemon'].includes(mapping.kind)) {
+            candidate.mappings.set(mapping.kind + ':' + mapping.id, {
+                kind: mapping.kind, id: mapping.id,
+                name: String(mapping.name || '').slice(0, 100),
+                evidence: source
+            });
+        }
+    }
+
+    function harvestCatalog(value, sourceUrl) {
+        if (!value || typeof value !== 'object') return;
+        for (const [key, kind] of [
+            ['items', 'item'], ['balls', 'ball'], ['pokemon', 'pokemon'],
+            ['pokemons', 'pokemon'], ['species', 'pokemon']
+        ]) {
+            if (!Array.isArray(value[key])) continue;
+            for (const entry of value[key].slice(0, 15000)) {
+                if (!entry || typeof entry !== 'object') continue;
+                // A Pokémon owned by a player has an individual instance ID.
+                // Only explicit species IDs, or IDs inside a species catalog,
+                // may become native sprite mappings.
+                const speciesId = entry.speciesId ?? entry.species_id ??
+                    (key === 'species' ? entry.id : undefined);
+                const id = Number(kind === 'pokemon' ? speciesId : entry.id);
+                const name = entry.name ?? entry.nome ?? '';
+                for (const field of [
+                    'icon', 'sprite', 'image', 'img', 'iconUrl', 'spriteUrl', 'imageUrl'
+                ]) {
+                    if (typeof entry[field] === 'string') {
+                        addImageCandidate(entry[field], sourceUrl + ' · ' + key + '.' + field,
+                            { kind, id, name }, sourceUrl);
+                    }
+                }
+            }
+        }
+    }
+
+    function harvestImageLiterals(text, sourceUrl, source) {
+        const css = /url\(\s*['"]?([^'")\s]{1,500})['"]?\s*\)/gi;
+        const literals = /['"\x60]((?:https:\/\/|\/|\.\/|\.\.\/)[^'"\x60\s<>]{1,480}\.(?:png|gif|webp|jpe?g|avif)(?:\?[^'"\x60\s<>]*)?)['"\x60]/gi;
+        let hit;
+        while ((hit = css.exec(text))) addImageCandidate(hit[1], source, null, sourceUrl);
+        while ((hit = literals.exec(text))) addImageCandidate(hit[1], source, null, sourceUrl);
+        // Report unresolved runtime templates, but never manufacture URLs or
+        // infer a species ID from an unrendered path.
+        const dynamic = /\$\{[^}]{1,100}\}[^'"\x60\s]{0,120}\.(?:png|gif|webp|jpe?g|avif)/gi;
+        while ((hit = dynamic.exec(text))) {
+            if (state.unresolvedDynamicPaths.size < 100) {
+                state.unresolvedDynamicPaths.add('image: ' + hit[0].slice(0, 180));
+            }
+        }
+    }
+
+    function discoverImageReferences() {
+        for (const url of observedImages) addImageCandidate(url, 'game resource timing');
+        try {
+            for (const entry of performance.getEntriesByType('resource')) {
+                if (IMAGE_EXTENSIONS.test(entry.name || '')) {
+                    addImageCandidate(entry.name, 'game resource timing');
+                }
+            }
+        } catch {}
+        for (const img of qa('img, source[srcset], video[poster], link[rel="icon"]')) {
+            for (const field of ['src', 'data-src', 'poster']) {
+                const raw = img.getAttribute(field);
+                if (raw) addImageCandidate(raw, 'page element · ' + field);
+            }
+            const srcset = img.getAttribute('srcset');
+            if (srcset) for (const part of srcset.split(',')) {
+                addImageCandidate(part.trim().split(/\s+/)[0], 'page srcset');
+            }
+            if (img.currentSrc) addImageCandidate(img.currentSrc, 'loaded image');
+        }
+        for (const node of qa('[style]').slice(0, 4000)) {
+            harvestImageLiterals(node.getAttribute('style') || '', location.href, 'inline CSS');
+        }
+        try {
+            let seen = 0;
+            for (const sheet of document.styleSheets) {
+                try {
+                    for (const rule of sheet.cssRules || []) {
+                        if (++seen > 10000) break;
+                        harvestImageLiterals(rule.cssText || '', sheet.href || location.href,
+                            'public stylesheet');
+                    }
+                } catch {} // Cross-origin CSS may be unreadable.
+                if (seen > 10000) break;
+            }
+        } catch {}
+        for (const file of state.files.values()) {
+            if (file.text.length > 2 * 1024 * 1024) continue;
+            harvestImageLiterals(file.text, file.url, 'client source · ' + file.path);
+            if (/\.json(?:$|\?)/i.test(file.url)) {
+                try { harvestCatalog(JSON.parse(file.text), file.url); } catch {}
+            }
+        }
+    }
+
+    function detectImageFormat(bytes) {
+        if (bytes.length < 12) return null;
+        const eq = (offset, seq) => seq.every((b, i) => bytes[offset + i] === b);
+        if (eq(0, [137, 80, 78, 71, 13, 10, 26, 10])) return 'png';
+        if (eq(0, [71, 73, 70, 56]) &&
+            (eq(4, [55, 97]) || eq(4, [57, 97]))) return 'gif';
+        if (eq(0, [255, 216, 255])) return 'jpg';
+        if (eq(0, [82, 73, 70, 70]) && eq(8, [87, 69, 66, 80])) return 'webp';
+        if (eq(4, [102, 116, 121, 112]) &&
+            (eq(8, [97, 118, 105, 102]) || eq(8, [97, 118, 105, 115]))) return 'avif';
+        return null;
+    }
+
+    async function sha256Bytes(bytes) {
+        const hash = await crypto.subtle.digest('SHA-256', bytes);
+        return [...new Uint8Array(hash)].map(v => v.toString(16).padStart(2, '0')).join('');
+    }
+
+    function imageTotalBytes() {
+        let total = 0;
+        for (const image of state.imageFiles.values()) total += image.bytes.length;
+        return total;
+    }
+
+    async function fetchPublicImage(url) {
+        if (new URL(url).origin !== location.origin) {
+            if (!PUBLIC_ART_HOSTS.has(new URL(url).hostname) ||
+                typeof GM_xmlhttpRequest !== 'function') {
+                throw new Error('Public artwork host not authorized');
+            }
+            return new Promise((resolve, reject) => {
+                const req = GM_xmlhttpRequest({
+                    method: 'GET', url, responseType: 'arraybuffer',
+                    timeout: FETCH_TIMEOUT_MS, anonymous: true,
+                    headers: { Accept: 'image/png,image/gif,image/webp,image/avif,image/jpeg' },
+                    onload: res => {
+                        if (state.cancelRequested) {
+                            reject(new Error('Cancelled')); return;
+                        }
+                        const final = normalizeImageUrl(res.finalUrl || url);
+                        // Canonical www/non-www redirects are accepted only
+                        // within the two approved public art hosts, and only
+                        // when the exact image path is unchanged.
+                        const safeRedirect = final &&
+                            PUBLIC_ART_HOSTS.has(new URL(final).hostname) &&
+                            new URL(final).pathname === new URL(url).pathname;
+                        const payload = res.response;
+                        const bytes = payload && typeof payload.byteLength === 'number'
+                            ? (ArrayBuffer.isView(payload)
+                                ? new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength)
+                                : new Uint8Array(payload))
+                            : null;
+                        if (res.status !== 200 || !safeRedirect || !bytes) {
+                            reject(new Error('Invalid image response or redirect: HTTP ' + res.status));
+                            return;
+                        }
+                        if (bytes.byteLength > MAX_IMAGE_BYTES) {
+                            reject(new Error('Image exceeds byte limit'));
+                        } else resolve(bytes);
+                    },
+                    onprogress: progress => {
+                        if (progress.loaded > MAX_IMAGE_BYTES) {
+                            state.currentRequest?.abort();
+                            reject(new Error('Image exceeds byte limit'));
+                        }
+                    },
+                    onerror: () => reject(new Error('Image request failed')),
+                    ontimeout: () => reject(new Error('Image request timed out')),
+                    onabort: () => reject(new Error('Cancelled'))
+                });
+                state.currentRequest = req;
+            }).finally(() => { state.currentRequest = null; });
+        }
+        const controller = new AbortController();
+        state.currentRequest = controller;
+        const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+        try {
+            const response = await fetch(url, {
+                credentials: 'omit', cache: 'no-store', signal: controller.signal
+            });
+            if (!response.ok || normalizeImageUrl(response.url || url) !== url) {
+                throw new Error('Invalid image response or redirect: HTTP ' + response.status);
+            }
+            if (Number(response.headers.get('content-length') || 0) > MAX_IMAGE_BYTES) {
+                throw new Error('Image exceeds byte limit');
+            }
+            if (!response.body) throw new Error('Image stream unavailable');
+            const reader = response.body.getReader();
+            const parts = [];
+            let size = 0;
+            for (;;) {
+                if (state.cancelRequested) throw new Error('Cancelled');
+                const { value, done } = await reader.read();
+                if (done) break;
+                size += value.byteLength;
+                if (size > MAX_IMAGE_BYTES) {
+                    controller.abort();
+                    throw new Error('Image exceeds byte limit');
+                }
+                parts.push(value);
+            }
+            const bytes = new Uint8Array(size);
+            let position = 0;
+            for (const part of parts) {
+                bytes.set(part, position); position += part.byteLength;
+            }
+            return bytes;
+        } finally {
+            clearTimeout(timer);
+            if (state.currentRequest === controller) state.currentRequest = null;
+        }
+    }
+
+    function imageFilePath(url, format) {
+        const hostname = new URL(url).hostname;
+        const name = resourcePath(url).replace(/^upstream\//, '')
+            .replace(/[^a-z0-9_\-./]/gi, '_')
+            .replace(/\.(?:png|gif|webp|jpe?g|avif)$/i, '');
+        return 'upstream/images/' + hostname + '/' + name + '.' + format;
+    }
+
+    async function scanImages() {
+        if (state.running) return;
+        state.running = true;
+        state.cancelRequested = false;
+        state.imageComplete = false;
+        state.imageCapped = false;
+        state.imageFailures = [];
+        state.imageAttempted = 0;
+        state.imageCandidates.clear();
+        state.externalImages.clear();
+        state.status = 'Collecting image URLs and item IDs…';
+        updateUI();
+        try {
+            discoverImageReferences();
+            // One documented, public game catalog. All requests omit cookies.
+            try {
+                const catalog = await fetchText(normalizeUrl('/assets/items.json'));
+                if (state.cancelRequested) return;
+                harvestCatalog(JSON.parse(catalog.text), catalog.finalUrl);
+            } catch (error) {
+                state.imageFailures.push({
+                    url: '/assets/items.json',
+                    error: 'Public item catalog: ' + String(error?.message || error)
+                });
+            }
+            const queue = [...state.imageCandidates.values()]
+                .sort((a, b) => b.mappings.size - a.mappings.size ||
+                    a.url.localeCompare(b.url));
+            state.imageDiscovered = queue.length;
+            const downloaded = new Map([...state.imageFiles.values()]
+                .map(asset => [asset.url, asset]));
+            for (let index = 0; index < queue.length; index++) {
+                if (state.cancelRequested) break;
+                if (state.imageFiles.size >= MAX_IMAGE_FILES ||
+                    imageTotalBytes() >= MAX_IMAGE_TOTAL_BYTES) {
+                    state.imageCapped = true; break;
+                }
+                const candidate = queue[index];
+                state.imageAttempted++;
+                state.status = 'Image ' + (index + 1) + '/' + queue.length +
+                    ' · ' + new URL(candidate.url).pathname;
+                updateUI();
+                const existing = downloaded.get(candidate.url);
+                if (existing) {
+                    existing.sources = [...new Set([...existing.sources, ...candidate.sources])].slice(0, 20);
+                    existing.mappings = [...new Map([
+                        ...existing.mappings.map(m => [m.kind + ':' + m.id, m]),
+                        ...candidate.mappings
+                    ]).values()];
+                    continue;
+                }
+                try {
+                    const bytes = await fetchPublicImage(candidate.url);
+                    const format = detectImageFormat(bytes);
+                    if (!format) throw new Error('Not a supported image file');
+                    if (imageTotalBytes() + bytes.byteLength > MAX_IMAGE_TOTAL_BYTES) {
+                        state.imageCapped = true; break;
+                    }
+                    const hash = await sha256Bytes(bytes);
+                    let path = imageFilePath(candidate.url, format);
+                    const original = path;
+                    let collision = 0;
+                    while (state.files.has(path) || state.imageFiles.has(path) ||
+                        path === 'upstream/manifest.json') {
+                        if (state.imageFiles.get(path)?.sha256 === hash) {
+                            path = null; break;
+                        }
+                        collision++;
+                        path = addHashSuffix(original, '~' + hash.slice(0, 12) +
+                            (collision > 1 ? '-' + collision : ''));
+                    }
+                    if (path) {
+                        const image = {
+                            path, url: candidate.url, format, bytes, sha256: hash,
+                            sources: [...candidate.sources],
+                            mappings: [...candidate.mappings.values()]
+                        };
+                        state.imageFiles.set(path, image);
+                        downloaded.set(candidate.url, image);
+                    }
+                } catch (error) {
+                    if (state.cancelRequested) break;
+                    if (state.imageFailures.length < 150) {
+                        state.imageFailures.push({
+                            url: candidate.url, error: String(error?.message || error)
+                        });
+                    }
+                }
+                if (index % 6 === 0) {
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
+            }
+        } catch (error) {
+            if (!state.cancelRequested) {
+                state.imageFailures.push({
+                    url: '(image scan)', error: String(error?.message || error)
+                });
+            }
+        } finally {
+            state.running = false;
+            state.imageComplete = !state.cancelRequested && !state.imageCapped &&
+                !state.imageFailures.length;
+            state.status = (state.cancelRequested ? 'Image scan cancelled' :
+                state.imageComplete ? 'Image scan complete' : 'Partial image scan') +
+                ' · ' + state.imageFiles.size + ' saved · ' +
+                state.imageFailures.length + ' failures';
+            state.finishedAt = Date.now();
+            updateUI();
+        }
+    }
+
+    function imageIndex() {
+        const sprites = [], items = [], balls = [];
+        for (const image of state.imageFiles.values()) {
+            for (const mapping of image.mappings) {
+                const entry = {
+                    id: mapping.id, icon: image.url,
+                    name: mapping.name, evidence: mapping.evidence
+                };
+                if (mapping.kind === 'pokemon' && image.format === 'png') {
+                    sprites.push(entry);
+                } else if (mapping.kind === 'item') {
+                    items.push(entry);
+                } else if (mapping.kind === 'ball') {
+                    balls.push(entry);
+                }
+            }
+        }
+        const sorted = list => list.sort((a, b) => a.id - b.id);
+        return {
+            schema: 1, generatedAt: new Date().toISOString(),
+            note: 'Only IDs explicitly present in public catalogs are mapped. Native Pokémon sprite import requires PNG.',
+            sprites: sorted(sprites), items: sorted(items), balls: sorted(balls)
+        };
     }
 
     async function sha256(text) {
@@ -691,11 +1111,22 @@
                 state.files.size,
             totalBytes:
                 totalBytes(),
-            complete: state.complete,
+            imageFileCount: state.imageFiles.size,
+            imageBytes: imageTotalBytes(),
+            imageCandidateCount: state.imageCandidates.size,
+            imageAttemptedCount: state.imageAttempted,
+            imageScanComplete: state.imageComplete,
+            imageScanCapped: state.imageCapped,
+            unmappedImageCount: [...state.imageFiles.values()]
+                .filter(image => !image.mappings.length).length,
+            unsupportedImageHosts: [...state.externalImages].sort(),
+            complete: (!state.startedAt || state.complete) &&
+                (!state.imageDiscovered || state.imageComplete),
+            textScanComplete: state.complete,
             cancelled: state.cancelRequested,
             observedStaticAssetCount: observedAssets.size,
             unresolvedDynamicPaths: [...state.unresolvedDynamicPaths].sort(),
-            coverage: 'public client assets discoverable in this session; dynamic assets not yet observed may remain',
+            coverage: 'public client files and images observed or explicitly listed in public catalogs; unloaded/dynamic assets may remain unlisted',
             attemptedCount: state.attempted,
             discoveredCount: state.discovered,
             limits: {
@@ -703,6 +1134,10 @@
                 maxDiscovered: MAX_DISCOVERED,
                 maxFileBytes: MAX_TEXT_BYTES,
                 maxTotalBytes: MAX_TOTAL_BYTES,
+                maxImageFiles: MAX_IMAGE_FILES,
+                maxImageDiscovered: MAX_IMAGE_DISCOVERED,
+                maxImageBytes: MAX_IMAGE_BYTES,
+                maxImageTotalBytes: MAX_IMAGE_TOTAL_BYTES,
                 timeoutMs: FETCH_TIMEOUT_MS
             },
             files:
@@ -725,8 +1160,14 @@
                                 b.path
                             )
                     ),
-            skipped:
-                state.errors
+            images: [...state.imageFiles.values()].map(image => ({
+                path: image.path, url: image.url, format: image.format,
+                bytes: image.bytes.length, sha256: image.sha256,
+                sources: image.sources, mappings: image.mappings
+            })).sort((a, b) => a.path.localeCompare(b.path)),
+            imageIndex: imageIndex(),
+            skipped: state.errors,
+            skippedImages: state.imageFailures
         };
     }
 
@@ -762,12 +1203,12 @@
                 URL.revokeObjectURL(
                     url
                 ),
-            1500
+            60000
         );
     }
 
     function exportManifest() {
-        if (!state.files.size) {
+        if (!state.files.size && !state.imageFiles.size) {
             return;
         }
 
@@ -916,6 +1357,14 @@
                 path: file.path,
                 bytes: encoder.encode(file.text)
             })),
+            ...[...state.imageFiles.values()].map(image => ({
+                path: image.path,
+                bytes: image.bytes
+            })),
+            {
+                path: 'upstream/image-index.json',
+                bytes: encoder.encode(JSON.stringify(imageIndex(), null, 2) + '\n')
+            },
             {
                 path: 'upstream/manifest.json',
                 bytes: encoder.encode(manifest)
@@ -946,7 +1395,7 @@
     }
 
     function exportTar() {
-        if (!state.files.size) {
+        if (!state.files.size && !state.imageFiles.size) {
             return;
         }
 
@@ -1015,7 +1464,7 @@
                 right:12px!important;
                 bottom:12px!important;
                 z-index:2147483646!important;
-                width:min(380px,calc(100vw - 24px))!important;
+                width:min(460px,calc(100vw - 24px))!important;
                 padding:10px!important;
                 border:1px solid rgba(255,255,255,.18)!important;
                 border-radius:9px!important;
@@ -1073,7 +1522,7 @@
 
             .mus-meta {
                 display:grid;
-                grid-template-columns:repeat(3,minmax(0,1fr));
+                grid-template-columns:repeat(5,minmax(0,1fr));
                 gap:5px;
                 margin-top:7px;
             }
@@ -1103,6 +1552,7 @@
 
             .mus-actions button {
                 flex:1;
+                min-width:0;
             }
 
             .mus-hint {
@@ -1214,18 +1664,21 @@
             <div class="mus-status" data-mus-status></div>
 
             <div class="mus-meta">
-                <div><b data-mus-files>0</b><span>files</span></div>
+                <div><b data-mus-files>0</b><span>text files</span></div>
                 <div><b data-mus-size>0 KB</b><span>text</span></div>
+                <div><b data-mus-images>0</b><span>images</span></div>
+                <div><b data-mus-image-size>0 KB</b><span>artwork</span></div>
                 <div><b data-mus-errors>0</b><span>skipped</span></div>
             </div>
 
             <div class="mus-actions">
-                <button type="button" data-mus-scan>Scan</button>
+                <button type="button" data-mus-scan>Scan source</button>
+                <button type="button" data-mus-images-scan>Download images</button>
                 <button type="button" data-mus-cancel disabled>Cancel</button>
                 <button type="button" data-mus-tar disabled>Export TAR</button>
                 <button type="button" data-mus-manifest disabled>Manifest</button>
             </div>
-            <div class="mus-hint">Only public client assets are captured. Dynamic paths not observed are reported, never guessed. Partial exports are flagged in the manifest.</div>
+            <div class="mus-hint">Run Scan source first for image references inside game files. Download images also inspects live game images and the public item catalog. Export TAR includes binary artwork, checksums and verified ID mappings. Missing sprites are reported, never guessed.</div>
 
             <div class="mus-errors" data-mus-error-list></div>
         `;
@@ -1251,6 +1704,14 @@
         ).addEventListener(
             'click',
             scrape
+        );
+
+        q(
+            '[data-mus-images-scan]',
+            root
+        ).addEventListener(
+            'click',
+            scanImages
         );
 
         q(
@@ -1333,12 +1794,15 @@
                 totalBytes()
             );
 
+        q('[data-mus-images]', root).textContent = String(state.imageFiles.size);
+        q('[data-mus-image-size]', root).textContent = prettyBytes(imageTotalBytes());
         q(
             '[data-mus-errors]',
             root
         ).textContent =
             String(
-                state.errors.length + state.unresolvedDynamicPaths.size
+                state.errors.length + state.unresolvedDynamicPaths.size +
+                state.imageFailures.length
             );
 
         const scan =
@@ -1349,6 +1813,7 @@
 
         scan.disabled =
             state.running;
+        q('[data-mus-images-scan]', root).disabled = state.running;
 
         const cancel = q('[data-mus-cancel]', root);
         cancel.disabled = !state.running || state.cancelRequested;
@@ -1371,7 +1836,7 @@
                 root
             ).disabled =
                 state.running ||
-                !state.files.size;
+                (!state.files.size && !state.imageFiles.size);
         }
 
         const errors =
@@ -1381,7 +1846,7 @@
             );
 
         errors.innerHTML =
-            state.errors
+            [...state.errors, ...state.imageFailures]
                 .slice(0, 12)
                 .map(
                     item =>
@@ -1414,7 +1879,7 @@
         );
 
         console.info(
-            '[PokéIdle Upstream Scraper] v1.2.0 loaded'
+            '[PokéIdle Upstream Scraper] v1.3.0 loaded'
         );
     }
 
