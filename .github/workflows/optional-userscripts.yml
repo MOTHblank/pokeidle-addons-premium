@@ -1,0 +1,29 @@
+name: Validate preserved browser userscripts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/optional-userscripts.yml'
+      - 'addons/**/*.user.js'
+      - 'addons/*.user.js'
+      - 'addons/hunt-atlas/tests/**'
+      - 'tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  userscripts:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check migrated userscripts
+        run: |
+          for file in addons/*.user.js addons/hunt-atlas/hunt-atlas.user.js; do node --check "$file"; done
+      - name: Hunt Atlas and Twitch regression tests
+        run: node --test addons/hunt-atlas/tests/*.test.cjs tests/*.test.cjs
