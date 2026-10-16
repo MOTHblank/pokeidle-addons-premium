@@ -1083,6 +1083,13 @@
                 state.files.size,
             totalBytes:
                 totalBytes(),
+            imageFileCount: state.imageFiles.size,
+            imageBytes: imageTotalBytes(),
+            imageCandidateCount: state.imageCandidates.size,
+            imageAttemptedCount: state.imageAttempted,
+            imageScanComplete: state.imageComplete,
+            imageScanCapped: state.imageCapped,
+            unsupportedImageHosts: [...state.externalImages].sort(),
             complete: state.complete,
             cancelled: state.cancelRequested,
             observedStaticAssetCount: observedAssets.size,
@@ -1095,6 +1102,10 @@
                 maxDiscovered: MAX_DISCOVERED,
                 maxFileBytes: MAX_TEXT_BYTES,
                 maxTotalBytes: MAX_TOTAL_BYTES,
+                maxImageFiles: MAX_IMAGE_FILES,
+                maxImageDiscovered: MAX_IMAGE_DISCOVERED,
+                maxImageBytes: MAX_IMAGE_BYTES,
+                maxImageTotalBytes: MAX_IMAGE_TOTAL_BYTES,
                 timeoutMs: FETCH_TIMEOUT_MS
             },
             files:
@@ -1117,8 +1128,14 @@
                                 b.path
                             )
                     ),
-            skipped:
-                state.errors
+            images: [...state.imageFiles.values()].map(image => ({
+                path: image.path, url: image.url, format: image.format,
+                bytes: image.bytes.length, sha256: image.sha256,
+                sources: image.sources, mappings: image.mappings
+            })).sort((a, b) => a.path.localeCompare(b.path)),
+            imageIndex: imageIndex(),
+            skipped: state.errors,
+            skippedImages: state.imageFailures
         };
     }
 
@@ -1159,7 +1176,7 @@
     }
 
     function exportManifest() {
-        if (!state.files.size) {
+        if (!state.files.size && !state.imageFiles.size) {
             return;
         }
 
@@ -1308,6 +1325,14 @@
                 path: file.path,
                 bytes: encoder.encode(file.text)
             })),
+            ...[...state.imageFiles.values()].map(image => ({
+                path: image.path,
+                bytes: image.bytes
+            })),
+            {
+                path: 'upstream/image-index.json',
+                bytes: encoder.encode(JSON.stringify(imageIndex(), null, 2) + '\n')
+            },
             {
                 path: 'upstream/manifest.json',
                 bytes: encoder.encode(manifest)
@@ -1338,7 +1363,7 @@
     }
 
     function exportTar() {
-        if (!state.files.size) {
+        if (!state.files.size && !state.imageFiles.size) {
             return;
         }
 
