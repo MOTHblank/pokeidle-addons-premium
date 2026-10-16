@@ -1,14 +1,7 @@
 name: Validate preserved browser userscripts
 
+# Manual validation only: routine pushes must never use hosted-runner minutes.
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/optional-userscripts.yml'
-      - 'addons/**/*.user.js'
-      - 'addons/*.user.js'
-      - 'addons/hunt-atlas/tests/**'
-      - 'tests/**'
   workflow_dispatch:
 
 permissions:
