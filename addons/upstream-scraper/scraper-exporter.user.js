@@ -581,8 +581,14 @@
                         if (state.cancelRequested) {
                             reject(new Error('Cancelled')); return;
                         }
-                        if (res.status !== 200 ||
-                            normalizeImageUrl(res.finalUrl || url) !== url ||
+                        const final = normalizeImageUrl(res.finalUrl || url);
+                        // Canonical www/non-www redirects are accepted only
+                        // within the two approved public art hosts, and only
+                        // when the exact image path is unchanged.
+                        const safeRedirect = final &&
+                            PUBLIC_ART_HOSTS.has(new URL(final).hostname) &&
+                            new URL(final).pathname === new URL(url).pathname;
+                        if (res.status !== 200 || !safeRedirect ||
                             !(res.response instanceof ArrayBuffer)) {
                             reject(new Error('Invalid image response or redirect: HTTP ' + res.status));
                             return;
