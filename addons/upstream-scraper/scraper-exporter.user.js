@@ -1432,7 +1432,7 @@
                 right:12px!important;
                 bottom:12px!important;
                 z-index:2147483646!important;
-                width:min(380px,calc(100vw - 24px))!important;
+                width:min(460px,calc(100vw - 24px))!important;
                 padding:10px!important;
                 border:1px solid rgba(255,255,255,.18)!important;
                 border-radius:9px!important;
@@ -1490,7 +1490,7 @@
 
             .mus-meta {
                 display:grid;
-                grid-template-columns:repeat(3,minmax(0,1fr));
+                grid-template-columns:repeat(5,minmax(0,1fr));
                 gap:5px;
                 margin-top:7px;
             }
@@ -1520,6 +1520,7 @@
 
             .mus-actions button {
                 flex:1;
+                min-width:0;
             }
 
             .mus-hint {
@@ -1631,18 +1632,21 @@
             <div class="mus-status" data-mus-status></div>
 
             <div class="mus-meta">
-                <div><b data-mus-files>0</b><span>files</span></div>
+                <div><b data-mus-files>0</b><span>text files</span></div>
                 <div><b data-mus-size>0 KB</b><span>text</span></div>
+                <div><b data-mus-images>0</b><span>images</span></div>
+                <div><b data-mus-image-size>0 KB</b><span>artwork</span></div>
                 <div><b data-mus-errors>0</b><span>skipped</span></div>
             </div>
 
             <div class="mus-actions">
-                <button type="button" data-mus-scan>Scan</button>
+                <button type="button" data-mus-scan>Scan source</button>
+                <button type="button" data-mus-images-scan>Download images</button>
                 <button type="button" data-mus-cancel disabled>Cancel</button>
                 <button type="button" data-mus-tar disabled>Export TAR</button>
                 <button type="button" data-mus-manifest disabled>Manifest</button>
             </div>
-            <div class="mus-hint">Only public client assets are captured. Dynamic paths not observed are reported, never guessed. Partial exports are flagged in the manifest.</div>
+            <div class="mus-hint">Run Scan source first for image references inside game files. Download images also inspects live game images and the public item catalog. Export TAR includes binary artwork, checksums and verified ID mappings. Missing sprites are reported, never guessed.</div>
 
             <div class="mus-errors" data-mus-error-list></div>
         `;
@@ -1668,6 +1672,14 @@
         ).addEventListener(
             'click',
             scrape
+        );
+
+        q(
+            '[data-mus-images-scan]',
+            root
+        ).addEventListener(
+            'click',
+            scanImages
         );
 
         q(
@@ -1750,12 +1762,15 @@
                 totalBytes()
             );
 
+        q('[data-mus-images]', root).textContent = String(state.imageFiles.size);
+        q('[data-mus-image-size]', root).textContent = prettyBytes(imageTotalBytes());
         q(
             '[data-mus-errors]',
             root
         ).textContent =
             String(
-                state.errors.length + state.unresolvedDynamicPaths.size
+                state.errors.length + state.unresolvedDynamicPaths.size +
+                state.imageFailures.length
             );
 
         const scan =
@@ -1766,6 +1781,7 @@
 
         scan.disabled =
             state.running;
+        q('[data-mus-images-scan]', root).disabled = state.running;
 
         const cancel = q('[data-mus-cancel]', root);
         cancel.disabled = !state.running || state.cancelRequested;
@@ -1788,7 +1804,7 @@
                 root
             ).disabled =
                 state.running ||
-                !state.files.size;
+                (!state.files.size && !state.imageFiles.size);
         }
 
         const errors =
@@ -1798,7 +1814,7 @@
             );
 
         errors.innerHTML =
-            state.errors
+            [...state.errors, ...state.imageFailures]
                 .slice(0, 12)
                 .map(
                     item =>
@@ -1831,7 +1847,7 @@
         );
 
         console.info(
-            '[PokéIdle Upstream Scraper] v1.2.0 loaded'
+            '[PokéIdle Upstream Scraper] v1.3.0 loaded'
         );
     }
 
