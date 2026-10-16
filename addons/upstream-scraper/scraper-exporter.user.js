@@ -462,8 +462,12 @@
             if (!Array.isArray(value[key])) continue;
             for (const entry of value[key].slice(0, 15000)) {
                 if (!entry || typeof entry !== 'object') continue;
-                const id = Number(kind === 'pokemon' ?
-                    (entry.speciesId ?? entry.species_id ?? entry.id) : entry.id);
+                // A Pokémon owned by a player has an individual instance ID.
+                // Only explicit species IDs, or IDs inside a species catalog,
+                // may become native sprite mappings.
+                const speciesId = entry.speciesId ?? entry.species_id ??
+                    (key === 'species' ? entry.id : undefined);
+                const id = Number(kind === 'pokemon' ? speciesId : entry.id);
                 const name = entry.name ?? entry.nome ?? '';
                 for (const field of [
                     'icon', 'sprite', 'image', 'img', 'iconUrl', 'spriteUrl', 'imageUrl'
@@ -1089,12 +1093,16 @@
             imageAttemptedCount: state.imageAttempted,
             imageScanComplete: state.imageComplete,
             imageScanCapped: state.imageCapped,
+            unmappedImageCount: [...state.imageFiles.values()]
+                .filter(image => !image.mappings.length).length,
             unsupportedImageHosts: [...state.externalImages].sort(),
-            complete: state.complete,
+            complete: (!state.startedAt || state.complete) &&
+                (!state.imageDiscovered || state.imageComplete),
+            textScanComplete: state.complete,
             cancelled: state.cancelRequested,
             observedStaticAssetCount: observedAssets.size,
             unresolvedDynamicPaths: [...state.unresolvedDynamicPaths].sort(),
-            coverage: 'public client assets discoverable in this session; dynamic assets not yet observed may remain',
+            coverage: 'public client files and images observed or explicitly listed in public catalogs; unloaded/dynamic assets may remain unlisted',
             attemptedCount: state.attempted,
             discoveredCount: state.discovered,
             limits: {
