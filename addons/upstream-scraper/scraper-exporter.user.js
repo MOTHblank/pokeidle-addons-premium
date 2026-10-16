@@ -487,6 +487,14 @@
         let hit;
         while ((hit = css.exec(text))) addImageCandidate(hit[1], source, null, sourceUrl);
         while ((hit = literals.exec(text))) addImageCandidate(hit[1], source, null, sourceUrl);
+        // Report unresolved runtime templates, but never manufacture URLs or
+        // infer a species ID from an unrendered path.
+        const dynamic = /\$\{[^}]{1,100}\}[^'"\x60\s]{0,120}\.(?:png|gif|webp|jpe?g|avif)/gi;
+        while ((hit = dynamic.exec(text))) {
+            if (state.unresolvedDynamicPaths.size < 100) {
+                state.unresolvedDynamicPaths.add('image: ' + hit[0].slice(0, 180));
+            }
+        }
     }
 
     function discoverImageReferences() {
@@ -1179,7 +1187,7 @@
                 URL.revokeObjectURL(
                     url
                 ),
-            1500
+            60000
         );
     }
 
