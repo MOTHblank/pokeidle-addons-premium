@@ -69,7 +69,7 @@ See [Hunt Atlas instructions](addons/hunt-atlas/README.md) for experiment-specif
 
 - `addons/moth-watch/` — distributable script, source sections and builder.
 - `addons/hunt-atlas/` — experimental standalone script, instructions and preview.
-- `addons/upstream-scraper/` — client-asset export userscript.
+- `addons/upstream-scraper/` — [Upstream Scraper & Asset Exporter](addons/upstream-scraper/README.md): inspect public client files and download discovered item/Pokémon artwork with a manifest and checksums.
 - `addons/*.user.js` — archived optional browser addons migrated from the native controller repository.
 - `tests/` and `addons/hunt-atlas/tests/` — migrated Hunt Atlas and Twitch regression tests.
 - `docs/mechanics/`, `docs/market/`, `docs/references/` — topic-specific technical references.
