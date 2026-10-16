@@ -30,7 +30,7 @@ def main():
         return 1
     failed = False
     for path in staged.stdout.decode().splitlines():
-        if not re.fullmatch(r"addons/[^/]+\\.user\\.js", path):
+        if not re.fullmatch(r"addons/[^/]+\.user\.js", path):
             continue
         new = git("show", ":" + path)
         old = git("show", "HEAD:" + path)
