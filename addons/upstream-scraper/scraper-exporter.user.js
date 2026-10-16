@@ -588,15 +588,25 @@
                         const safeRedirect = final &&
                             PUBLIC_ART_HOSTS.has(new URL(final).hostname) &&
                             new URL(final).pathname === new URL(url).pathname;
-                        if (res.status !== 200 || !safeRedirect ||
-                            !(res.response instanceof ArrayBuffer)) {
+                        const payload = res.response;
+                        const bytes = payload && typeof payload.byteLength === 'number'
+                            ? (ArrayBuffer.isView(payload)
+                                ? new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength)
+                                : new Uint8Array(payload))
+                            : null;
+                        if (res.status !== 200 || !safeRedirect || !bytes) {
                             reject(new Error('Invalid image response or redirect: HTTP ' + res.status));
                             return;
                         }
-                        const bytes = new Uint8Array(res.response);
                         if (bytes.byteLength > MAX_IMAGE_BYTES) {
                             reject(new Error('Image exceeds byte limit'));
                         } else resolve(bytes);
+                    },
+                    onprogress: progress => {
+                        if (progress.loaded > MAX_IMAGE_BYTES) {
+                            state.currentRequest?.abort();
+                            reject(new Error('Image exceeds byte limit'));
+                        }
                     },
                     onerror: () => reject(new Error('Image request failed')),
                     ontimeout: () => reject(new Error('Image request timed out')),
