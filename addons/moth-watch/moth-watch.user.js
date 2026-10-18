@@ -1414,7 +1414,9 @@
 
         for (const url of [
             '/assets/creatures.json',
-            '/assets/creatures-outland-novos.json'
+            '/assets/creatures-novos.json',
+            '/assets/creatures-outland-novos.json',
+            '/assets/creatures-formas.json'
         ]) {
             try {
                 const payload = await loadJson(url);
