@@ -43,14 +43,14 @@ test('encoded loot chance and probability units are fractions', () => {
 });
 
 test('eight Outland tiers gate unlocks and multiply only rare chances', () => {
-    const gates = [150,500,1000,2000,4000,8000,16000,25000];
+    const gates = [150,1000,2000,4000,8000,16000,24000,36000];
     const multipliers = [1,1.25,1.5,2,3,4,6,8];
     for (let index=0; index < gates.length; index++) {
         assert.equal(api.farmingTier(index+1, gates[index]-1), null);
         assert.equal(api.farmingTier(index+1, gates[index]).rareMultiplier, multipliers[index]);
     }
     assert.equal(api.farmingTier(9, 1000000), null);
-    assert.equal(0.0005 * api.farmingTier(8,25000).rareMultiplier, 0.004);
+    assert.equal(0.0005 * api.farmingTier(8,36000).rareMultiplier, 0.004);
     assert.equal(0.000005 * api.farmingTier(8,25000).rareMultiplier, 0.00004);
 });
 
