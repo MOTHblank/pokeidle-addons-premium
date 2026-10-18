@@ -1184,7 +1184,6 @@
         itemCatalogStatus: 'idle',
         itemsByName: new Map(),
         itemsById: new Map(),
-        npcLootBySpecies: new Map(),
         ballPrices: new Map(),
         itemPrices: new Map(),
         captureBallRates: new Map(),
@@ -6772,30 +6771,13 @@
     }
 
 
-    function rebuildNpcLootCatalog() {
-        // Uses already-loaded raw item/creature assets once per catalog
-        // revision. It reconstructs upstream normalization, not server truth.
-        const shopIds = new Set(state.itemPrices.keys());
-        const special = new Set([70000]); // upstream Bronze Boss Token
-        const priceOf = name => {
-            const item = state.itemsByName.get(String(name || '').toLowerCase());
-            return farmNpcPrice(item, shopIds, special);
-        };
-        state.npcLootBySpecies = new Map();
+    function refreshCaptureRarities() {
+        // Ordinary NPC loot was retired upstream on 15 Oct 2026. Do not
+        // reconstruct thousands of no-longer-awarded drop tables on load.
         state.captureRarities.clear();
         for(const [id,meta] of state.speciesCombat) {
             const rarity=captureRarityFromCatalog(meta);
             if(rarity!==null)state.captureRarities.set(id,rarity);
-        }
-        if (!state.itemsByName.size) return;
-        for (const [id, meta] of state.speciesCombat) {
-            if (!Array.isArray(meta.rawLoot)) continue;
-            const rebuilt = farmRebalanceLoot({
-                loot:meta.rawLoot, huntLevel:meta.huntLevel,
-                type1:meta.type1
-            }, priceOf);
-            const value = farmLootValue(rebuilt, priceOf);
-            state.npcLootBySpecies.set(id,value);
         }
     }
 
@@ -6808,7 +6790,7 @@
         }
         if (items !== undefined) {
             state.itemPrices = farmNormalizePrices(items, 'item');
-            if (state.itemsByName.size) rebuildNpcLootCatalog();
+            if (state.itemsByName.size) refreshCaptureRarities();
         }
     }
 
@@ -7140,7 +7122,7 @@
                     } else state.itemCatalogStatus = 'unknown';
                 }
             }
-            rebuildNpcLootCatalog();
+            refreshCaptureRarities();
             state.combatCatalogStatus = 'ready';
             state.combatCatalogError = null;
             state.combatRevision++;
