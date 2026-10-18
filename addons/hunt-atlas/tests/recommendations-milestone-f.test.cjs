@@ -16,17 +16,17 @@ const h=vm.runInNewContext(helpers+'\n({' + names.join(',') + '})',{});
 const row=(slug,score,level=100)=>({hunt:{slug,nivel:level},score});
 test('explicit multiple real ranking dimensions, no implicit trainer XP substitution',()=>{
     assert.deepEqual(Array.from(h.HA_RANK_METRICS),[
-        'xp','coins','npcLoot','rare',
-        'capture','shinyCatch']);
+        'xp','coins','rare','capture','shinyCatch']);
     const data={xp:{value:100,pokemonValue:75},
         economy:{killCoinsH:4,npcLootEvH:20,netH:-2},
         rare:{unitsH:.04},
         capture:{catchesH:3,shinyCaughtH:.001,coinsPerCapture:200}};
-    const expected={xp:100,coins:4,npcLoot:20,
+    const expected={xp:100,coins:4,
         rare:.04,capture:3,shinyCatch:.001};
     for(const [key,value] of Object.entries(expected))
         assert.equal(h.haMetricValue(key,data),value,key);
     assert.equal(h.haMetricValue('rare',{xp:{value:9999}}),null);
+    assert.equal(h.HA_RANK_METRICS.includes('npcLoot'),false);
     assert.equal(h.haMetricValue('npcLoot',{xp:{value:9999}}),null);
     assert.equal(h.haMetricValue('pokemonXp',data),null);
     assert.equal(h.haMetricValue('shinyCatch',{capture:{catchesH:999}}),null);
