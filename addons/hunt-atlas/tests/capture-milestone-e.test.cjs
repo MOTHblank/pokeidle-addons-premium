@@ -36,7 +36,7 @@ test('on a defeated body wiki Ultra is x4 and Beast is x8 before caps',()=>{
 });
 test('upstream evolution stages replace NPC-value odds on ordinary hunts',()=>{
     const staged=vm.runInNewContext(blocks+
-        '\\n({captureWikiChance,captureHuntChance,captureSpeciesForecast})',
+        '\n({captureWikiChance,captureHuntChance,captureSpeciesForecast})',
         {state:{captureStageCaps:new Map([[1,20],[2,40],[3,100]])}});
     for(const [id,expected] of [[1,.0293],[2,.0235],[3,.0188]]){
         const actual=staged.captureWikiChance(null,8,0,id);
