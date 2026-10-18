@@ -34,6 +34,24 @@ test('on a defeated body wiki Ultra is x4 and Beast is x8 before caps',()=>{
     assert.equal(h.captureWikiChance(100,4,-1),null);
     assert.ok(h.captureWikiChance(100,8)/h.captureWikiChance(100,4)<2.01);
 });
+test('upstream evolution stages replace NPC-value odds on ordinary hunts',()=>{
+    const staged=vm.runInNewContext(blocks+
+        '\\n({captureWikiChance,captureHuntChance,captureSpeciesForecast})',
+        {state:{captureStageCaps:new Map([[1,20],[2,40],[3,100]])}});
+    for(const [id,expected] of [[1,.0293],[2,.0235],[3,.0188]]){
+        const actual=staged.captureWikiChance(null,8,0,id);
+        assert.ok(Math.abs(actual-expected)<.00002,
+            'stage '+id+': '+actual+' vs '+expected);
+    }
+    const hunt={especies:[{pokeId:1,pontos:1},{pokeId:2,pontos:1}]};
+    const rate=staged.captureHuntChance(hunt,new Map(),8);
+    assert.ok(rate.chance>0);
+    assert.equal(rate.coverage,100);
+    // No stage: the historical formula remains a fallback.
+    assert.equal(staged.captureWikiChance(10000,4,0,777),
+        h.captureWikiChance(10000,4));
+    assert.equal(staged.captureWikiChance(null,4,0,777),null);
+});
 test('ball catalog uses runtime evidence before wiki conditional defaults, Beast never has Coins',()=>{
     const map=h.captureBallCatalog([{id:4,catchRate:4,priceGold:130},
         {id:5,catchRate:8,priceDiamond:3},
