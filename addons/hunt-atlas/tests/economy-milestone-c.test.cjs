@@ -112,6 +112,8 @@ test('obsolete NPC loot is not a selectable rank or second gold income stream',(
     assert.doesNotMatch(code,/<option value="npcLoot">/);
     assert.doesNotMatch(code,/const loot = farmLootPrediction\(hunt,state\.npcLootBySpecies,killsH,mix\)/);
     assert.match(code,/const loot = \{perHour:null,coverage:0,source:'retired-in-upstream'\}/);
+    assert.match(code,/function refreshCaptureRarities\(\)/);
+    assert.doesNotMatch(code,/function rebuildNpcLootCatalog\(\)/);
 });
 test('kill Coins sort remains independent of XP, while net income stays read-only',()=>{
     assert.match(code,/sort === 'coins'/);
