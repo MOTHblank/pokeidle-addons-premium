@@ -1188,6 +1188,7 @@
         itemPrices: new Map(),
         captureBallRates: new Map(),
         captureRarities: new Map(),
+        captureStageCaps: new Map(),
         captureBonusEvidence: {},
         captureChanceEvidence: {seen:0,min:null,max:null},
         inventoryForCosts: new Map(),
@@ -3533,15 +3534,22 @@
         if (npc>0 && npc<=500000) return npc;
         return null; // Never borrow a specimen sale price or RMT listing.
     }
-    function captureWikiChance(rarity,efficiency,hpFraction=0) {
+    // Ordinary hunt captures: upstream v1.314.2 uses evolution stage.
+    // Missing stage / special encounters keep the legacy price-based model.
+    // The optional speciesId keeps the exported pure testing helpers usable.
+    function captureWikiChance(rarity,efficiency,hpFraction=0,speciesId=null) {
         const price=Number(rarity),eff=Number(efficiency),hp=Number(hpFraction);
-        if (!(price>0)||!Number.isFinite(price)||!(eff>0)||
-            !Number.isFinite(eff)||!Number.isFinite(hp)||hp<0||hp>1)
-            return null;
+        if (!(eff>0)||!Number.isFinite(eff)||!Number.isFinite(hp)||
+            hp<0||hp>1) return null;
+        const id=Number(speciesId);
+        const stage=speciesId!==null&&Number.isInteger(id)&&id>0&&
+            typeof state!=='undefined'?
+            state.captureStageCaps.get(Number(outlandNormalizeSpeciesId(id))):null;
+        if(!stage&&(!(price>0)||!Number.isFinite(price)))return null;
         const r=Math.log10(Math.max(100,price))-1;
-        const factor=1+r**3/17;
-        return Math.min(.10,Math.max(.003,
-            .0075*eff/factor*(1.4-hp)));
+        const factor=stage?({20:2.8669,40:3.5745,100:4.4681}[stage]||4.4681):
+            1+r**3/17;
+        return Math.min(.10,Math.max(.003,.0075*eff/factor*(1.4-hp)));
     }
     function captureBallCatalog(source) {
         const rows=Array.isArray(source)?source:
@@ -3683,7 +3691,7 @@
                 Math.max(1,Number(row.pontos)||1);
             total+=weight;
             const rarity=captureRarityForSpecies(rarities,id);
-            const chance=captureWikiChance(rarity,efficiency);
+            const chance=captureWikiChance(rarity,efficiency,0,id);
             if(chance!==null){covered+=weight;weighted+=weight*chance;}
         }
         return {chance:total>0&&covered===total?weighted/total:null,
@@ -3741,7 +3749,7 @@
             if(Number(outlandNormalizeSpeciesId(row.pokeId))===target)
                 matches+=weight;
         }
-        const chance=captureWikiChance(rarity,efficiency);
+        const chance=captureWikiChance(rarity,efficiency,0,target);
         if(!total||!matches||chance===null)return null;
         const hasMeasuredFraction=typeof options.acceptedFraction==='number' &&
             Number.isFinite(options.acceptedFraction) &&
@@ -6678,6 +6686,10 @@
                 creature?.tetoCaptura)) && Number(creature.tetoCaptura)>0
                 ? Number(creature.tetoCaptura)
                 :previous.captureLevelCeiling??null,
+            evolvesToId:Number.isInteger(Number(creature?.evolvesToId)) &&
+                Number(creature.evolvesToId)>0 ?
+                Number(outlandNormalizeSpeciesId(creature.evolvesToId)):
+                previous.evolvesToId??null,
             rawLoot: Array.isArray(creature?.loot)
                 ? creature.loot.map(line => ({...line}))
                 : previous.rawLoot ?? null,
@@ -6771,6 +6783,39 @@
     }
 
 
+    // Same bounded evolution-chain stage ladder as upstream teto-captura.
+    // Rebuilt after all creature catalogs are merged, not on every repaint.
+    function rebuildCaptureStages(){
+        const ids=new Set(state.speciesCombat.keys());
+        const prior=new Map([...ids].map(id=>[id,0]));
+        const future=new Map([...ids].map(id=>[id,0]));
+        const links=[...state.speciesCombat].map(([id,meta])=>
+            [id,Number(meta.evolvesToId)]).filter(([from,to])=>
+            Number.isInteger(to)&&to>0&&to!==from&&ids.has(to));
+        for(let pass=0;pass<8;pass++){
+            let changed=false;
+            for(const [from,to] of links){
+                const before=(prior.get(from)||0)+1;
+                if(before>(prior.get(to)||0)){prior.set(to,before);changed=true;}
+                const after=(future.get(to)||0)+1;
+                if(after>(future.get(from)||0)){future.set(from,after);changed=true;}
+            }
+            if(!changed)break;
+        }
+        state.captureStageCaps.clear();
+        for(const [id,meta] of state.speciesCombat){
+            const depth=Math.min(3,prior.get(id)||0);
+            const length=Math.min(4,depth+Math.min(3,future.get(id)||0)+1);
+            const cap=id>=2001&&id<=2047?100:
+                length===1?100:length===2?(depth===0?40:100):
+                length===3?[20,40,100][Math.min(depth,2)]:
+                [20,40,70,100][Math.min(depth,3)];
+            const stage=[20,40,100].includes(Number(meta.captureLevelCeiling))?
+                Number(meta.captureLevelCeiling):cap;
+            state.captureStageCaps.set(id,stage);
+            meta.captureLevelCeiling??=stage;
+        }
+    }
     function refreshCaptureRarities() {
         // Ordinary NPC loot was retired upstream on 15 Oct 2026. Do not
         // reconstruct thousands of no-longer-awarded drop tables on load.
@@ -7090,6 +7135,7 @@
                 ['/assets/creatures.json', 'creatures', true],
                 ['/assets/creatures-novos.json', 'creatures', false],
                 ['/assets/creatures-outland-novos.json', 'creatures', false],
+                ['/assets/creatures-formas.json', 'creatures', false],
                 ['/assets/creatures-audit-overrides.json', 'audit', false],
                 ['/assets/items.json', 'items', false]
             ];
@@ -7122,6 +7168,7 @@
                     } else state.itemCatalogStatus = 'unknown';
                 }
             }
+            rebuildCaptureStages();
             refreshCaptureRarities();
             state.combatCatalogStatus = 'ready';
             state.combatCatalogError = null;
@@ -12392,9 +12439,9 @@
         const meta=speciesCombatMeta(species.id);
         const rarity=captureRarityFromCatalog(meta);
         const ultraPct=captureWikiChance(rarity,
-            captureInfoForBall(4)?.efficiency??4);
+            captureInfoForBall(4)?.efficiency??4,0,species.id);
         const beastPct=captureWikiChance(rarity,
-            captureInfoForBall(5)?.efficiency??8);
+            captureInfoForBall(5)?.efficiency??8,0,species.id);
         const catchCard=ultraPct!==null&&beastPct!==null ?
             tr('catch.card',{ultra:formatProbability(ultraPct),
                 beast:formatProbability(beastPct)}):
@@ -14124,7 +14171,8 @@
         const entries = Array.isArray(hunt.especies) ? hunt.especies : [];
         const missing = entries.map(row => Number(outlandNormalizeSpeciesId(row.pokeId)))
             .filter(id => !Number.isInteger(id) ||
-                captureRarityForSpecies(state.captureRarities, id) === null);
+                captureRarityForSpecies(state.captureRarities, id) === null &&
+                !state.captureStageCaps.has(id));
         const captureInputs = {
             catalog: state.combatCatalogStatus,
             catalogError: state.combatCatalogError || null,
