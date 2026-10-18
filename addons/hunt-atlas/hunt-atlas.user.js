@@ -2994,8 +2994,8 @@
 
     // HA MILESTONE A PURE BEGIN. Local, bounded and dependency-free farming math.
     const FARM_OUTLAND_TIERS = Object.freeze([
-        [150, 1], [500, 1.25], [1000, 1.5], [2000, 2],
-        [4000, 3], [8000, 4], [16000, 6], [25000, 8]
+        [150, 1], [1000, 1.25], [2000, 1.5], [4000, 2],
+        [8000, 3], [16000, 4], [24000, 6], [36000, 8]
     ]);
     const FARM_SHINY_LEVELS = Object.freeze([
         5000, 5400, 5900, 6400, 6950, 8000, 8600,
