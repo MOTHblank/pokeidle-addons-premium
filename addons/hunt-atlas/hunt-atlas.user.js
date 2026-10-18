@@ -1497,7 +1497,6 @@
             const validSorts = [
                 'xp',
                 'coins',
-                'npcLoot',
                 'rare',
                 'capture',
                 'shinyCatch',
@@ -3024,6 +3023,21 @@
         return Math.round(36 * Math.pow(n, exponent));
     }
 
+    // Since 15 October 2026, ordinary NPC loot no longer drops. Its
+    // economic value is credited immediately in the kill's Coins receipt.
+    // Mirrors shared/recompensa-hunt.mjs ouroDoAbate, including the
+    // post-25k income curve and boost applied only to the converted loot.
+    function farmingGrossGoldForLevel(level, lootBoostPct = 0) {
+        const n = Number(level);
+        if (!Number.isFinite(n) || n <= 0) return null;
+        const base = farmingGoldForLevel(n);
+        const targetBase = n <= 25000 ? base :
+            farmingGoldForLevel(25000) * (n / 25000) ** 0.30;
+        const convertedLoot = Math.max(0, Math.round(targetBase * 1.15) - base);
+        const boost = Number.isFinite(lootBoostPct) ? Math.max(0, lootBoostPct) : 0;
+        return base + Math.round(convertedLoot * (1 + boost / 100));
+    }
+
     function farmingLootChance(encoded) {
         const n = Number(encoded);
         return Number.isFinite(n) && n >= 0 && n <= 100000
@@ -3454,8 +3468,7 @@
     // HA MILESTONE F PURE BEGIN. Ranking requires the requested metric,
     // never XP as a fallback for missing Coins, rare or capture evidence.
     const HA_RANK_METRICS=Object.freeze([
-        'xp','coins','npcLoot','rare',
-        'capture','shinyCatch'
+        'xp','coins','rare','capture','shinyCatch'
     ]);
     const HA_RARE_SORT_IDS=Object.freeze([70000,70011,70012,70013,70017]);
     function haMetricNumber(value) {
@@ -3913,7 +3926,7 @@
         }else if(rare)rows.splice(rows.indexOf(rare),1);
         return rows;
     }
-    function farmGoldPrediction(hunt,killsH){
+    function farmGoldPrediction(hunt,killsH,lootBoostPct=0){
         if(!Number.isFinite(killsH)||killsH<0||
             !Array.isArray(hunt?.especies)||!hunt.especies.length)return null;
         const rows=hunt.especies.map(x=>({weight:Math.max(1,Number(x.pontos)||1),
@@ -3921,7 +3934,7 @@
         if(rows.some(x=>!x.level))return null;
         const total=rows.reduce((sum,x)=>sum+x.weight,0);
         return killsH*rows.reduce((sum,x)=>sum+
-            x.weight*farmingGoldForLevel(x.level),0)/total;
+            x.weight*farmingGrossGoldForLevel(x.level,lootBoostPct),0)/total;
     }
     // Hunt catalogs are stable between actual revisions; reuse baseline
     // weighted loot once per hunt/catalog pair instead of per species card.
@@ -4036,7 +4049,8 @@
         const netH=ok(realizedH)&&ok(cost?.coinsH)?
             realizedH-cost.coinsH:null;
         return {killsH,killCoinsH:killH,
-            killSource:ok(observedKillH)?'observed-server/event':'upstream-shared-model',
+            killSource:ok(observedKillH)?'observed-server/event':
+                ok(modeledKillH)?'observed-kill-pace-scenario':'unavailable',
             npcLootEvH:ok(npcLootEvH)?npcLootEvH:null,realizedH,netH,
             replacementCostH:cost?.coinsH??null,diamondsH:cost?.diamondsH??null,
             source:netH===null?'incomplete':'replacement-cost-adjusted'};
@@ -6998,18 +7012,17 @@
 
     function huntEconomyEstimate(hunt, xp = huntXpEstimate(hunt), observedOverride=undefined) {
         const killsH = Number.isFinite(xp?.killsH) ? xp.killsH : null;
-        const modelKillGoldH = farmGoldPrediction(hunt,killsH);
+        // An uncalibrated time-to-kill simulation can exaggerate Coins/hour
+        // by orders of magnitude. Do not publish it as a modeled gold rate.
+        const modelKillGoldH = xp?.observed && Number.isFinite(killsH)
+            ? farmGoldPrediction(hunt,killsH) : null;
         const current = isHuntHere(hunt?.slug);
         const record = current ? performanceRecord(hunt?.slug,false) : null;
         const rates = current ? observedRates(record) : null;
-        const observedMix = current ?
-            (observedOverride === undefined ? captureObservedForHunt(hunt) : observedOverride) : null;
-        const attributed = observedMix ? Object.values(observedMix.bySpecies)
-            .reduce((n,row)=>n+(Number(row?.kills)||0),0) : 0;
-        // Use measured mix only if all 30+ kills have species attribution.
-        const mix = observedMix?.kills >= 30 &&
-            attributed === observedMix.kills ? observedMix.bySpecies : null;
-        const loot = farmLootPrediction(hunt,state.npcLootBySpecies,killsH,mix);
+        // The 15 Oct upstream economy removed ordinary NPC loot; its value
+        // is already included in the Coins recorded for each wild kill.
+        // Never add old reconstructed NPC loot again.
+        const loot = {perHour:null,coverage:0,source:'retired-in-upstream'};
         const now = Date.now();
         const measuredStart = rates ? now-rates.windowMs : null;
         const costs = measuredStart !== null
@@ -8805,8 +8818,8 @@
                 trainerKnown: chosenObserved.trainerKnown,
                 pokemonKnown: chosenObserved.pokemonKnown,
                 goldValue:
-                    chosenObserved.goldH,
-                goldSource: 'observed-server/combined-receipt',
+                    chosenObserved.killGoldH ?? null,
+                goldSource: 'observed-server/kill-receipt',
                 killsH:
                     chosenObserved.killsH,
                 killMs:
@@ -8943,8 +8956,8 @@
             pokemonValue: xpSingleStreamRate(killsH, pokemonXpPerKill),
             trainerXpPerKill,
             pokemonXpPerKill,
-            goldValue: farmGoldPrediction(hunt,killsH),
-            goldSource: 'upstream-shared-model',
+            goldValue: null,
+            goldSource: 'no-measured-kill-pace',
             killGoldH: null,
             autoSaleH: null,
             warmingUp: Boolean(record && record.rateWindow?.rows?.length &&
@@ -11630,7 +11643,6 @@
                         <select data-mha-filter="sort">
                             <option value="xp">${tr('sort.xp')}</option>
                             <option value="coins">${tr('sort.coins')}</option>
-                            <option value="npcLoot">${tr('sort.npcLoot')}</option>
                             <option value="rare">${tr('sort.rare')}</option>
                             <option value="capture">${tr('sort.capture')}</option>
                             <option value="shinyCatch">${tr('sort.shinyCatch')}</option>
@@ -12452,7 +12464,6 @@
                     xpInfo.trainerXpPerKill)}) : null,
             tr('rank.pokemonXp')+': '+metricRate(xpInfo?.pokemonValue),
             tr('econ.kill')+': '+metricRate(economicInfo.killCoinsH),
-            tr('econ.loot')+': '+metricRate(economicInfo.npcLootEvH),
             tr('econ.net')+': '+metricRate(economicInfo.netH),
             tr('rank.rare')+': '+formatEventRate(selectedRare?.unitsH),
             tr('rank.capture',{chance:formatProbability(activeChance)}),
@@ -12937,8 +12948,6 @@
             econLine(tr('econ.kill'),economic.killCoinsH,
                 tr(economic.killSource === 'observed-server/event' ?
                     'econ.observed':'econ.model')),
-            econLine(tr('econ.loot'),economic.npcLootEvH,
-                tr('econ.estimatedLoot',{coverage:economic.lootCoverage})),
             econLine(tr('econ.realized'),economic.realizedH,
                 tr('econ.observed')),
             econLine(tr('econ.net'),economic.netH,
