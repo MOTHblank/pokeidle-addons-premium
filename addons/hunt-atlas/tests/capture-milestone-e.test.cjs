@@ -52,6 +52,22 @@ test('upstream evolution stages replace NPC-value odds on ordinary hunts',()=>{
         h.captureWikiChance(10000,4));
     assert.equal(staged.captureWikiChance(null,4,0,777),null);
 });
+test('stage table follows branched and cross-generation evolution links',()=>{
+    const from=source.indexOf('    function rebuildCaptureStages(){');
+    const end=source.indexOf('    function refreshCaptureRarities() {',from);
+    assert.ok(from>=0&&end>from);
+    const ids=[133,134,135,25,26,4026,57,979,1,2,3,2001];
+    const state={speciesCombat:new Map(ids.map(id=>[id,{}])),
+        captureStageCaps:new Map()};
+    state.speciesCombat.get(1).evolvesToId=2;
+    state.speciesCombat.get(2).evolvesToId=3;
+    vm.runInNewContext(source.slice(from,end)+
+        '\nrebuildCaptureStages();',{state});
+    for(const [id,expected] of [
+        [133,40],[134,100],[135,100],[25,40],[4026,100],
+        [57,40],[979,100],[1,20],[2,40],[3,100],[2001,100]
+    ]) assert.equal(state.captureStageCaps.get(id),expected);
+});
 test('ball catalog uses runtime evidence before wiki conditional defaults, Beast never has Coins',()=>{
     const map=h.captureBallCatalog([{id:4,catchRate:4,priceGold:130},
         {id:5,catchRate:8,priceDiamond:3},
