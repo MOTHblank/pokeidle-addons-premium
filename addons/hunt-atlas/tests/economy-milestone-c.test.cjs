@@ -8,15 +8,22 @@ const a=slice('// HA MILESTONE A PURE BEGIN.','// HA MILESTONE A PURE END.');
 const c=slice('// HA MILESTONE C PURE BEGIN:','// HA MILESTONE C PURE END.');
 const names=['farmNpcPrice','farmLootValue','farmRebalanceLoot','farmGoldPrediction',
     'farmLootPrediction','farmNormalizePrices','farmAppendUse','farmCostRates',
-    'farmFinancialSummary','farmingGoldForLevel','farmingLootChance'];
+    'farmFinancialSummary','farmingGoldForLevel','farmingGrossGoldForLevel',
+    'farmingLootChance'];
 const h=vm.runInNewContext(a+c+'\n({' + names.join(',') + '})',{});
 
-test('level-capped guaranteed gold uses weighted mob level, not sell value',()=>{
+test('gross gold accounts for converted loot and the high-level income curve',()=>{
     const hunt={nivel:160300,especies:[{pokeId:1,pontos:1},
         {pokeId:2,pontos:3,level:5000}]};
     assert.equal(h.farmingGoldForLevel(25000),15776);
     assert.equal(h.farmingGoldForLevel(160300),15776);
-    assert.equal(h.farmGoldPrediction(hunt,100),100*(15776+3*6000)/4);
+    assert.equal(h.farmingGrossGoldForLevel(1),41);
+    assert.equal(h.farmingGrossGoldForLevel(100),658);
+    assert.equal(h.farmingGrossGoldForLevel(100,40),692);
+    assert.equal(h.farmingGrossGoldForLevel(25000),18142);
+    assert.equal(h.farmingGrossGoldForLevel(160300),31681);
+    assert.equal(h.farmingGrossGoldForLevel(160300,40),38043);
+    assert.equal(h.farmGoldPrediction(hunt,100),100*(31681+3*6900)/4);
     assert.equal(h.farmGoldPrediction({nivel:1,especies:[]},100),null);
     assert.equal(h.farmGoldPrediction(hunt,null),null);
 });
@@ -100,6 +107,11 @@ test('realized vs net never double-counts NPC expected loot or inventory; no fak
     assert.equal(h.farmFinancialSummary(100,400,null,null,5000,cost).netH,null);
     assert.equal(h.farmFinancialSummary(100,400,600,100,5000,
         {coinsH:null}).netH,null);
+});
+test('obsolete NPC loot is not a selectable rank or second gold income stream',()=>{
+    assert.doesNotMatch(code,/<option value="npcLoot">/);
+    assert.doesNotMatch(code,/const loot = farmLootPrediction\(hunt,state\.npcLootBySpecies,killsH,mix\)/);
+    assert.match(code,/const loot = \{perHour:null,coverage:0,source:'retired-in-upstream'\}/);
 });
 test('kill Coins sort remains independent of XP, while net income stays read-only',()=>{
     assert.match(code,/sort === 'coins'/);
