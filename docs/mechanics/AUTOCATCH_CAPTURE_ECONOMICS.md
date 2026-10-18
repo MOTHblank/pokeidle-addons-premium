@@ -2,9 +2,9 @@
 
 > **Technical reference for Auto Catch+ and [Hunt Atlas](../../addons/hunt-atlas/hunt-atlas.user.js)**. Defines ordinary and special capture probabilities, capture opportunities, ball efficiency, consumable/revive economics, restock safety, and how to estimate sustainable captures/hour without inventing live server behavior.
 >
-> **Scope:** documentation only; no capture, purchasing, sorting, or automated hunting behavior was changed.
+> **Scope:** the formula and model provenance are updated for upstream v1.314.2. Native and Premium Hunt Atlas now model evolution-stage odds for ordinary hunts; auto-throw and restocking behavior are unchanged.
 
-**Reviewed:** 2026-10-12  
+**Reviewed:** 2026-10-18 (upstream v1.314.2)  
 **Source tiers:** **[WIKI]** owner-supplied current rules; **[UPSTREAM]** inspected client/shared mirror in [MOTHblank/pokeidle-upstream](https://github.com/MOTHblank/pokeidle-upstream); **[ADDON]** present implementation in pokeidle-addons; **[DERIVED]** arithmetic/engineering inference with assumptions; **[UNVERIFIED]** needs deployed server or observed, authorized game messages.  
 **Important:** this upstream mirror does **not** contain the full authoritative server simulation. Functions referenced by wiki/client such as the ordinary server `chanceCaptura` are not available in the checked files; a client-side formula is not proof that every live server path currently applies it.
 
@@ -15,57 +15,48 @@ Related: [Hunt rewards and rare drops](./HUNT_REWARDS_AND_RARE_LOOT.md), [Pokém
 [WIKI — Captura] On an ordinary hunt, a Pokémon is fought until defeated; its **fallen body persists for 30 seconds**. A successful capture creates a Pokémon; a **failed throw at a fallen body consumes that body** and, according to the wiki, cannot be retried. A *living* target can persist after a failed throw, but that is a different path. Do not treat every 30-second body as a source of unlimited attempts, and do not conflate kills, targets seen, throw attempts, capture results and captured Pokémon.
 
 - **Per-kill chance** is not necessarily the **per-throw chance**: some bodies expire, some are skipped for inventory/reserve reasons, and the player may not be allowed to throw at a particular target.
-- **Per-throw capture success** depends on species economic rarity, ball efficiency, current target HP and current capture bonuses.
+- **Per-throw capture success** in an ordinary hunt depends on the species' evolutionary stage (capture-level cap 20/40/100), ball efficiency, target HP and capture bonuses. Outside ordinary hunts, the older value-based formula can still apply.
 - **Shiny** is rolled on capture attempt, *before* success, not on wild spawn; rarity/IV/quality/potency of the caught specimen are distinct from capture difficulty and require their own model.
 - An ordinary captured Pokémon may be moved to the **Depot** if the five-slot party is full; the Depot is not a failure state.
 - An ordinary captured specimen is not automatically marketable: its individual N, P, IVs, Q, level and shiny status matter. See the valuation reference.
 
-### 1.1 The wiki's ordinary formula — conditional, **not directly exported in shared upstream**
+### 1.1 Current upstream capture formula (v1.314.2)
+
+The shared game module `shared/captura-degrau.mjs` defines ordinary-hunt factors by the evolutionary stage from `shared/teto-captura.mjs`. A three-stage chain has 20/40/100, a two-stage chain has 40/100, and a Pokémon without evolutions has 100.
 
 ```text
-raridade = log10(max(100, precoNpcEspecie)) - 1
-fator    = 1 + (raridade ^ 3) / 17
-p_raw    = 0.0075 * (eficienciaBola / fator) * (1.4 - hpAtual / hpMaximo)
-p_final  = clamp(p_raw after applicable capture bonuses, 0.003, 0.10)
+fator(20)  = 2.8669   // first of three
+fator(40)  = 3.5745   // middle of three, or first of two
+fator(100) = 4.4681   // final stage or no evolution
+p_raw      = 0.0075 × ballEfficiency / fator × (1.4 − currentHP / maxHP)
+p_final    = clamp(p_raw after applicable bonuses, 0.003, 0.10)
 ```
 
-Here **`p` is a fractional probability** (e.g. `0.01` = 1%). `0.003` and `0.10` correspond to the wiki's **0.30% minimum** and **10% maximum**. On a defeated body `hpAtual=0`, so the HP factor becomes **1.4**.
+**Legendary and Mythical special encounters** keep their separate capture contracts; non-hunt species can retain the earlier economic-rarity factor `1 + (log10(max(100,price))-1)^3/17`. Do not substitute specimen sale value, NPC price, or hunt level for the evolutionary stage in ordinary hunts. The model is a client/shared-source forecast until confirmed against live accepted server throws.
 
-**[UPSTREAM]** `shared/sell-value.mjs` exports `valorEconomicoDe(esp)`, which normalizes species `sellValue`, `priceNpc` and fallback economic value, and specifically warns that the rarity price is **not** the same as a capped Pokémon NPC *sale* price. `shared/teto-captura.mjs` describes captured **level**, not capture chance. `pokedex-gpt.mjs` explicitly documents a `chanceDe(esp, catchRate)` function **provided by the client** as the mirror of `chanceCaptura` in an unavailable server simulation; it produces per-species ball tables. Neither of those exported modules proves the exact live `chanceCaptura` implementation or its final rounding/order.
-
-**Engineering contract:** require the *runtime-normalized species economic rarity input*, not `precoVendaPokemon` (the price of a particular specimen), a player's RMT asking price, level, P tier or N. If a client snapshot supplies the exact game's per-ball chance, prefer that verified value and label its source. If the client/protocol supplies no normalized rarity, **do not silently substitute a Pokémon NPC sale-price estimate**.
+**Source:** `shared/captura-degrau.mjs`, `shared/teto-captura.mjs`, `shared/evolucoes-ramificadas.mjs`; the last is essential for Eevee, regional branches, and other non-linear evolution chains. The latest native and userscript models construct their stage table once from the public catalogs.
 
 ### 1.2 Balls and nominal Coins/throw
 
 [WIKI — Captura and Market] Five capture-ball tiers are:
 
-| Ball ID | Ball | Efficiency | Example chance on easiest body, no boosts | NPC purchase cost | Currency |
+| Ball ID | Ball | Efficiency | First evolutionary stage, defeated, no boosts | NPC purchase cost | Currency |
 | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | Poké Ball | ×1 | 0.99% | 5 | Coins |
-| 2 | Great Ball | ×2 | 1.98% | 20 | Coins |
-| 3 | Super Ball | ×3 | 2.97% | 50 | Coins |
-| 4 | Ultra Ball | ×4 | 3.97% | 130 | Coins |
-| 5 | Beast Ball | ×8 | 7.93% | **not bought for Coins** | Diamonds (shop bundles) |
+| 1 | Poké Ball | ×1 | ≈0.37% | 5 | Coins |
+| 2 | Great Ball | ×2 | ≈0.73% | 20 | Coins |
+| 3 | Super Ball | ×3 | ≈1.10% | 50 | Coins |
+| 4 | Ultra Ball | ×4 | ≈1.46% | 130 | Coins |
+| 5 | Beast Ball | ×8 | ≈2.93% | **not bought for Coins** | Diamonds (shop bundles) |
 
-This table is for the wiki's **easiest species example**, not a guarantee for every species. The wiki says Beast gives twice Ultra's base efficiency; once final **10% cap** applies, doubled efficiency does **not necessarily double effective capture probability**.
+This table is for an **ordinary hunt's first-stage Pokémon**, before optional modifiers. Middle and final stages are harder. The wiki says Beast gives twice Ultra's base efficiency; once final **10% cap** applies, doubled efficiency does **not necessarily double effective capture probability**.
 
 **[ADDON]** Auto Catch+ reads the game `catalogoBolas` (including `catchRate`, `priceGold` and `compravel`) and has an independent game-WebSocket hook. **Do not invent a Coin price for Beast Ball** from its Diamonds bundle or from a Coin↔Gem market conversion. If the user voluntarily supplies a Diamonds budget, maintain a separate Diamonds-spend column; don't combine it with Coins without an explicit exchange assumption.
 
 ### 1.3 Numerical validation examples
 
-**[DERIVED from the wiki formula, before optional bonuses]** The reference `precoNpcEspecie=100`, body HP=0:
+With a Beast Ball (efficiency ×8), defeated-body baseline odds are approximately **2.93% / 2.35% / 1.88%** for caps **20 / 40 / 100**. An Ultra Ball (×4) gives approximately **1.46% / 1.17% / 0.94%**. These figures vary if live capture modifiers apply.
 
-```text
-raridade = log10(100)-1 = 1
-fator = 1 + 1/17 ≈ 1.05882353
-Poké Ball p ≈ 0.99167%
-Great Ball p ≈ 1.98333%
-Super Ball p ≈ 2.97500%
-Ultra Ball p ≈ 3.96667%
-Beast Ball p ≈ 7.93333%
-```
-
-A harder *illustrative* normalized economic value `precoNpcEspecie=10,000` yields approximately **0.4057%, 0.8114%, 1.2170%, 1.6227%, and 3.2455%** respectively. These are mathematical examples, **not identified real species**. Recompute using actual upstream-normalized data and full boost/cap rules.
+Do not use the former economic-rarity examples (0.99% Poké Ball or 7.93% Beast Ball for a price-100 species) as ordinary-hunt forecasts after v1.314.2.
 
 ## 2. Multipliers, caps, and non-equivalences
 
