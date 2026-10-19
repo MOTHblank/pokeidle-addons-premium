@@ -52,7 +52,7 @@
     const DEFAULTS = {
         enabled: false,
         intervalMs: 100,
-        ballPriority: ['beast', 'ultra'],
+        ballPriority: ['ultra'],
         use: {
             poke: true,
             great: true,
@@ -74,7 +74,7 @@
         restock: {
             enabled: false,
             goldReserve: 0,
-            selectedBallId: 1,
+            selectedBallId: 4,
             selectedPotionId: 200,
             selectedReviveId: null,
             ballAt: 50,
@@ -101,7 +101,7 @@
         }
 
         // The previous default enabled every regular ball. That configuration
-        // was not an intentional ordering, so upgrade it to Beast -> Ultra.
+        // was not an intentional ordering, so use Ultra by default.
         const oldUse = saved.use;
         if (!oldUse || (
             oldUse.poke !== false &&
