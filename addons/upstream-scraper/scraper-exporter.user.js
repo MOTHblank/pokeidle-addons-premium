@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Upstream Scraper & Exporter
 // @namespace    moth.pokeidle
-// @version      1.3.0
+// @version      1.3.1
 // @description  Investigates and downloads PokéIdle client files, item icons and observed sprites with verified manifests.
 // @match        https://pokeidle.io/*
 // @match        https://www.pokeidle.io/*
@@ -1448,9 +1448,10 @@
                 align-items:center!important;
                 justify-content:center!important;
                 min-width:0!important;
-                width:auto!important;
+                flex:0 0 30px!important;
+                width:30px!important;
                 height:30px!important;
-                padding:5px 8px!important;
+                padding:0!important;
                 border:1px solid rgba(255,255,255,.17)!important;
                 border-radius:6px!important;
                 background:rgba(42,34,38,.86)!important;
@@ -1608,7 +1609,8 @@
             BUTTON_ID;
 
         button.textContent =
-            'Scrape';
+            '⇩';
+        button.setAttribute('aria-label', 'Open upstream scraper and exporter');
 
         button.title =
             'PokéIdle upstream scraper/exporter';
