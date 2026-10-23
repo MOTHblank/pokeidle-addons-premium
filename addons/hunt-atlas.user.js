@@ -356,7 +356,7 @@
             'dex.hunting': 'Level {level} · {hunt} · {count} caught this session',
             'dex.traveling': 'Traveling to level {level}: {hunt} · {count} caught',
             'dex.done': 'All accessible hunt species completed · {count} caught.',
-            'dex.hint': 'One confirmed catch per hunt visit, lowest levels first. Start resets the session list; existing Pokédex entries are ignored.',
+            'dex.hint': 'One confirmed catch per hunt visit, lowest levels first. Stop/Start resumes; a completed run can restart. Existing Pokédex entries are ignored.',
             'filter.clear': 'Clear filters',
             'filter.defaults': 'Default filters',
             'filter.changedOne': '1 filter changed from default',
@@ -731,7 +731,7 @@
             'dex.hunting': 'Nível {level} · {hunt} · {count} capturados nesta sessão',
             'dex.traveling': 'Indo para nível {level}: {hunt} · {count} capturados',
             'dex.done': 'Espécies das hunts acessíveis concluídas · {count} capturadas.',
-            'dex.hint': 'Uma captura confirmada por visita à hunt, dos níveis menores aos maiores. Iniciar zera a lista da sessão; a Pokédex existente é ignorada.',
+            'dex.hint': 'Uma captura confirmada por visita à hunt, dos níveis menores aos maiores. Parar/Iniciar retoma o progresso; uma execução concluída pode recomeçar. Não consulta a Pokédex.',
             'filter.clear': 'Limpar filtros',
             'filter.defaults': 'Filtros padrão',
             'filter.changedOne': '1 filtro alterado',
@@ -10082,10 +10082,13 @@
 
     function startPokedexAuto() {
         const auto = state.pokedexAuto;
-        // A new Start means a fresh session list, not a persisted Pokédex.
-        auto.caught.clear();
+        // Stop/Start resumes a page session; starting after completion
+        // begins a new run. Nothing is persisted or read from Pokédex.
+        if (auto.mode !== 'stopped') {
+            auto.caught.clear();
+            auto.receipts.clear();
+        }
         auto.visited.clear();
-        auto.receipts.clear();
         auto.targetSlug = null;
         auto.previousSlug = null;
         auto.lastTravelAt = 0;
@@ -11590,6 +11593,8 @@
                     if (
                         !state.atlasEnabled
                     ) {
+                        // Never leave an unseen navigation automation running.
+                        if (state.pokedexAuto.active) stopPokedexAuto();
                         restoreNativeMapView();
                     }
 
