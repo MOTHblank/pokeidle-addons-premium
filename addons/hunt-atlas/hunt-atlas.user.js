@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/addons/hunt-atlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.27
+// @version      1.9.28
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.27');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.28');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -354,7 +354,7 @@
             'dex.hunting': 'Level {level} · {hunt} · {count} caught this session',
             'dex.traveling': 'Traveling to level {level}: {hunt} · {count} caught',
             'dex.done': 'All accessible hunt species completed · {count} caught.',
-            'dex.hint': 'One confirmed catch per hunt visit, lowest levels first. Stop/Start resumes; a completed run can restart. Existing Pokédex entries are ignored.',
+            'dex.hint': 'Ordinary one-species hunts only, lowest levels first. Auto Catch+ handles Pokéballs. Stop/Start resumes; progress resets with the weekly contest.',
             'filter.clear': 'Clear filters',
             'filter.defaults': 'Default filters',
             'filter.changedOne': '1 filter changed from default',
@@ -729,7 +729,7 @@
             'dex.hunting': 'Nível {level} · {hunt} · {count} capturados nesta sessão',
             'dex.traveling': 'Indo para nível {level}: {hunt} · {count} capturados',
             'dex.done': 'Espécies das hunts acessíveis concluídas · {count} capturadas.',
-            'dex.hint': 'Uma captura confirmada por visita à hunt, dos níveis menores aos maiores. Parar/Iniciar retoma o progresso; uma execução concluída pode recomeçar. Não consulta a Pokédex.',
+            'dex.hint': 'Somente hunts comuns de uma espécie, dos níveis menores aos maiores. Auto Catch+ arremessa as bolas. Parar/Iniciar retoma; o progresso zera com a semana.',
             'filter.clear': 'Limpar filtros',
             'filter.defaults': 'Filtros padrão',
             'filter.changedOne': '1 filtro alterado',
@@ -1304,8 +1304,8 @@
         pendingTravel: null,
         pokedexAuto: {
             active: false, mode: 'idle', caught: new Set(),
-            visited: new Set(), receipts: new Set(), targetSlug: null,
-            previousSlug: null, lastTravelAt: 0
+            receipts: new Set(), targetSlug: null,
+            lastTravelAt: 0, week: null
         },
 
         status: {
@@ -8995,7 +8995,7 @@
                         state.playerLevel).trainer,
                 idealKillMs: simulation.idealKillMs ?? null,
                 pacingAllowanceMs: simulation.pacingAllowanceMs ?? null,
-                modelVersion: '1.9.27',
+                modelVersion: '1.9.28',
                 leadId: lead?.id ?? null
             };
         }
@@ -10038,31 +10038,57 @@
     // Hunt navigation
     // ------------------------------------------------------------------
 
-    // Session-only Pokédex run. The live Pokédex and owned collection are
-    // deliberately never consulted: only confirmed catches since Start count.
+    // Top Catch for ordinary one-species hunts only. Auto Catch+ throws the
+    // balls independently; we only react to confirmed server captures.
+    // Never consult the player's Pokédex or persist the local weekly set.
     function dexAutoSpecies(hunt) {
-        return (Array.isArray(hunt?.especies) ? hunt.especies : [])
-            .map(entry => Number(entry?.pokeId ?? entry?.id))
-            .filter(id => Number.isSafeInteger(id) && id > 0);
+        if (!hunt?.slug || ['safari', 'arena_mistica'].includes(String(hunt.slug)) ||
+            !Array.isArray(hunt.especies) || hunt.especies.length !== 1)
+            return null;
+        const speciesId = Number(hunt.especies[0]?.pokeId ?? hunt.especies[0]?.id);
+        return Number.isSafeInteger(speciesId) && speciesId > 0 ? speciesId : null;
     }
 
-    function dexAutoNextHunt(hunts, caught, visited, allowed, previousSlug) {
+    // Match shared/pokedex.mjs: chavePokedex → dexDe, with the legacy
+    // Outland remap already present in the Atlas. Orre 13xxx share a
+    // national Pokédex key; regular regional forms retain their own IDs.
+    function dexAutoKey(rawId) {
+        if (rawId === null || rawId === undefined) return null;
+        const id = Number(outlandNormalizeSpeciesId(rawId));
+        if (!Number.isSafeInteger(id) || id <= 0) return null;
+        return id >= 13000 ? id % 1000 : id;
+    }
+
+    function dexAutoWeek(now = Date.now()) {
+        // Same Sunday 00:00 Brasília (UTC−3) boundary as Top Catch/PvP.
+        const brasilia = new Date(Number(now) - 3 * 60 * 60 * 1000);
+        brasilia.setUTCDate(brasilia.getUTCDate() - brasilia.getUTCDay());
+        return brasilia.toISOString().slice(0, 10);
+    }
+
+    function dexAutoSyncWeek(now = Date.now()) {
+        const auto = state.pokedexAuto;
+        const week = dexAutoWeek(now);
+        if (week === auto.week) return false;
+        auto.week = week;
+        auto.caught.clear();
+        auto.receipts.clear();
+        auto.targetSlug = null;
+        auto.lastTravelAt = 0;
+        return true;
+    }
+
+    function dexAutoNextHunt(hunts, caught, allowed) {
         const candidates = (Array.isArray(hunts) ? hunts : [])
-            .filter(hunt => hunt?.slug && Number(hunt.nivel) > 0 &&
-                allowed(hunt) && dexAutoSpecies(hunt).some(id => !caught.has(id)))
-            .sort((a, b) => Number(a.nivel) - Number(b.nivel) ||
-                String(a.slug).localeCompare(String(b.slug)));
-        if (!candidates.length) return null;
-        // Fully finish each level before progressing to the next one.
-        const level = Number(candidates[0].nivel);
-        const atLevel = candidates.filter(hunt => Number(hunt.nivel) === level);
-        let choices = atLevel.filter(hunt => !visited.has(String(hunt.slug)));
-        // Multi-species hunts are revisited in another pass if still incomplete.
-        if (!choices.length) {
-            for (const hunt of atLevel) visited.delete(String(hunt.slug));
-            choices = atLevel;
-        }
-        return choices.find(hunt => hunt.slug !== previousSlug) || choices[0];
+            .filter(hunt => {
+                const species = dexAutoSpecies(hunt);
+                const key = dexAutoKey(species);
+                return Number(hunt?.nivel) > 0 && key !== null &&
+                    allowed(hunt) && !caught.has(key);
+            });
+        candidates.sort((a, b) => Number(a.nivel) - Number(b.nivel) ||
+            String(a.slug).localeCompare(String(b.slug)));
+        return candidates[0] || null;
     }
 
     function dexAutoSetMode(mode) {
@@ -10080,15 +10106,14 @@
 
     function startPokedexAuto() {
         const auto = state.pokedexAuto;
-        // Stop/Start resumes a page session; starting after completion
-        // begins a new run. Nothing is persisted or read from Pokédex.
+        // Stop/Start resumes within the same week; a fresh run after
+        // completion starts empty. No Pokédex data is used.
+        dexAutoSyncWeek();
         if (auto.mode !== 'stopped') {
             auto.caught.clear();
             auto.receipts.clear();
         }
-        auto.visited.clear();
         auto.targetSlug = null;
-        auto.previousSlug = null;
         auto.lastTravelAt = 0;
         auto.active = true;
         auto.mode = 'waiting';
@@ -10099,16 +10124,17 @@
     function stepPokedexAuto() {
         const auto = state.pokedexAuto;
         if (!auto.active) return;
+        dexAutoSyncWeek();
         if (!socketReady() || !state.hunts.length) {
             dexAutoSetMode('waiting');
             return;
         }
         let hunt = auto.targetSlug
             ? state.hunts.find(row => row.slug === auto.targetSlug) : null;
+        const key = dexAutoKey(dexAutoSpecies(hunt));
         if (!hunt || !isUnlocked(hunt) ||
-            !dexAutoSpecies(hunt).some(id => !auto.caught.has(id))) {
-            hunt = dexAutoNextHunt(state.hunts, auto.caught, auto.visited,
-                isUnlocked, auto.previousSlug);
+            key === null || auto.caught.has(key)) {
+            hunt = dexAutoNextHunt(state.hunts, auto.caught, isUnlocked);
             auto.targetSlug = hunt?.slug || null;
             auto.lastTravelAt = 0;
         }
@@ -10135,22 +10161,21 @@
 
     function recordPokedexAutoCatch(event, ledgerAccepted) {
         const auto = state.pokedexAuto;
-        if (!auto.active || event?.k !== 'capturado' || !auto.targetSlug ||
-            !isHuntHere(auto.targetSlug)) return false;
+        if (!auto.active || event?.k !== 'capturado') return false;
+        dexAutoSyncWeek();
+        if (!auto.targetSlug || !isHuntHere(auto.targetSlug)) return false;
         const hunt = state.hunts.find(row => row.slug === auto.targetSlug);
-        if (!hunt) return false;
-        const possible = dexAutoSpecies(hunt);
+        const targetKey = dexAutoKey(dexAutoSpecies(hunt));
+        if (targetKey === null || auto.caught.has(targetKey)) return false;
         const slot = event.slot ?? event.s;
         const corpse = slot === undefined || slot === null ? null :
             state.farmingLedger.slots.get(String(slot));
         const rawId = event.pokemon?.speciesId ?? event.pokemon?.pokeId ??
             event.speciesId ?? event.pokeId ?? corpse?.speciesId ??
-            (possible.length === 1 ? possible[0] : null);
-        const speciesId = Number(outlandNormalizeSpeciesId(rawId));
-        if (!Number.isSafeInteger(speciesId) || !possible.includes(speciesId))
-            return false;
-        // Prefer the server's unique caught Pokémon ID/receipt. For older
-        // packets without one, require an already deduplicated capture event.
+            dexAutoSpecies(hunt);
+        if (dexAutoKey(rawId) !== targetKey) return false;
+        // Prefer the unique caught Pokémon ID/receipt; otherwise only trust
+        // an accepted, deduplicated server capture linked to a corpse slot.
         const instanceId = Number(event.pokemon?.id);
         const eventId = farmingReceiptIdentity(event);
         const identity = Number.isSafeInteger(instanceId) && instanceId > 0
@@ -10162,12 +10187,9 @@
         auto.receipts.add(identity);
         if (auto.receipts.size > 512)
             auto.receipts.delete(auto.receipts.values().next().value);
-        auto.caught.add(speciesId);
-        auto.visited.add(hunt.slug);
-        auto.previousSlug = hunt.slug;
+        auto.caught.add(targetKey);
         auto.targetSlug = null;
         auto.lastTravelAt = 0;
-        // The next server-confirmed capture, not a Pokédex delta, advances us.
         stepPokedexAuto();
         queueRender();
         return true;
@@ -14463,7 +14485,7 @@
             const here = currentHunt();
             const xp = here ? huntXpEstimate(here) : null;
             return {
-                version: '1.9.27',
+                version: '1.9.28',
                 indexes: {
                     locations: state.locationIndexStatus,
                     markerCount: state.locationsBySlug.size,
@@ -14633,7 +14655,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.27 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.28 experimental loaded'
         );
     }
 
