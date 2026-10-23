@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Performance+
 // @namespace    moth.pokeidle
-// @version      5.5.4
+// @version      5.5.5
 // @description  Performance+ pauses map rendering, hides visual noise and chat, and keeps capture controls visible.
 // @match        https://pokeidle.io/*
 // @match        https://www.pokeidle.io/*
@@ -16,7 +16,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-performance', '5.5.4');
+        document.documentElement?.setAttribute('data-moth-addon-version-performance', '5.5.5');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -972,9 +972,18 @@
 
             /* Map canvas and decorative overlays are hidden; the actual
                campo.mjs rAF loop is suspended above, not merely made invisible. */
-            html.moth-ui-performance #palco > :not(#caidos) {
+            html.moth-ui-performance #palco > :not(#caidos):not(#eco-painel) {
                 visibility: hidden !important;
                 pointer-events: none !important;
+            }
+            /* The new native Economy Mode panel is functional game UI. */
+            html.moth-ui-performance:not(.modo-economia) #palco > #eco-painel {
+                visibility: hidden !important;
+                pointer-events: none !important;
+            }
+            html.modo-economia.moth-ui-performance #eco-painel {
+                visibility: visible !important;
+                pointer-events: auto !important;
             }
 
             html.moth-ui-performance #palco {
@@ -1054,8 +1063,13 @@
                 justify-content: center !important;
                 min-width: 0 !important;
                 width: auto !important;
+                max-width: 74px !important;
+                flex: 0 1 auto !important;
+                overflow: hidden !important;
+                white-space: nowrap !important;
+                text-overflow: ellipsis !important;
                 height: 25px !important;
-                padding: 3px 7px !important;
+                padding: 3px 6px !important;
                 margin-left: auto !important;
                 border: 1px solid rgba(255,255,255,.16) !important;
                 border-radius: 999px !important;
@@ -1068,6 +1082,9 @@
                 position: relative !important;
                 z-index: 20 !important;
             }
+
+            /* Preserve the native 54px collapsed right rail. */
+            html.dir-min #${TRIGGER_ID} { display: none !important; }
 
             #${TRIGGER_ID}.working {
                 color: #8fe0a5 !important;
@@ -1239,7 +1256,13 @@
             working = true;
         }
 
-        setText(trigger, forcedOn ? triggerText + ' · Headless' : triggerText);
+        // Compact header label; the full explanation remains accessible.
+        const compact = !isEnabled() ? 'Perf OFF' :
+            isNativeEconomy() ? 'Perf ECO' :
+            warning ? 'Perf ?' : 'Perf ON';
+        setText(trigger, compact);
+        trigger.setAttribute('aria-label', forcedOn ?
+            triggerText + ' · Headless' : triggerText);
         trigger.setAttribute('aria-pressed', String(isEnabled()));
         trigger.title = forcedOn
             ? 'Performance+ is required while Firefox is headless'
