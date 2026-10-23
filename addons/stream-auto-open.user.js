@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Live Stream Scanner
 // @namespace    moth.pokeidle
-// @version      7.2.2
+// @version      7.2.3
 // @description  Maintains one persistent Twitch chat tab and syncs channels with IRC JOIN/PART without reloads; KICK stays in Rust.
 // @match        https://pokeidle.io/app*
 // @match        https://www.pokeidle.io/app*
@@ -155,7 +155,6 @@
     }
 
     const BUTTON_ID = 'moth-scan-live-streams';
-    const INVENTORY_ID = 'btn-bolsa';
 
     const LIVE_SCAN_INTERVAL_MS = 60 * 1000;
     const INITIAL_SCAN_DELAY_MS = 30 * 1000;
@@ -833,72 +832,75 @@
         );
     }
 
+    // Keep the live-scan shortcut in the automation header. Since v1.357.3
+    // the Backpack button is a square inside the portrait icon strip.
+    function ensureScannerStyle() {
+        if(document.getElementById('moth-scan-shortcut-style'))return;
+        const style=document.createElement('style');
+        style.id='moth-scan-shortcut-style';
+        style.textContent=[
+            '#'+BUTTON_ID+'.moth-scan-shortcut{',
+            'display:inline-grid!important;place-items:center!important;',
+            'flex:0 0 26px!important;width:26px!important;',
+            'min-width:26px!important;height:26px!important;',
+            'padding:0!important;margin:0 4px 0 0!important;',
+            'border:1px solid rgba(255,255,255,.2)!important;',
+            'border-radius:6px!important;background:rgba(40,31,35,.8)!important;',
+            'color:#f0d9e3!important;font:700 18px/1 system-ui,sans-serif!important;',
+            'cursor:pointer!important;vertical-align:middle!important;',
+            '}',
+            '#'+BUTTON_ID+':disabled{opacity:.7!important;cursor:progress!important}',
+            'html.dir-min #'+BUTTON_ID+'{display:none!important}'
+        ].join('');
+        (document.head||document.documentElement).appendChild(style);
+    }
+
     function ensureButton() {
-        const inventory = document.getElementById(INVENTORY_ID);
-
-        if (!inventory || document.getElementById(BUTTON_ID)) {
-            return;
+        const header = document.querySelector('#p-auto .painel-cab-auto') ||
+            document.querySelector('#p-auto .painel-cab');
+        if (!header) return;
+        ensureScannerStyle();
+        let button = document.getElementById(BUTTON_ID);
+        if (!button) {
+            button = document.createElement('button');
+            button.type = 'button';
+            button.id = BUTTON_ID;
+            button.className = 'moth-scan-shortcut';
+            button.setAttribute('aria-label', 'Refresh live Twitch chats');
+            button.title = 'Refresh live Twitch chats (KICK is managed in Moth Controller)';
+            const icon = document.createElement('span');
+            icon.className = 'moth-scan-icon';
+            icon.textContent = '↻';
+            icon.setAttribute('aria-hidden', 'true');
+            button.appendChild(icon);
+            button.addEventListener('click', async () => {
+                if (button.disabled) return;
+                button.disabled = true;
+                icon.textContent = '…';
+                button.title = 'Scanning live Twitch channels…';
+                const result = await runLiveScan('manual');
+                const message = result.failed ? 'Scan failed' :
+                    result.notReady ? 'Game not ready' :
+                    result.twitchChannels > 0 ?
+                        result.twitchChannels + ' Twitch channels · ' +
+                        (result.opened ? 'new chat tab opened' : 'synced') :
+                        'No live Twitch channels found';
+                icon.textContent = result.failed ? '!' : '✓';
+                button.title = message;
+                button.setAttribute('aria-label', message);
+                window.setTimeout(() => {
+                    if (!button.isConnected) return;
+                    button.disabled = false;
+                    icon.textContent = '↻';
+                    button.title = 'Refresh live Twitch chats (KICK is managed in Moth Controller)';
+                    button.setAttribute('aria-label', 'Refresh live Twitch chats');
+                }, 1600);
+            });
         }
-
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.id = BUTTON_ID;
-        button.title = 'Sync live Twitch chats without reloading; KICK is managed separately.';
-        button.setAttribute(
-            'aria-label',
-            'Refresh all Twitch live channels in one shared chat tab'
-        );
-
-        const style = window.getComputedStyle(inventory);
-
-        button.style.cssText = [
-            'display:inline-flex',
-            'align-items:center',
-            'justify-content:center',
-            'box-sizing:border-box',
-            'min-height:' + Math.max(30, inventory.offsetHeight) + 'px',
-            'margin:' + (style.margin || '2px 0 0 0'),
-            'padding:' + (style.padding || '6px 10px'),
-            'font:' + (style.font || 'inherit'),
-            'line-height:' + (style.lineHeight || 'normal'),
-            'color:' + (style.color || 'inherit'),
-            'background:' + (style.background || 'transparent'),
-            'border:' + (style.border || '1px solid currentColor'),
-            'border-radius:' + (style.borderRadius || '4px'),
-            'cursor:pointer'
-        ].join(';');
-
-        const label = document.createElement('span');
-        label.textContent = 'Refresh Twitch chats';
-        button.appendChild(label);
-
-        button.addEventListener('click', async () => {
-            button.disabled = true;
-            label.textContent = 'Scanning…';
-
-            const result = await runLiveScan('manual');
-
-            label.textContent = result.failed
-                ? 'Scan failed'
-                : result.notReady
-                    ? 'Game not ready'
-                    : result.twitchChannels > 0
-                        ? result.opened
-                            ? result.twitchChannels + ' Twitch channels · new tab opened'
-                            : result.twitchChannels + ' Twitch channels · synced'
-                        : 'No live Twitch channels found';
-
-            window.setTimeout(() => {
-                if (!button.isConnected) {
-                    return;
-                }
-
-                button.disabled = false;
-                label.textContent = 'Refresh Twitch chats';
-            }, 1600);
-        });
-
-        inventory.insertAdjacentElement('afterend', button);
+        const collapse = header.querySelector('#btn-auto-toggle');
+        // Repair any existing shortcut stranded beside the Backpack icon.
+        if (button.parentElement !== header)
+            header.insertBefore(button, collapse || null);
     }
 
     function start() {
