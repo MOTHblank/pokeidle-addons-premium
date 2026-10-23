@@ -99,15 +99,14 @@
     const GOLD_KILL_LEVEL_CAP =
         25000;
 
-    const NPC_SELL_BASE_CAP =
-        6 *
-        Math.round(
-            GOLD_KILL_LEVEL_1 *
-            Math.pow(
-                GOLD_KILL_LEVEL_CAP,
-                GOLD_KILL_EXPONENT
-            )
-        );
+    // shared/sell-value.mjs v1.357.3: ouroDoNivel(2500), not 6× kill cap.
+    const NPC_SELL_BASE_CAP = Math.round(
+        SELL_VALUE_ANCHOR_GOLD * Math.pow(2500 / SELL_VALUE_ANCHOR_LEVEL, 0.6)
+    );
+    const NPC_SELL_LEVEL_CAP = 100;
+    const NPC_FIXED_BASES = new Map([
+        [2027,60000],[2050,60000],[2006,32000],[212,88000],[3212,88000]
+    ]);
 
     const BUTTON_ID =
         'moth-hunt-atlas-button';
@@ -374,7 +373,7 @@
             'price.npcMissing': 'MKT —',
             'price.players': 'RMT ~{value}',
             'price.playersMissing': 'RMT —',
-            'price.npcTip': 'MKT: NPC sale reference at the visible hunt level{plural} and quality 1.0{range} · actual captured Pokémon vary with quality; shiny ×10',
+            'price.npcTip': 'MKT: estimated NPC sale after capture-level limits (20/40/100 and max sale level 100), quality 1.0{range} · actual quality varies; shiny ×10',
             'price.npcMissingTip': 'MKT: NPC sell value is not available for this species yet.',
             'price.playerTip': 'RMT: recent non-shiny completed player Market sales · {count} {sample} · range {min}–{max}',
             'price.playerListingTip': 'RMT: lowest current gold listing in the player Market. Completed-sale averages are preferred when available.',
@@ -749,7 +748,7 @@
             'price.npcMissing': 'MKT —',
             'price.players': 'RMT ~{value}',
             'price.playersMissing': 'RMT —',
-            'price.npcTip': 'MKT: referência de venda ao NPC no{plural} nível{plural} de hunt visível{plural} e qualidade 1,0{range} · o valor real varia com a qualidade; shiny ×10',
+            'price.npcTip': 'MKT: estimativa de venda ao NPC com teto do nível de captura (20/40/100 e máximo 100 na venda), qualidade 1,0{range} · o valor real varia com a qualidade; shiny ×10',
             'price.npcMissingTip': 'MKT: o valor de venda ao NPC ainda não está disponível para esta espécie.',
             'price.playerTip': 'RMT: vendas recentes concluídas de Pokémon não shiny no Mercado de jogadores · {count} {sample} · faixa {min}–{max}',
             'price.playerListingTip': 'RMT: menor anúncio atual em ouro no Mercado de jogadores. A média de vendas concluídas tem prioridade quando disponível.',
@@ -1211,6 +1210,9 @@
         captureBallRates: new Map(),
         captureRarities: new Map(),
         captureStageCaps: new Map(),
+        evolutionStages: new Map(),
+        npcSellBases: new Map(),
+        npcHuntsSignature: '',
         captureBonusEvidence: {},
         captureChanceEvidence: {seen:0,min:null,max:null},
         inventoryForCosts: new Map(),
@@ -2369,6 +2371,85 @@
         );
     }
 
+    // Economic species value has no NPC sale cap; chain normalization and
+    // capture rarity must not be artificially flattened at level 2500.
+    function economicValueFromCatalog(meta){
+        if(!meta)return 0;
+        const level=Math.max(1,Number(meta.huntLevel)||1);
+        if(level>SELL_VALUE_ANCHOR_LEVEL)return goldValueAtLevel(level);
+        const sell=Number(meta.catalogSellValue);
+        const npc=Number(meta.priceNpc);
+        if(sell>0&&sell<=NPC_CATALOG_PRICE_MAX)return sell;
+        if(sell>NPC_CATALOG_PRICE_MAX)return goldValueAtLevel(level);
+        if(npc>0&&npc<=NPC_CATALOG_PRICE_MAX)return npc;
+        return goldValueAtLevel(level);
+    }
+
+    // Same sequence as upstream valor-cadeia: normalize the raw catalog,
+    // elevate legacy-priced species that only inhabit high-level hunts,
+    // then lower overpriced pre-evolutions from the last link backwards.
+    // Runs on catalog/hunt changes only; never during draw or sort.
+    function rebuildNpcSellBases(){
+        const values=new Map(),lowHunts=new Map();
+        for(const hunt of state.hunts){
+            const level=Number(hunt?.nivel);
+            if(!Number.isFinite(level)||level<=0)continue;
+            for(const spawn of hunt?.especies||[]){
+                const id=Number(outlandNormalizeSpeciesId(spawn?.pokeId??spawn?.id));
+                if(Number.isInteger(id)&&id>0)
+                    lowHunts.set(id,Math.min(level,lowHunts.get(id)??Infinity));
+            }
+        }
+        for(const [id,meta] of state.speciesCombat){
+            let value=economicValueFromCatalog(meta);
+            const min=lowHunts.get(id);
+            if(Number(meta.huntLevel||0)<=SELL_VALUE_ANCHOR_LEVEL &&
+                Number.isFinite(min)&&min>SELL_VALUE_ANCHOR_LEVEL)
+                value=Math.max(value,goldValueAtLevel(min));
+            values.set(id,value);
+        }
+        // Upstream groups same-name Orre clones with the longest original
+        // chain, instead of assigning clone-specific two-link ratios.
+        const longestNameStage=new Map();
+        for(const [id,meta] of state.speciesCombat){
+            const info=state.evolutionStages.get(id);
+            if(!info||!meta.name)continue;
+            const prior=longestNameStage.get(meta.name);
+            if(!prior||info.length>prior.length)
+                longestNameStage.set(meta.name,info);
+        }
+        const predecessors=[];
+        for(const [id,meta] of state.speciesCombat){
+            const target=Number(meta.evolvesToId);
+            if(!target||!state.speciesCombat.has(target))continue;
+            const info=longestNameStage.get(meta.name)||
+                state.evolutionStages.get(id);
+            if(info)predecessors.push({id,target,info});
+        }
+        predecessors.sort((a,b)=>b.info.depth-a.info.depth);
+        for(const {id,target,info} of predecessors){
+            const current=values.get(id),next=values.get(target);
+            if(!Number.isFinite(current)||!Number.isFinite(next)||
+                current<next)continue;
+            const ratios=info.length>=3?[0.462,0.444]:[0.517];
+            const factor=ratios[Math.min(info.depth,ratios.length-1)];
+            values.set(id,Math.max(1,Math.round(next*factor)));
+        }
+        const saleBases=new Map();
+        for(const [id,value] of values){
+            const fixed=NPC_FIXED_BASES.get(id);
+            const base=Math.min(NPC_SELL_BASE_CAP,fixed??value);
+            saleBases.set(id,base);
+            const meta=state.speciesCombat.get(id);
+            if(meta)meta.sellValue=base;
+        }
+        state.npcSellBases=saleBases;
+        state.npcHuntsSignature=state.hunts.map(hunt=>
+            String(hunt?.slug||'')+':'+Number(hunt?.nivel||0)+':'+
+            (hunt?.especies||[]).map(s=>Number(s?.pokeId??s?.id)||0).join(',')
+        ).join('|');
+    }
+
     function normalizedNpcBaseFromCatalog(
         meta
     ) {
@@ -2445,10 +2526,7 @@
          * independent of the raw species catalog.
          */
         return Math.min(
-            Math.max(
-                1,
-                value
-            ),
+            Math.max(1,NPC_FIXED_BASES.get(Number(meta.id))??value),
             NPC_SELL_BASE_CAP
         );
     }
@@ -3561,7 +3639,7 @@
         if (npc>0 && npc<=500000) return npc;
         return null; // Never borrow a specimen sale price or RMT listing.
     }
-    // Ordinary hunt captures: upstream v1.314.2 uses evolution stage.
+    // Ordinary hunt captures use upstream v1.357.3 evolution stages.
     // Missing stage / special encounters keep the legacy price-based model.
     // The optional speciesId keeps the exported pure testing helpers usable.
     function captureWikiChance(rarity,efficiency,hpFraction=0,speciesId=null) {
@@ -5146,6 +5224,13 @@
                             }))
                             : []
                 }));
+                if(state.combatCatalogStatus==='ready'){
+                    const signature=state.hunts.map(hunt=>
+                        String(hunt?.slug||'')+':'+Number(hunt?.nivel||0)+':'+
+                        (hunt?.especies||[]).map(s=>Number(s?.pokeId??s?.id)||0).join(',')
+                    ).join('|');
+                    if(signature!==state.npcHuntsSignature)rebuildNpcSellBases();
+                }
             }
 
             if (snapshot?.marketCatalogReady &&
@@ -5366,6 +5451,7 @@
             ) {
                 state.hunts =
                     message.hunts;
+                if(state.combatCatalogStatus==='ready')rebuildNpcSellBases();
 
                 setStatus(
                     'status.huntsLoaded',
@@ -6637,6 +6723,43 @@
         return state.moveIndexPromise;
     }
 
+    // HA UPSTREAM V1357 SPECIES BEGIN. Exact Mega and new-form stats/types.
+    // Full forms catalog remains game-hosted; fallback rows cover missing assets.
+    const UPSTREAM_V1357_MEGAS=[[3003,3,"Mega Venusaur","GRASS","POISON",80,100,123,122,120,80],[3006,6,"Mega Charizard Y","FIRE","FLYING",78,104,78,159,115,100],[3009,9,"Mega Blastoise","WATER",null,79,103,120,135,115,78],[3015,15,"Mega Beedrill","BUG","POISON",65,150,40,15,80,145],[3018,18,"Mega Pidgeot","NORMAL","FLYING",83,80,80,135,80,121],[3026,26,"Mega Raichu Y","ELECTRIC",null,60,100,55,160,80,130],[3036,36,"Mega Clefable","FAIRY","FLYING",95,80,93,135,110,70],[3065,65,"Mega Alakazam","PSYCHIC",null,55,50,65,175,105,150],[3071,71,"Mega Victreebel","GRASS","POISON",80,125,85,135,95,70],[3080,80,"Mega Slowbro","WATER","PSYCHIC",95,75,180,130,80,30],[3094,94,"Mega Gengar","GHOST","POISON",60,65,80,170,95,130],[3115,115,"Mega Kangaskhan","NORMAL",null,105,125,100,60,100,100],[3121,121,"Mega Starmie","WATER","PSYCHIC",60,140,105,130,105,120],[3127,127,"Mega Pinsir","BUG","FLYING",65,155,120,65,90,105],[3130,130,"Mega Gyarados","WATER","DARK",95,155,109,70,130,81],[3142,142,"Mega Aerodactyl","ROCK","FLYING",80,135,85,70,95,150],[3149,149,"Mega Dragonite","DRAGON","FLYING",91,124,115,145,125,100],[3150,150,"Mega Mewtwo Y","PSYCHIC",null,106,150,70,194,120,140],[3154,154,"Mega Meganium","GRASS","FAIRY",80,92,115,143,115,80],[3160,160,"Mega Feraligatr","WATER","DRAGON",85,160,125,89,93,78],[3181,181,"Mega Ampharos","ELECTRIC","DRAGON",90,95,105,165,110,45],[3208,208,"Mega Steelix","STEEL","GROUND",75,125,230,55,95,30],[3212,212,"Mega Scizor","BUG","STEEL",70,150,140,65,100,75],[3214,214,"Mega Heracross","BUG","FIGHTING",80,185,115,40,105,75],[3227,227,"Mega Skarmory","STEEL","FLYING",65,140,110,40,100,110],[3229,229,"Mega Houndoom","DARK","FIRE",75,90,90,140,90,115],[3248,248,"Mega Tyranitar","ROCK","DARK",100,164,150,95,120,71],[3254,254,"Mega Sceptile","GRASS","DRAGON",70,110,75,145,85,145],[3257,257,"Mega Blaziken","FIRE","FIGHTING",80,160,80,130,80,100],[3260,260,"Mega Swampert","WATER","GROUND",100,150,110,95,110,70],[3282,282,"Mega Gardevoir","PSYCHIC","FAIRY",68,85,65,165,135,100],[3302,302,"Mega Sableye","DARK","GHOST",50,85,125,85,115,20],[3303,303,"Mega Mawile","STEEL","FAIRY",50,105,125,55,95,50],[3306,306,"Mega Aggron","STEEL",null,70,140,230,60,80,50],[3308,308,"Mega Medicham","FIGHTING","PSYCHIC",60,100,85,80,85,100],[3310,310,"Mega Manectric","ELECTRIC",null,70,75,80,135,80,135],[3319,319,"Mega Sharpedo","WATER","DARK",70,140,70,110,65,105],[3323,323,"Mega Camerupt","FIRE","GROUND",70,120,100,145,105,20],[3334,334,"Mega Altaria","DRAGON","FAIRY",75,110,110,110,105,80],[3354,354,"Mega Banette","GHOST",null,64,165,75,93,83,75],[3358,358,"Mega Chimecho","PSYCHIC","STEEL",75,50,110,135,120,65],[3359,359,"Mega Absol","DARK",null,65,150,60,115,60,115],[3362,362,"Mega Glalie","ICE",null,80,120,80,120,80,100],[3373,373,"Mega Salamence","DRAGON","FLYING",95,145,130,120,90,120],[3376,376,"Mega Metagross","STEEL","PSYCHIC",80,145,150,105,110,110],[3380,380,"Mega Latias","DRAGON","PSYCHIC",80,100,120,140,150,110],[3381,381,"Mega Latios","DRAGON","PSYCHIC",80,130,100,160,120,110],[3382,382,"Primal Kyogre","WATER",null,100,150,90,180,160,90],[3383,383,"Primal Groudon","GROUND","FIRE",100,180,160,150,90,90],[3384,384,"Mega Rayquaza","DRAGON","FLYING",105,180,100,180,100,115],[3398,398,"Mega Staraptor","FIGHTING","FLYING",85,140,100,60,90,110],[3428,428,"Mega Lopunny","NORMAL","FIGHTING",65,136,94,54,96,135],[3445,445,"Mega Garchomp","DRAGON","GROUND",108,170,115,120,95,92],[3448,448,"Mega Lucario","FIGHTING","STEEL",70,145,88,140,70,112],[3460,460,"Mega Abomasnow","GRASS","ICE",90,132,105,132,105,30],[3475,475,"Mega Gallade","PSYCHIC","FIGHTING",68,165,95,65,115,110],[3478,478,"Mega Froslass","ICE","GHOST",70,80,70,140,100,120],[3485,485,"Mega Heatran","FIRE","STEEL",91,120,106,175,141,67],[3491,491,"Mega Darkrai","DARK",null,70,120,130,165,130,85],[3500,500,"Mega Emboar","FIRE","FIGHTING",110,148,75,110,110,75],[3530,530,"Mega Excadrill","GROUND","STEEL",110,165,100,65,65,103],[3531,531,"Mega Audino","NORMAL","FAIRY",103,60,126,80,126,50],[3545,545,"Mega Scolipede","BUG","POISON",60,140,149,75,99,62],[3560,560,"Mega Scrafty","DARK","FIGHTING",65,130,135,55,135,68],[3604,604,"Mega Eelektross","ELECTRIC",null,85,145,80,135,90,80],[3609,609,"Mega Chandelure","GHOST","FIRE",60,75,110,175,110,90],[3623,623,"Mega Golurk","GROUND","GHOST",89,159,105,70,105,55],[3652,652,"Mega Chesnaught","GRASS","FIGHTING",88,137,172,74,115,44],[3655,655,"Mega Delphox","FIRE","PSYCHIC",75,69,72,159,125,134],[3658,658,"Mega Greninja","WATER","DARK",72,125,77,133,81,142],[3668,668,"Mega Pyroar","FIRE","NORMAL",86,88,92,129,86,126],[3670,670,"Mega Floette","FAIRY",null,74,85,87,155,148,102],[3678,678,"Mega Meowstic","PSYCHIC",null,74,48,76,143,101,124],[3687,687,"Mega Malamar","DARK","PSYCHIC",86,102,88,98,120,88],[3689,689,"Mega Barbaracle","ROCK","FIGHTING",72,140,130,64,106,88],[3691,691,"Mega Dragalge","POISON","DRAGON",65,85,105,132,163,44],[3701,701,"Mega Hawlucha","FIGHTING","FLYING",78,137,100,74,93,118],[3718,718,"Mega Zygarde","DRAGON","GROUND",216,70,91,216,85,100],[3719,719,"Mega Diancie","ROCK","FAIRY",50,160,110,160,110,110],[3740,740,"Mega Crabominable","FIGHTING","ICE",97,157,122,62,107,33],[3768,768,"Mega Golisopod","BUG","STEEL",75,150,175,70,120,40],[3780,780,"Mega Drampa","NORMAL","DRAGON",78,85,110,160,116,36],[3801,801,"Mega Magearna","STEEL","FAIRY",80,125,115,170,115,95],[3807,807,"Mega Zeraora","ELECTRIC",null,88,157,75,147,80,153],[3870,870,"Mega Falinks","FIGHTING",null,65,135,135,70,65,100],[3952,952,"Mega Scovillain","GRASS","FIRE",65,138,85,138,85,75],[3978,978,"Mega Tatsugiri","DRAGON","WATER",68,65,90,135,125,92],[3998,998,"Mega Baxcalibur","DRAGON","ICE",115,175,117,105,101,87],[9006,6,"Mega Charizard X","FIRE","DRAGON",78,130,111,130,85,100],[9026,26,"Mega Raichu X","ELECTRIC",null,60,135,95,90,95,110],[9150,150,"Mega Mewtwo X","PSYCHIC","FIGHTING",106,190,100,154,100,130],[9445,445,"Mega Garchomp Z","DRAGON",null,108,130,85,141,85,151],[9448,448,"Mega Lucario Z","FIGHTING","STEEL",70,100,70,164,70,151]];
+    const UPSTREAM_V1357_NEW_FORMS=[[4053,"Alolan Persian","DARK",null,65,60,60,75,65,115,30450,null],[8413,"Wormadam Sandy","BUG","GROUND",60,79,105,59,85,36,3000,null],[8483,"Dialga Origin","STEEL","DRAGON",100,100,120,150,120,90,3500,null],[8484,"Palkia Origin","WATER","DRAGON",90,100,100,150,120,120,3500,null],[8492,"Shaymin Sky","GRASS","FLYING",100,103,75,120,75,127,3500,null],[8555,"Darmanitan Zen","FIRE","PSYCHIC",105,30,105,140,105,55,8600,null],[9413,"Wormadam Trash","BUG","STEEL",60,69,95,69,95,36,3000,null],[9555,"Galarian Darmanitan Zen","ICE","FIRE",105,160,55,30,55,135,64950,null],[9646,"Black Kyurem","DRAGON","ICE",125,170,100,120,90,95,8600,null]];
+    const UPSTREAM_MEGA_MOVES={"NORMAL":"Mega Onslaught","FIRE":"Mega Inferno","WATER":"Mega Maelstrom","GRASS":"Mega Bloom","ELECTRIC":"Mega Thunderstorm","ICE":"Mega Permafrost","FIGHTING":"Mega Rampage","POISON":"Mega Venom","GROUND":"Mega Earthshock","FLYING":"Mega Tempest","PSYCHIC":"Mega Mindbreak","BUG":"Mega Swarm","ROCK":"Mega Landslide","GHOST":"Mega Eclipse","DRAGON":"Mega Cataclysm","DARK":"Mega Abyss","STEEL":"Mega Forge","FAIRY":"Mega Radiance"};
+    function mergeUpstreamV1357Species(){
+        for(const [id,dex,name,type1,type2,hp,atk,def,spAtk,spDef,speed] of UPSTREAM_V1357_MEGAS){
+            if(state.speciesCombat.has(id)){
+                if(id===3306&&state.speciesCombat.get(id).type2==='ROCK'){
+                    state.speciesCombat.get(id).type2=null;
+                    state.typesBySpecies.set(id,['STEEL']);
+                }
+                continue;
+            }
+            const base=state.speciesCombat.get(dex);
+            if(!base)continue;
+            const moves=(base.attacks||[]).map(row=>({...row}));
+            const nameMegaMove=UPSTREAM_MEGA_MOVES[type1];
+            if(nameMegaMove)moves.push({name:nameMegaMove,type:type1,power:600,
+                category:atk>=spAtk?'PHYSICAL':'SPECIAL',
+                cooldownMs:30000,learnLevel:1});
+            // Exact fallback stats/types; move inheritance is approximate for
+            // Mega variants with dedicated upstream movesets.
+            mergeCombatCreature({pokeId:id,name,type1,type2,baseHp:hp,baseAtk:atk,
+                baseDef:def,baseSpAtk:spAtk,baseSpDef:spDef,baseSpeed:speed,
+                huntLevel:base.huntLevel,sellValue:base.catalogSellValue,
+                priceNpc:base.priceNpc,attacks:moves,evolvesToId:0,tetoCaptura:100});
+        }
+        for(const [id,name,type1,type2,hp,atk,def,spAtk,spDef,speed,huntLevel,evolvesToId] of UPSTREAM_V1357_NEW_FORMS){
+            if(state.speciesCombat.has(id))continue;
+            mergeCombatCreature({pokeId:id,name,type1,type2,baseHp:hp,baseAtk:atk,
+                baseDef:def,baseSpAtk:spAtk,baseSpDef:spDef,baseSpeed:speed,
+                huntLevel,evolvesToId});
+        }
+    }
+    // HA UPSTREAM V1357 SPECIES END.
+
     function mergeCombatCreature(
         creature
     ) {
@@ -6700,9 +6823,9 @@
                 previous.type1 ||
                 null,
             type2:
-                creature?.type2 ||
-                previous.type2 ||
-                null,
+                creature?.type2 !== undefined
+                    ? (creature.type2 || null)
+                    : (previous.type2 || null),
             huntLevel:
                 Number.isFinite(
                     Number(
@@ -6824,7 +6947,7 @@
             [id,Number(meta.evolvesToId)]).filter(([from,to])=>
             Number.isInteger(to)&&to>0&&to!==from&&ids.has(to));
         // Branches are not all expressible as the single evolvesToId field.
-        // Canonical upstream evolucoes-ramificadas.mjs, v1.314.2.
+        // Canonical upstream evolucoes-ramificadas.mjs and live catalog links.
         for(const [from,to] of [[25,26],[25,4026],[44,45],[44,182],[61,62],[61,186],[79,80],[79,199],[102,103],[102,4103],[104,105],[104,4105],[109,110],[109,5110],[133,134],[133,135],[133,136],[133,196],[133,197],[133,470],[133,471],[133,700],[156,157],[156,6157],[236,106],[236,107],[236,237],[265,266],[265,268],[281,282],[281,475],[290,291],[290,292],[361,362],[361,478],[366,367],[366,368],[412,413],[412,414],[439,122],[439,5122],[502,503],[502,6503],[548,549],[548,6549],[550,902],[550,8902],[627,628],[627,6628],[704,705],[704,6705],[712,713],[712,6713],[723,724],[723,6724],[744,745],[744,8745],[744,9745],[5079,5080],[5079,5199],[13265,266],[13265,268],[13281,282],[13281,475],[13290,291],[13290,292],[13361,362],[13361,478],[13366,367],[13366,368]]){
             if(ids.has(from)&&ids.has(to))links.push([from,to]);
         }
@@ -6845,9 +6968,11 @@
             if(!changed)break;
         }
         state.captureStageCaps.clear();
+        state.evolutionStages.clear();
         for(const [id,meta] of state.speciesCombat){
             const depth=Math.min(3,prior.get(id)||0);
             const length=Math.min(4,depth+Math.min(3,future.get(id)||0)+1);
+            state.evolutionStages.set(id,{depth,length});
             const cap=id>=2001&&id<=2047?100:
                 length===1?100:length===2?(depth===0?40:100):
                 length===3?[20,40,100][Math.min(depth,2)]:
@@ -7210,7 +7335,9 @@
                     } else state.itemCatalogStatus = 'unknown';
                 }
             }
+            mergeUpstreamV1357Species();
             rebuildCaptureStages();
+            rebuildNpcSellBases();
             refreshCaptureRarities();
             state.combatCatalogStatus = 'ready';
             state.combatCatalogError = null;
@@ -9361,6 +9488,12 @@
             return 0;
         }
 
+        // The normalized chain value must win before any provisional
+        // catalog/hunt fallback; otherwise promotion would undo the
+        // upstream pre-evolution price reduction.
+        const settled=state.npcSellBases.get(Number(meta.id));
+        if(Number.isFinite(settled)&&settled>0)return settled;
+
         let base =
             Number(
                 meta.sellValue ||
@@ -9399,10 +9532,8 @@
         }
 
         return Math.min(
-            Math.max(
-                0,
-                base
-            ),
+            Math.max(0,NPC_FIXED_BASES.get(Number(meta.id))??
+                state.npcSellBases.get(Number(meta.id))??base),
             NPC_SELL_BASE_CAP
         );
     }
@@ -9424,6 +9555,13 @@
                     1
                 )
             );
+        const stage=state.captureStageCaps.get(Number(species?.id))??
+            speciesCombatMeta(species?.id)?.captureLevelCeiling;
+        // Above 100 the caught level is the evolution-stage cap, not
+        // the wild hunt level. Missing stages must not fabricate prices.
+        if(huntLevel>NPC_SELL_LEVEL_CAP && !(Number(stage)>0))return 0;
+        const capturedLevel=huntLevel<=NPC_SELL_LEVEL_CAP
+            ?huntLevel:Math.min(NPC_SELL_LEVEL_CAP,Number(stage));
 
         if (base <= 0) {
             return 0;
@@ -9431,7 +9569,7 @@
 
         /*
          * PokéIdle's shared sell-value.mjs:
-         *   base × (1 + level / 50) × quality
+         *   base × (1 + min(captured level, 100) / 50) × quality
          *
          * Atlas has species/hunt data rather than a captured individual's
          * quality, so use the neutral reference quality 1.0.
@@ -9443,7 +9581,7 @@
                 base *
                 (
                     1 +
-                    huntLevel /
+                    capturedLevel /
                         50
                 )
             )
