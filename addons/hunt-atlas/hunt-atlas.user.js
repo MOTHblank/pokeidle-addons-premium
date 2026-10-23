@@ -1212,6 +1212,7 @@
         captureStageCaps: new Map(),
         evolutionStages: new Map(),
         npcSellBases: new Map(),
+        npcHuntsSignature: '',
         captureBonusEvidence: {},
         captureChanceEvidence: {seen:0,min:null,max:null},
         inventoryForCosts: new Map(),
@@ -2443,6 +2444,10 @@
             if(meta)meta.sellValue=base;
         }
         state.npcSellBases=saleBases;
+        state.npcHuntsSignature=state.hunts.map(hunt=>
+            String(hunt?.slug||'')+':'+Number(hunt?.nivel||0)+':'+
+            (hunt?.especies||[]).map(s=>Number(s?.pokeId??s?.id)||0).join(',')
+        ).join('|');
     }
 
     function normalizedNpcBaseFromCatalog(
@@ -5219,7 +5224,13 @@
                             }))
                             : []
                 }));
-                if(state.combatCatalogStatus==='ready')rebuildNpcSellBases();
+                if(state.combatCatalogStatus==='ready'){
+                    const signature=state.hunts.map(hunt=>
+                        String(hunt?.slug||'')+':'+Number(hunt?.nivel||0)+':'+
+                        (hunt?.especies||[]).map(s=>Number(s?.pokeId??s?.id)||0).join(',')
+                    ).join('|');
+                    if(signature!==state.npcHuntsSignature)rebuildNpcSellBases();
+                }
             }
 
             if (snapshot?.marketCatalogReady &&
