@@ -4,7 +4,7 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/addons/hunt-atlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.25
+// @version      1.9.27
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +18,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.25');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.27');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -345,6 +345,16 @@
             'sort.matchup': 'Matchup',
             'sort.asc': 'Ascending',
             'sort.desc': 'Descending',
+            'dex.title': 'Session Pokédex auto-fill',
+            'dex.start': 'Start',
+            'dex.stop': 'Stop',
+            'dex.idle': 'Inactive · no Pokédex data is read.',
+            'dex.stopped': 'Stopped · {count} species caught this session.',
+            'dex.waiting': 'Waiting for the game connection and hunt catalog…',
+            'dex.hunting': 'Level {level} · {hunt} · {count} caught this session',
+            'dex.traveling': 'Traveling to level {level}: {hunt} · {count} caught',
+            'dex.done': 'All accessible hunt species completed · {count} caught.',
+            'dex.hint': 'One confirmed catch per hunt visit, lowest levels first. Start resets the session list; existing Pokédex entries are ignored.',
             'filter.clear': 'Clear filters',
             'filter.defaults': 'Default filters',
             'filter.changedOne': '1 filter changed from default',
@@ -710,6 +720,16 @@
             'sort.matchup': 'Matchup',
             'sort.asc': 'Crescente',
             'sort.desc': 'Decrescente',
+            'dex.title': 'Completar Pokédex nesta sessão',
+            'dex.start': 'Iniciar',
+            'dex.stop': 'Parar',
+            'dex.idle': 'Inativo · não consulta a Pokédex.',
+            'dex.stopped': 'Parado · {count} espécies capturadas nesta sessão.',
+            'dex.waiting': 'Aguardando conexão com o jogo e lista de hunts…',
+            'dex.hunting': 'Nível {level} · {hunt} · {count} capturados nesta sessão',
+            'dex.traveling': 'Indo para nível {level}: {hunt} · {count} capturados',
+            'dex.done': 'Espécies das hunts acessíveis concluídas · {count} capturadas.',
+            'dex.hint': 'Uma captura confirmada por visita à hunt, dos níveis menores aos maiores. Iniciar zera a lista da sessão; a Pokédex existente é ignorada.',
             'filter.clear': 'Limpar filtros',
             'filter.defaults': 'Filtros padrão',
             'filter.changedOne': '1 filtro alterado',
@@ -1282,6 +1302,11 @@
         sockets: 0,
         activeSocket: null,
         pendingTravel: null,
+        pokedexAuto: {
+            active: false, mode: 'idle', caught: new Set(),
+            visited: new Set(), receipts: new Set(), targetSlug: null,
+            previousSlug: null, lastTravelAt: 0
+        },
 
         status: {
             key:
@@ -4606,10 +4631,14 @@
                     farmingExpireCorpse(state.farmingLedger,event.slot??event.s);
             } else {
                 const receipt = normalizeFarmingEvent(event);
-                if (receipt && acceptFarmingEvent(state.farmingLedger, receipt)) {
+                const accepted = receipt &&
+                    acceptFarmingEvent(state.farmingLedger, receipt);
+                if (accepted) {
                     farmTrackUse(receipt);
                     captureTrackReceipt(receipt);
                 }
+                if (event?.k === 'capturado')
+                    recordPokedexAutoCatch(event, Boolean(accepted));
             }
         }
     }
@@ -8966,7 +8995,7 @@
                         state.playerLevel).trainer,
                 idealKillMs: simulation.idealKillMs ?? null,
                 pacingAllowanceMs: simulation.pacingAllowanceMs ?? null,
-                modelVersion: '1.9.25',
+                modelVersion: '1.9.27',
                 leadId: lead?.id ?? null
             };
         }
@@ -10009,6 +10038,157 @@
     // Hunt navigation
     // ------------------------------------------------------------------
 
+    // Session-only Pokédex run. The live Pokédex and owned collection are
+    // deliberately never consulted: only confirmed catches since Start count.
+    function dexAutoSpecies(hunt) {
+        return (Array.isArray(hunt?.especies) ? hunt.especies : [])
+            .map(entry => Number(entry?.pokeId ?? entry?.id))
+            .filter(id => Number.isSafeInteger(id) && id > 0);
+    }
+
+    function dexAutoNextHunt(hunts, caught, visited, allowed, previousSlug) {
+        const candidates = (Array.isArray(hunts) ? hunts : [])
+            .filter(hunt => hunt?.slug && Number(hunt.nivel) > 0 &&
+                allowed(hunt) && dexAutoSpecies(hunt).some(id => !caught.has(id)))
+            .sort((a, b) => Number(a.nivel) - Number(b.nivel) ||
+                String(a.slug).localeCompare(String(b.slug)));
+        if (!candidates.length) return null;
+        // Fully finish each level before progressing to the next one.
+        const level = Number(candidates[0].nivel);
+        const atLevel = candidates.filter(hunt => Number(hunt.nivel) === level);
+        let choices = atLevel.filter(hunt => !visited.has(String(hunt.slug)));
+        // Multi-species hunts are revisited in another pass if still incomplete.
+        if (!choices.length) {
+            for (const hunt of atLevel) visited.delete(String(hunt.slug));
+            choices = atLevel;
+        }
+        return choices.find(hunt => hunt.slug !== previousSlug) || choices[0];
+    }
+
+    function dexAutoSetMode(mode) {
+        if (state.pokedexAuto.mode === mode) return;
+        state.pokedexAuto.mode = mode;
+        queueRender();
+    }
+
+    function stopPokedexAuto() {
+        const auto = state.pokedexAuto;
+        auto.active = false;
+        auto.targetSlug = null;
+        dexAutoSetMode('stopped');
+    }
+
+    function startPokedexAuto() {
+        const auto = state.pokedexAuto;
+        // A new Start means a fresh session list, not a persisted Pokédex.
+        auto.caught.clear();
+        auto.visited.clear();
+        auto.receipts.clear();
+        auto.targetSlug = null;
+        auto.previousSlug = null;
+        auto.lastTravelAt = 0;
+        auto.active = true;
+        auto.mode = 'waiting';
+        queueRender();
+        stepPokedexAuto();
+    }
+
+    function stepPokedexAuto() {
+        const auto = state.pokedexAuto;
+        if (!auto.active) return;
+        if (!socketReady() || !state.hunts.length) {
+            dexAutoSetMode('waiting');
+            return;
+        }
+        let hunt = auto.targetSlug
+            ? state.hunts.find(row => row.slug === auto.targetSlug) : null;
+        if (!hunt || !isUnlocked(hunt) ||
+            !dexAutoSpecies(hunt).some(id => !auto.caught.has(id))) {
+            hunt = dexAutoNextHunt(state.hunts, auto.caught, auto.visited,
+                isUnlocked, auto.previousSlug);
+            auto.targetSlug = hunt?.slug || null;
+            auto.lastTravelAt = 0;
+        }
+        if (!hunt) {
+            auto.active = false;
+            dexAutoSetMode('done');
+            return;
+        }
+        if (isHuntHere(hunt.slug)) {
+            dexAutoSetMode('hunting');
+            return;
+        }
+        const now = Date.now();
+        if (now - auto.lastTravelAt < 7000) return;
+        if (state.pendingTravel && state.pendingTravel.slug !== hunt.slug &&
+            now - state.pendingTravel.startedAt < 3000) return;
+        if (sendHuntSelect(hunt)) {
+            auto.lastTravelAt = now;
+            dexAutoSetMode('traveling');
+        } else {
+            dexAutoSetMode('waiting');
+        }
+    }
+
+    function recordPokedexAutoCatch(event, ledgerAccepted) {
+        const auto = state.pokedexAuto;
+        if (!auto.active || event?.k !== 'capturado' || !auto.targetSlug ||
+            !isHuntHere(auto.targetSlug)) return false;
+        const hunt = state.hunts.find(row => row.slug === auto.targetSlug);
+        if (!hunt) return false;
+        const possible = dexAutoSpecies(hunt);
+        const slot = event.slot ?? event.s;
+        const corpse = slot === undefined || slot === null ? null :
+            state.farmingLedger.slots.get(String(slot));
+        const rawId = event.pokemon?.speciesId ?? event.pokemon?.pokeId ??
+            event.speciesId ?? event.pokeId ?? corpse?.speciesId ??
+            (possible.length === 1 ? possible[0] : null);
+        const speciesId = Number(outlandNormalizeSpeciesId(rawId));
+        if (!Number.isSafeInteger(speciesId) || !possible.includes(speciesId))
+            return false;
+        // Prefer the server's unique caught Pokémon ID/receipt. For older
+        // packets without one, require an already deduplicated capture event.
+        const instanceId = Number(event.pokemon?.id);
+        const eventId = farmingReceiptIdentity(event);
+        const identity = Number.isSafeInteger(instanceId) && instanceId > 0
+            ? 'pokemon:' + instanceId
+            : eventId ? 'receipt:' + eventId
+            : ledgerAccepted && slot != null
+                ? 'slot:' + hunt.slug + ':' + String(slot) : null;
+        if (!identity || auto.receipts.has(identity)) return false;
+        auto.receipts.add(identity);
+        if (auto.receipts.size > 512)
+            auto.receipts.delete(auto.receipts.values().next().value);
+        auto.caught.add(speciesId);
+        auto.visited.add(hunt.slug);
+        auto.previousSlug = hunt.slug;
+        auto.targetSlug = null;
+        auto.lastTravelAt = 0;
+        // The next server-confirmed capture, not a Pokédex delta, advances us.
+        stepPokedexAuto();
+        queueRender();
+        return true;
+    }
+
+    function renderPokedexAuto(drawer) {
+        const host = q('[data-mha-dex-auto]', drawer);
+        if (!host) return;
+        const auto = state.pokedexAuto;
+        const button = q('[data-mha-dex-toggle]', host);
+        button.textContent = tr(auto.active ? 'dex.stop' : 'dex.start');
+        const hunt = state.hunts.find(row => row.slug === auto.targetSlug);
+        const params = {
+            count: auto.caught.size,
+            level: Number(hunt?.nivel) || 0,
+            hunt: hunt?.nome || hunt?.slug || ''
+        };
+        const key = auto.active ? 'dex.' + auto.mode :
+            auto.mode === 'done' ? 'dex.done' :
+                auto.mode === 'stopped' ? 'dex.stopped' : 'dex.idle';
+        q('[data-mha-dex-status]', host).textContent = tr(key, params);
+    }
+
+
     function socketReady() {
         return Boolean(
             state.activeSocket &&
@@ -10120,6 +10300,8 @@
     function navigateToHunt(
         hunt
     ) {
+        // Manual navigation takes precedence over the automated route.
+        if (state.pokedexAuto.active) stopPokedexAuto();
         if (
             !isUnlocked(hunt)
         ) {
@@ -10203,6 +10385,33 @@
         style.textContent = `
             #${BUTTON_ID} {
                 display: none !important;
+            }
+
+
+            .mha-dex-auto {
+                display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 8px 12px;
+                padding: 10px 14px;
+                border-bottom: 1px solid rgba(255,255,255,.12);
+                background: #231c21;
+            }
+            .mha-dex-auto strong { font-size: 12px; }
+            .mha-dex-auto button {
+                cursor: pointer;
+                border: 1px solid #6ba985;
+                border-radius: 6px;
+                background: #284b38;
+                color: #f1fff4;
+                padding: 5px 12px;
+                font-weight: 700;
+            }
+            .mha-dex-auto [data-mha-dex-status] { color: #d9cfda; }
+            .mha-dex-auto small {
+                flex-basis: 100%;
+                color: #bcb0b9;
+                font-size: 10px;
             }
 
             #mha-map-toggle {
@@ -11708,6 +11917,12 @@
                 </div>
             </div>
 
+            <div class="mha-dex-auto" data-mha-dex-auto>
+                <strong>${tr('dex.title')}</strong>
+                <button type="button" data-mha-dex-toggle></button>
+                <span data-mha-dex-status role="status" aria-live="polite"></span>
+                <small>${tr('dex.hint')}</small>
+            </div>
             <div class="mha-xp-summary"></div>
 
             <div class="mha-meta">
@@ -11723,6 +11938,11 @@
         modalBody.appendChild(
             drawer
         );
+        q('[data-mha-dex-toggle]', drawer)?.addEventListener('click', () => {
+            if (state.pokedexAuto.active) stopPokedexAuto();
+            else startPokedexAuto();
+            renderPokedexAuto(drawer);
+        });
         q('[data-mha-filter-toggle]',drawer)?.addEventListener('click',()=>{
             state.filtersExpanded=!state.filtersExpanded;
             renderFilterControls(drawer);
@@ -13674,6 +13894,7 @@
         const results =
             filteredSpecies();
 
+        renderPokedexAuto(drawer);
         renderXpSummary(
             drawer,
             results
@@ -14237,7 +14458,7 @@
             const here = currentHunt();
             const xp = here ? huntXpEstimate(here) : null;
             return {
-                version: '1.9.25',
+                version: '1.9.27',
                 indexes: {
                     locations: state.locationIndexStatus,
                     markerCount: state.locationsBySlug.size,
@@ -14391,6 +14612,8 @@
             // Keep a cheap button check; only read the bridge and redraw
             // after a long idle gap AND while the Atlas list is visible.
             ensureButton();
+            // Reuse the existing low-frequency clock only while automation is on.
+            if (state.pokedexAuto.active) stepPokedexAuto();
             if(!isMapModalOpen()){
                 if(state.drawerOpen)cleanupMapIntegration();
                 return;
@@ -14405,7 +14628,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.25 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.27 experimental loaded'
         );
     }
 
