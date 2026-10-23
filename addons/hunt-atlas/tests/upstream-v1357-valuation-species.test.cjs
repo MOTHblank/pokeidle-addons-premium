@@ -86,6 +86,11 @@ test('upstream v1.357.3 species data adds all Megas and the nine new forms',()=>
         assert.ok(meta.type1);
         assert.ok(meta.baseHp>0);
     }
+    // Even a previously loaded stale Aggron entry loses its Rock type.
+    state.speciesCombat.get(3306).type2='ROCK';
+    h.mergeUpstreamV1357Species();
+    assert.equal(state.speciesCombat.get(3306).type2,null);
+    assert.equal(state.typesBySpecies.get(3306).join(','),'STEEL');
     // A live game species entry takes precedence over the embedded fallback.
     state.speciesCombat.get(8483).type1='LIVE';
     h.mergeUpstreamV1357Species();
