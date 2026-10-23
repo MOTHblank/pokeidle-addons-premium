@@ -9477,6 +9477,12 @@
             return 0;
         }
 
+        // The normalized chain value must win before any provisional
+        // catalog/hunt fallback; otherwise promotion would undo the
+        // upstream pre-evolution price reduction.
+        const settled=state.npcSellBases.get(Number(meta.id));
+        if(Number.isFinite(settled)&&settled>0)return settled;
+
         let base =
             Number(
                 meta.sellValue ||
