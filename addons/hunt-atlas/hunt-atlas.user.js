@@ -99,15 +99,14 @@
     const GOLD_KILL_LEVEL_CAP =
         25000;
 
-    const NPC_SELL_BASE_CAP =
-        6 *
-        Math.round(
-            GOLD_KILL_LEVEL_1 *
-            Math.pow(
-                GOLD_KILL_LEVEL_CAP,
-                GOLD_KILL_EXPONENT
-            )
-        );
+    // shared/sell-value.mjs v1.357.3: ouroDoNivel(2500), not 6× kill cap.
+    const NPC_SELL_BASE_CAP = Math.round(
+        SELL_VALUE_ANCHOR_GOLD * Math.pow(2500 / SELL_VALUE_ANCHOR_LEVEL, 0.6)
+    );
+    const NPC_SELL_LEVEL_CAP = 100;
+    const NPC_FIXED_BASES = new Map([
+        [2027,60000],[2050,60000],[2006,32000],[212,88000],[3212,88000]
+    ]);
 
     const BUTTON_ID =
         'moth-hunt-atlas-button';
@@ -1211,6 +1210,8 @@
         captureBallRates: new Map(),
         captureRarities: new Map(),
         captureStageCaps: new Map(),
+        evolutionStages: new Map(),
+        npcSellBases: new Map(),
         captureBonusEvidence: {},
         captureChanceEvidence: {seen:0,min:null,max:null},
         inventoryForCosts: new Map(),
@@ -2369,6 +2370,81 @@
         );
     }
 
+    // Economic species value has no NPC sale cap; chain normalization and
+    // capture rarity must not be artificially flattened at level 2500.
+    function economicValueFromCatalog(meta){
+        if(!meta)return 0;
+        const level=Math.max(1,Number(meta.huntLevel)||1);
+        if(level>SELL_VALUE_ANCHOR_LEVEL)return goldValueAtLevel(level);
+        const sell=Number(meta.catalogSellValue);
+        const npc=Number(meta.priceNpc);
+        if(sell>0&&sell<=NPC_CATALOG_PRICE_MAX)return sell;
+        if(sell>NPC_CATALOG_PRICE_MAX)return goldValueAtLevel(level);
+        if(npc>0&&npc<=NPC_CATALOG_PRICE_MAX)return npc;
+        return goldValueAtLevel(level);
+    }
+
+    // Same sequence as upstream valor-cadeia: normalize the raw catalog,
+    // elevate legacy-priced species that only inhabit high-level hunts,
+    // then lower overpriced pre-evolutions from the last link backwards.
+    // Runs on catalog/hunt changes only; never during draw or sort.
+    function rebuildNpcSellBases(){
+        const values=new Map(),lowHunts=new Map();
+        for(const hunt of state.hunts){
+            const level=Number(hunt?.nivel);
+            if(!Number.isFinite(level)||level<=0)continue;
+            for(const spawn of hunt?.especies||[]){
+                const id=Number(outlandNormalizeSpeciesId(spawn?.pokeId??spawn?.id));
+                if(Number.isInteger(id)&&id>0)
+                    lowHunts.set(id,Math.min(level,lowHunts.get(id)??Infinity));
+            }
+        }
+        for(const [id,meta] of state.speciesCombat){
+            let value=economicValueFromCatalog(meta);
+            const min=lowHunts.get(id);
+            if(Number(meta.huntLevel||0)<=SELL_VALUE_ANCHOR_LEVEL &&
+                Number.isFinite(min)&&min>SELL_VALUE_ANCHOR_LEVEL)
+                value=Math.max(value,goldValueAtLevel(min));
+            values.set(id,value);
+        }
+        // Upstream groups same-name Orre clones with the longest original
+        // chain, instead of assigning clone-specific two-link ratios.
+        const longestNameStage=new Map();
+        for(const [id,meta] of state.speciesCombat){
+            const info=state.evolutionStages.get(id);
+            if(!info||!meta.name)continue;
+            const prior=longestNameStage.get(meta.name);
+            if(!prior||info.length>prior.length)
+                longestNameStage.set(meta.name,info);
+        }
+        const predecessors=[];
+        for(const [id,meta] of state.speciesCombat){
+            const target=Number(meta.evolvesToId);
+            if(!target||!state.speciesCombat.has(target))continue;
+            const info=longestNameStage.get(meta.name)||
+                state.evolutionStages.get(id);
+            if(info)predecessors.push({id,target,info});
+        }
+        predecessors.sort((a,b)=>b.info.depth-a.info.depth);
+        for(const {id,target,info} of predecessors){
+            const current=values.get(id),next=values.get(target);
+            if(!Number.isFinite(current)||!Number.isFinite(next)||
+                current<next)continue;
+            const ratios=info.length>=3?[0.462,0.444]:[0.517];
+            const factor=ratios[Math.min(info.depth,ratios.length-1)];
+            values.set(id,Math.max(1,Math.round(next*factor)));
+        }
+        const saleBases=new Map();
+        for(const [id,value] of values){
+            const fixed=NPC_FIXED_BASES.get(id);
+            const base=Math.min(NPC_SELL_BASE_CAP,fixed??value);
+            saleBases.set(id,base);
+            const meta=state.speciesCombat.get(id);
+            if(meta)meta.sellValue=base;
+        }
+        state.npcSellBases=saleBases;
+    }
+
     function normalizedNpcBaseFromCatalog(
         meta
     ) {
@@ -2445,10 +2521,7 @@
          * independent of the raw species catalog.
          */
         return Math.min(
-            Math.max(
-                1,
-                value
-            ),
+            Math.max(1,NPC_FIXED_BASES.get(Number(meta.id))??value),
             NPC_SELL_BASE_CAP
         );
     }
@@ -3561,7 +3634,7 @@
         if (npc>0 && npc<=500000) return npc;
         return null; // Never borrow a specimen sale price or RMT listing.
     }
-    // Ordinary hunt captures: upstream v1.314.2 uses evolution stage.
+    // Ordinary hunt captures use upstream v1.357.3 evolution stages.
     // Missing stage / special encounters keep the legacy price-based model.
     // The optional speciesId keeps the exported pure testing helpers usable.
     function captureWikiChance(rarity,efficiency,hpFraction=0,speciesId=null) {
@@ -5146,6 +5219,7 @@
                             }))
                             : []
                 }));
+                if(state.combatCatalogStatus==='ready')rebuildNpcSellBases();
             }
 
             if (snapshot?.marketCatalogReady &&
@@ -5366,6 +5440,7 @@
             ) {
                 state.hunts =
                     message.hunts;
+                if(state.combatCatalogStatus==='ready')rebuildNpcSellBases();
 
                 setStatus(
                     'status.huntsLoaded',
@@ -6861,7 +6936,7 @@
             [id,Number(meta.evolvesToId)]).filter(([from,to])=>
             Number.isInteger(to)&&to>0&&to!==from&&ids.has(to));
         // Branches are not all expressible as the single evolvesToId field.
-        // Canonical upstream evolucoes-ramificadas.mjs, v1.314.2.
+        // Canonical upstream evolucoes-ramificadas.mjs and live catalog links.
         for(const [from,to] of [[25,26],[25,4026],[44,45],[44,182],[61,62],[61,186],[79,80],[79,199],[102,103],[102,4103],[104,105],[104,4105],[109,110],[109,5110],[133,134],[133,135],[133,136],[133,196],[133,197],[133,470],[133,471],[133,700],[156,157],[156,6157],[236,106],[236,107],[236,237],[265,266],[265,268],[281,282],[281,475],[290,291],[290,292],[361,362],[361,478],[366,367],[366,368],[412,413],[412,414],[439,122],[439,5122],[502,503],[502,6503],[548,549],[548,6549],[550,902],[550,8902],[627,628],[627,6628],[704,705],[704,6705],[712,713],[712,6713],[723,724],[723,6724],[744,745],[744,8745],[744,9745],[5079,5080],[5079,5199],[13265,266],[13265,268],[13281,282],[13281,475],[13290,291],[13290,292],[13361,362],[13361,478],[13366,367],[13366,368]]){
             if(ids.has(from)&&ids.has(to))links.push([from,to]);
         }
@@ -6882,9 +6957,11 @@
             if(!changed)break;
         }
         state.captureStageCaps.clear();
+        state.evolutionStages.clear();
         for(const [id,meta] of state.speciesCombat){
             const depth=Math.min(3,prior.get(id)||0);
             const length=Math.min(4,depth+Math.min(3,future.get(id)||0)+1);
+            state.evolutionStages.set(id,{depth,length});
             const cap=id>=2001&&id<=2047?100:
                 length===1?100:length===2?(depth===0?40:100):
                 length===3?[20,40,100][Math.min(depth,2)]:
@@ -9438,10 +9515,8 @@
         }
 
         return Math.min(
-            Math.max(
-                0,
-                base
-            ),
+            Math.max(0,NPC_FIXED_BASES.get(Number(meta.id))??
+                state.npcSellBases.get(Number(meta.id))??base),
             NPC_SELL_BASE_CAP
         );
     }
@@ -9463,6 +9538,13 @@
                     1
                 )
             );
+        const stage=state.captureStageCaps.get(Number(species?.id))??
+            speciesCombatMeta(species?.id)?.captureLevelCeiling;
+        // Above 100 the caught level is the evolution-stage cap, not
+        // the wild hunt level. Missing stages must not fabricate prices.
+        if(huntLevel>NPC_SELL_LEVEL_CAP && !(Number(stage)>0))return 0;
+        const capturedLevel=huntLevel<=NPC_SELL_LEVEL_CAP
+            ?huntLevel:Math.min(NPC_SELL_LEVEL_CAP,Number(stage));
 
         if (base <= 0) {
             return 0;
@@ -9470,7 +9552,7 @@
 
         /*
          * PokéIdle's shared sell-value.mjs:
-         *   base × (1 + level / 50) × quality
+         *   base × (1 + min(captured level, 100) / 50) × quality
          *
          * Atlas has species/hunt data rather than a captured individual's
          * quality, so use the neutral reference quality 1.0.
@@ -9482,7 +9564,7 @@
                 base *
                 (
                     1 +
-                    huntLevel /
+                    capturedLevel /
                         50
                 )
             )
