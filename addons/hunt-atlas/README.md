@@ -1,8 +1,8 @@
-# PokéIdle Hunt Atlas (experimental)
+# PokéIdle Hunt Atlas
 
-This is the **premium experiment**, separate from the Hunt Atlas shipped through `pokeidle-addons`. Changes are not synchronized automatically. It replaces PokéIdle's **Map** view with a searchable hunt/Pokémon list—not a graphical map.
+This directory contains the **one maintained Premium Hunt Atlas userscript**, its documentation, test suite and preview. The script replaces PokéIdle's **Map** view with a searchable hunt/Pokémon list. It is separate from the native Hunt Atlas in Moth Controller.
 
-**Parity check (v1.9.28):** Both premium entry points currently have identical functional code (including the updated Outland level table). Only repository links and update metadata differ. This version also prevents strongest-owned Pokémon substitution when the active fighter is briefly unknown, applies a conservative upstream Hunt Analyser pacing heuristic to unmeasured forecasts, and exposes same-hunt model-vs-measurement diagnostics for large XP/hour misses. This version also replays observed same-hunt spawn HP distributions (six or more exact species/level samples) and deterministic game-range damage rolls instead of pretending every enemy has median HP and suffers mean damage on every strike. The public script uses authenticated userscript-manager auto-update URLs; this private experimental copy remains **manual-update only**. Future experiments should start from the latest public implementation and promote changes explicitly after validation, without overwriting public-only controller features.
+**Single install (v1.9.29):** [Install / update Hunt Atlas](https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js). This folder's `hunt-atlas.user.js` is the only version in this repository; it includes the authenticated userscript-manager `@downloadURL` and `@updateURL` metadata. The old root-level script was removed. Existing installations of `addons/hunt-atlas.user.js` **must be replaced manually once**: remove or disable the old one, install the linked folder script, and leave only one Hunt Atlas enabled. Updating automatically from the now-deleted old URL is not possible.
 
 ![Hunt Atlas preview](assets/map-preview.png)
 
@@ -10,12 +10,12 @@ This is the **premium experiment**, separate from the Hunt Atlas shipped through
 
 ### Instalação
 
-1. Entre no GitHub com acesso ao repositório privado e abra [hunt-atlas.user.js](hunt-atlas.user.js).
-2. Copie o código para um novo script do Violentmonkey ou Tampermonkey.
-3. **Desative qualquer outra cópia do Hunt Atlas** neste perfil para evitar conflito com o mapa e os hooks do jogo.
+1. Abra [**Instalar / atualizar Hunt Atlas**](https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js) no Violentmonkey ou Tampermonkey.
+2. **Se já usa a versão antiga em `addons/hunt-atlas.user.js`, remova ou desative o script antigo e instale esta versão na pasta.** O endereço antigo não migra automaticamente.
+3. Mantenha **apenas uma cópia** habilitada para evitar hooks WebSocket e Mapa duplicados.
 4. Recarregue [PokéIdle](https://pokeidle.io/app) e abra **Mapa**.
 
-A instalação e as atualizações são **manuais**: o repositório privado não oferece atualização automática autenticada para o gerenciador de userscripts.
+Esta versão possui `@updateURL` e `@downloadURL` para atualizações automáticas enquanto o repositório permanecer público.
 
 ### Recursos
 
@@ -46,12 +46,12 @@ Não há envio automático desse resumo. Funcionamento visual, precisão em jogo
 
 ### Installation
 
-1. Sign into GitHub with access to this private repository and open [hunt-atlas.user.js](hunt-atlas.user.js).
-2. Copy its source into a new Violentmonkey or Tampermonkey userscript.
-3. **Disable any other Hunt Atlas copy** in the same profile to avoid duplicate map/WebSocket hooks.
+1. Open [**Install / update Hunt Atlas**](https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js) in Violentmonkey or Tampermonkey.
+2. **If you installed the old `addons/hunt-atlas.user.js`, remove or disable it and install the folder version.** Its old feed does not redirect automatically.
+3. Keep **only one Hunt Atlas copy** enabled to prevent duplicate map/WebSocket hooks.
 4. Reload [PokéIdle](https://pokeidle.io/app) and open **Map**.
 
-Updates are manual; private repository files are not a reliable unauthenticated userscript update feed. XP/h rankings now explicitly use trainer XP per kill × kills/h, never trainer+Pokémon combined; per-kill values are shown in hunt details. The public repository's formerly stale v1.9.21 `huntatlas/` compatibility script is now aligned with the canonical public script and includes auto-update URLs.
+Automatic updates use the canonical folder URL while this repository remains public. If the repository becomes private again, the raw GitHub update feed will require an alternative distribution mechanism.
 
 ### Features and limits
 
