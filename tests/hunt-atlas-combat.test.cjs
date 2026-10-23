@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const source = fs.readFileSync(path.join(__dirname, '..', 'addons', 'hunt-atlas.user.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '..', 'addons', 'hunt-atlas', 'hunt-atlas.user.js'), 'utf8');
 const names = ['formatRate', 'formatXpRate', 'xpRatingOriginKey', 'xpGlobalAttackFloor', 'xpMoveCooldown', 'xpCooldownFromPower',
   'median', 'estimatedWildStat', 'sampledHuntHp', 'targetHpEstimate', 'battleLeadTypes', 'battleMovesForLead', 'battleStat',
   'estimatedWildDefense', 'battleDamage', 'deterministicSpeciesCombat',
@@ -231,8 +231,8 @@ test('public integration preserves controller metrics, special-form capture and 
     'function controllerMetrics(', 'metrics: controllerMetrics',
     'function captureRarityForSpecies(', 'function savedObservedRates(',
     'state.modelRevision', 'function deterministicSpeciesCombat(',
-    '@downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons/master/addons/hunt-atlas.user.js',
-    '@updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons/master/addons/hunt-atlas.user.js'
+    '@downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js',
+    '@updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js'
   ]) assert.ok(source.includes(symbol), 'missing integration: ' + symbol);
 });
 
@@ -450,13 +450,13 @@ test('the public forecast has explicit, separate trainer and Pokemon formulas', 
   assert.ok(source.includes('value: xpSingleStreamRate(killsH, trainerXpPerKill)'));
   assert.ok(source.includes('pokemonValue: xpSingleStreamRate(killsH, pokemonXpPerKill)'));
   assert.ok(source.includes('trainerXpPerKill: xp?.trainerXpPerKill ?? null'));
-  assert.ok(source.includes('// @version      1.9.25'));
+  assert.ok(source.includes('// @version      1.9.29'));
 });
 
-test('the former legacy installer now runs the canonical auto-updating model', () => {
-  const legacySource = fs.readFileSync(path.join(__dirname,'..','huntatlas',
-    'hunt-atlas.user.js'), 'utf8');
-  assert.equal(legacySource,source,'old entrypoint must not retain obsolete math');
-  for(const url of ['@downloadURL','@updateURL'])
-    assert.ok(legacySource.includes(url+'    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons/master/addons/hunt-atlas.user.js'));
+test('only the folder installer remains and carries auto-updating metadata', () => {
+  assert.equal(fs.existsSync(path.join(__dirname,'..','addons','hunt-atlas.user.js')), false);
+  for(const tag of ['@downloadURL','@updateURL'])
+    assert.ok(source.includes(tag+'  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js') ||
+      source.includes(tag+'    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js'));
+  assert.ok(source.includes('// @version      1.9.29'));
 });
