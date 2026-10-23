@@ -4,7 +4,6 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 
 const src=fs.readFileSync(path.join(__dirname,'../hunt-atlas.user.js'),'utf8');
-const release=fs.readFileSync(path.join(__dirname,'../../hunt-atlas.user.js'),'utf8');
 function part(start,end){
     const a=src.indexOf(start),b=src.indexOf(end,a+start.length);
     assert.ok(a>=0&&b>a,'missing production section: '+start);
@@ -43,11 +42,13 @@ function harness(){
     return {state,mergeCombatCreature,h};
 }
 
-test('both install entry points have the same implementation and v1.9.29',()=>{
-    const begin='(() => {';
-    assert.equal(src.slice(src.indexOf(begin)),release.slice(release.indexOf(begin)));
+test('the single canonical Premium entry point self-updates at v1.9.29',()=>{
     assert.match(src,/@version\s+1\.9\.29/);
-    assert.match(release,/@version\s+1\.9\.29/);
+    const canonical='addons/hunt-atlas/hunt-atlas.user.js';
+    assert.ok(src.includes('@downloadURL  https://raw.githubusercontent.com/'+
+        'MOTHblank/pokeidle-addons-premium/main/'+canonical));
+    assert.ok(src.includes('@updateURL    https://raw.githubusercontent.com/'+
+        'MOTHblank/pokeidle-addons-premium/main/'+canonical));
 });
 
 test('upstream v1.357.3 species data adds all Megas and the nine new forms',()=>{
