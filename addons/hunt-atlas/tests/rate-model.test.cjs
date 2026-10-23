@@ -449,5 +449,5 @@ test('the public forecast has explicit, separate trainer and Pokemon formulas', 
   assert.ok(source.includes('value: xpSingleStreamRate(killsH, trainerXpPerKill)'));
   assert.ok(source.includes('pokemonValue: xpSingleStreamRate(killsH, pokemonXpPerKill)'));
   assert.ok(source.includes('trainerXpPerKill: xp?.trainerXpPerKill ?? null'));
-  assert.ok(source.includes('// @version      1.9.25'));
+  assert.ok(source.includes('// @version      1.9.29'));
 });

@@ -7,7 +7,6 @@ Preserved, premium and experimental [PokéIdle](https://pokeidle.io/app) userscr
 | Script | Purpose |
 | --- | --- |
 | [Moth Watch](addons/moth-watch/moth-watch.user.js) · [Install / update](https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/moth-watch/moth-watch.user.js) | Community Market browser, rule-based item/Pokémon buying, Snatch queue, purchase activity, Pokémon-sheet valuations and completed-sale price references. |
-| [Hunt Atlas experiment](addons/hunt-atlas/) | Alternative hunt finder with measured and modeled XP, resource and rare-drop comparisons, and capture planning. Independent of the public Hunt Atlas installation. |
 | [Upstream Scraper & Exporter](addons/upstream-scraper/scraper-exporter.user.js) | Manually export publicly served game client assets and a manifest, with download limits and cancellation. |
 
 ## Occasional-use scripts migrated from Moth Controller
@@ -18,14 +17,14 @@ The native [Moth Controller](https://github.com/MOTHblank/pokeidle-addons) **doe
 | --- | --- | --- |
 | Auto Catch+ | [Install](https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/autocatch.user.js) | Legacy in-browser capture, reserves, potion/ball/revive restock |
 | Controller Bridge | [Install](https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/controller-bridge.user.js) | Browser diagnostic telemetry and compatibility bridge |
-| Hunt Atlas (public release) | [Install](https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas.user.js) | In-browser hunt recommendations, combat and XP models |
+| Hunt Atlas (public release) | [Install](https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js) | In-browser hunt recommendations, combat and XP models |
 | Performance+ | [Install](https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/performance.user.js) | Reduce game-tab rendering work |
 | Live Stream Scanner | [Install](https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/stream-auto-open.user.js) | Browser-based Twitch chat channel selection |
 | Twitch Low Resource | [Install](https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/twitch-low-resource.user.js) | Browser Twitch chat resource reductions |
 
 **Existing Violentmonkey installations:** the old `pokeidle-addons/master/addons/*.user.js` URLs are retired. Install these Premium versions once to replace the old source and receive future updates here. Disable or remove the old copy if the userscript manager treats it as a separate installation. Native game/Twitch/capture/restock do not need these scripts. Do not run two Hunt Atlas copies or overlapping browser/native Auto Catch for the same account.
 
-The existing [Hunt Atlas experiment](addons/hunt-atlas/) remains as a separate manual-update testbed; the auto-updating release above is the copy for occasional regular use. The former public Hunt Atlas tests have been consolidated under `addons/hunt-atlas/tests/` and `tests/`.
+**Hunt Atlas has one maintained entry point:** [`addons/hunt-atlas/hunt-atlas.user.js`](addons/hunt-atlas/hunt-atlas.user.js). Its source, documentation and tests live together in `addons/hunt-atlas/`. The old root-level `addons/hunt-atlas.user.js` was removed. **Already installed the old root script?** Remove/disable that installation and install the folder version from the link above: the old `@updateURL` cannot follow a deleted GitHub file, so userscript managers will not migrate it automatically. Keep only one copy enabled.
 
 ## Installation and automatic updates
 
@@ -63,13 +62,13 @@ Moth Watch is assembled into the standalone userscript from `addons/moth-watch/s
 node addons/moth-watch/build.cjs
 ```
 
-See [Hunt Atlas instructions](addons/hunt-atlas/README.md) for experiment-specific usage. Durable protocol, economics, combat and pricing references are indexed in [docs/](docs/README.md).
+See [Hunt Atlas instructions](addons/hunt-atlas/README.md) for installation and usage. Durable protocol, economics, combat and pricing references are indexed in [docs/](docs/README.md).
 
 ## Repository layout
 
 - `addons/moth-watch/` — distributable script, source sections and builder.
-- `addons/hunt-atlas/` — experimental standalone script, instructions and preview.
+- `addons/hunt-atlas/` — the only Hunt Atlas userscript, documentation, tests and preview.
 - `addons/upstream-scraper/` — [Upstream Scraper & Asset Exporter](addons/upstream-scraper/README.md): inspect public client files and download discovered item/Pokémon artwork with a manifest and checksums.
-- `addons/*.user.js` — archived optional browser addons migrated from the native controller repository.
+- `addons/*.user.js` — other optional browser addons migrated from the native controller repository (Hunt Atlas lives only in `addons/hunt-atlas/`).
 - `tests/` and `addons/hunt-atlas/tests/` — migrated Hunt Atlas and Twitch regression tests.
 - `docs/mechanics/`, `docs/market/`, `docs/references/` — topic-specific technical references.

@@ -1,6 +1,6 @@
 # Combat model contract — moves, cooldowns, type effectiveness and hunt throughput
 
-> **Implementation-focused reference for Hunt Atlas**, from the owner's PokéIdle wiki, the inspected `MOTHblank/pokeidle-upstream` shared/client source and the current [Hunt Atlas userscript](https://github.com/MOTHblank/pokeidle-addons/blob/master/addons/hunt-atlas.user.js). The goal is a combat estimator that does not confuse theoretical damage, real hit events, move readiness, area attacks, player survival and XP/hour.
+> **Implementation-focused reference for Hunt Atlas**, from the owner's PokéIdle wiki, the inspected `MOTHblank/pokeidle-upstream` shared/client source and the current [Hunt Atlas userscript](https://github.com/MOTHblank/pokeidle-addons-premium/blob/main/addons/hunt-atlas/hunt-atlas.user.js). The goal is a combat estimator that does not confuse theoretical damage, real hit events, move readiness, area attacks, player survival and XP/hour.
 >
 > **Scope:** reference/documentation only. This does not alter combat, Hunt Atlas, automation, market operations or the Controller.
 
@@ -260,7 +260,7 @@ These formulas connect to [HUNT_REWARDS_AND_RARE_LOOT.md](./HUNT_REWARDS_AND_RAR
 
 ## 10. Hunt Atlas: measured combat events and what the model currently knows
 
-**[ADDON]** The current [`addons/hunt-atlas.user.js`](https://github.com/MOTHblank/pokeidle-addons/blob/master/addons/hunt-atlas.user.js) listens to game battle event kinds:
+**[ADDON]** The current [`addons/hunt-atlas/hunt-atlas.user.js`](https://github.com/MOTHblank/pokeidle-addons-premium/blob/main/addons/hunt-atlas/hunt-atlas.user.js) listens to game battle event kinds:
 - `spawn`: target `slot`, `speciesId`, level and possible `hp/maxHp`;
 - `ataque`: from player `por='jogador'`, damage `dano`, attack type `tipo`, effectiveness `ef` and target slot;
 - `morte`: kill totals, XP/Coins and target retirement.

@@ -7,7 +7,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const src = fs.readFileSync(path.join(__dirname, '..', 'addons',
-    'hunt-atlas.user.js'), 'utf8');
+    'hunt-atlas', 'hunt-atlas.user.js'), 'utf8');
 
 function functionBody(name) {
     const start = src.indexOf('    function ' + name + '(');
@@ -161,9 +161,9 @@ test('weekly reset happens exactly Sunday midnight Brasília (03:00 UTC)', () =>
     assert.equal(ctx.dexAutoSyncWeek(after+1000),false);
 });
 
-test('both premium entry points have identical functional code', () => {
-    const mirror=fs.readFileSync(path.join(__dirname,'..','addons',
-        'hunt-atlas','hunt-atlas.user.js'),'utf8');
-    assert.equal(src.split('// ==/UserScript==')[1],
-        mirror.split('// ==/UserScript==')[1]);
+test('the folder script is the only canonical Hunt Atlas entry point', () => {
+    assert.equal(fs.existsSync(path.join(__dirname,'..','addons','hunt-atlas.user.js')),false);
+    const feed='https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js';
+    assert.ok(src.includes('// @downloadURL  '+feed));
+    assert.ok(src.includes('// @updateURL    '+feed));
 });
