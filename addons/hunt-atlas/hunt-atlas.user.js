@@ -4,7 +4,9 @@
 // @author       MOTHblank
 // @homepageURL  https://github.com/MOTHblank/pokeidle-addons-premium/tree/main/addons/hunt-atlas
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
-// @version      1.9.28
+// @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
+// @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
+// @version      1.9.29
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -18,7 +20,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.28');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.29');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -8995,7 +8997,7 @@
                         state.playerLevel).trainer,
                 idealKillMs: simulation.idealKillMs ?? null,
                 pacingAllowanceMs: simulation.pacingAllowanceMs ?? null,
-                modelVersion: '1.9.28',
+                modelVersion: '1.9.29',
                 leadId: lead?.id ?? null
             };
         }
@@ -14485,7 +14487,7 @@
             const here = currentHunt();
             const xp = here ? huntXpEstimate(here) : null;
             return {
-                version: '1.9.28',
+                version: '1.9.29',
                 indexes: {
                     locations: state.locationIndexStatus,
                     markerCount: state.locationsBySlug.size,
@@ -14655,7 +14657,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.28 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.29 experimental loaded'
         );
     }
 
