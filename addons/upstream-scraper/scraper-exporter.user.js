@@ -1569,6 +1569,12 @@
                 color:#a99fa3;
                 font-size:9px;
             }
+            @media (max-width:560px) {
+                #${ROOT_ID} { max-height:75vh!important; overflow:auto!important; }
+                #${ROOT_ID} .mus-meta { grid-template-columns:repeat(3,minmax(0,1fr)); }
+                #${ROOT_ID} .mus-actions { flex-wrap:wrap; }
+                #${ROOT_ID} .mus-actions button { flex:1 1 42%; }
+            }
         `;
 
         (
@@ -1580,20 +1586,16 @@
     }
 
     function ensureButton() {
-        if (
-            q(
-                '#' +
-                BUTTON_ID
-            )
-        ) {
-            return;
-        }
-
-        const host =
-            q('.menu-topo') ||
-            document.body;
-
-        if (!host) {
+        // Native mobile mode hides the desktop nav completely. Keep this
+        // optional diagnostic shortcut in the automation drawer there.
+        const mobile=document.documentElement.classList.contains('mobile');
+        const host=mobile
+            ? q('#p-auto .painel-cab-auto') || q('.menu-topo') || document.body
+            : q('.menu-topo') || q('#p-auto .painel-cab-auto') || document.body;
+        if(!host)return;
+        const existing=q('#'+BUTTON_ID);
+        if(existing){
+            if(existing.parentElement!==host)host.appendChild(existing);
             return;
         }
 
@@ -1881,7 +1883,7 @@
         );
 
         console.info(
-            '[PokéIdle Upstream Scraper] v1.3.0 loaded'
+            '[PokéIdle Upstream Scraper] v1.3.1 loaded'
         );
     }
 
