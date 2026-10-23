@@ -2,7 +2,7 @@
 
 This is the **premium experiment**, separate from the Hunt Atlas shipped through `pokeidle-addons`. Changes are not synchronized automatically. It replaces PokéIdle's **Map** view with a searchable hunt/Pokémon list—not a graphical map.
 
-**Parity check (v1.9.25):** The experimental script and the public `addons/hunt-atlas.user.js` currently have identical functional code. Only repository links and update metadata differ. This version also prevents strongest-owned Pokémon substitution when the active fighter is briefly unknown, applies a conservative upstream Hunt Analyser pacing heuristic to unmeasured forecasts, and exposes same-hunt model-vs-measurement diagnostics for large XP/hour misses. This version also replays observed same-hunt spawn HP distributions (six or more exact species/level samples) and deterministic game-range damage rolls instead of pretending every enemy has median HP and suffers mean damage on every strike. The public script uses authenticated userscript-manager auto-update URLs; this private experimental copy remains **manual-update only**. Future experiments should start from the latest public implementation and promote changes explicitly after validation, without overwriting public-only controller features.
+**Parity check (v1.9.27):** Both premium entry points currently have identical functional code (including the updated Outland level table). Only repository links and update metadata differ. This version also prevents strongest-owned Pokémon substitution when the active fighter is briefly unknown, applies a conservative upstream Hunt Analyser pacing heuristic to unmeasured forecasts, and exposes same-hunt model-vs-measurement diagnostics for large XP/hour misses. This version also replays observed same-hunt spawn HP distributions (six or more exact species/level samples) and deterministic game-range damage rolls instead of pretending every enemy has median HP and suffers mean damage on every strike. The public script uses authenticated userscript-manager auto-update URLs; this private experimental copy remains **manual-update only**. Future experiments should start from the latest public implementation and promote changes explicitly after validation, without overwriting public-only controller features.
 
 ![Hunt Atlas preview](assets/map-preview.png)
 
@@ -19,6 +19,7 @@ A instalação e as atualizações são **manuais**: o repositório privado não
 
 ### Recursos
 
+- **Preencher Pokédex nesta sessão:** no Atlas, clique em **Iniciar**. O modo visita hunts desbloqueadas em ordem de nível (1, 10 etc.), permanece em cada uma até receber a confirmação de captura do servidor e passa à próxima. Somente espécies capturadas **desde o início da execução** são consideradas; não consulta a Pokédex do jogador. Os dados ficam apenas na memória da aba, sem gravação. **Parar / Iniciar** retoma o progresso, e uma execução concluída pode começar de novo. Para funcionar, a captura de Pokémon precisa estar sendo feita pelo jogador ou por uma automação de captura separada. A navegação manual ou desligar o Atlas interrompe o modo.
 - Busca por Pokémon, hunt e região; filtros por nível, disponibilidade, tipos, fraquezas e capturados.
 - Ordenação e Top 5 conforme o objetivo escolhido, com botão **Ir** para hunts disponíveis.
 - XP/h por confronto, calculado a partir dos **stats e golpes do líder**, HP/defesas/tipos de cada inimigo, recargas e composição da hunt; não calibra inimigos diferentes a partir de outra batalha.
@@ -53,6 +54,8 @@ Não há envio automático desse resumo. Funcionamento visual, precisão em jogo
 Updates are manual; private repository files are not a reliable unauthenticated userscript update feed. XP/h rankings now explicitly use trainer XP per kill × kills/h, never trainer+Pokémon combined; per-kill values are shown in hunt details. The public repository's formerly stale v1.9.21 `huntatlas/` compatibility script is now aligned with the canonical public script and includes auto-update URLs.
 
 ### Features and limits
+
+**Session Pokédex auto-fill:** Use **Start** in the Atlas. It visits unlocked hunts by level, stays until a confirmed server capture, then advances. Captured species are tracked only in tab memory, never by reading the player’s existing Pokédex. **Stop / Start** resumes; after completion a new run can start. Catching itself still requires manual throws or a separate auto-catcher. Manual travel and switching back to the native map stop the route.
 
 Hunt Atlas provides Pokémon/hunt/region search; filters for level, availability, type, weaknesses and collection; objective-specific sorting and Top 5 recommendations; and navigation to accessible hunts.
 
