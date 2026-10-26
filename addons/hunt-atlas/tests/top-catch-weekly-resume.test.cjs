@@ -49,7 +49,8 @@ function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00
         queueRender:()=>{},
         socketReady:()=>true,
         isUnlocked:()=>true,
-        isHuntHere:slug=>state.currentHuntSlug===slug,
+        isHuntHere:(slug=state.currentHuntSlug)=>
+            !state.huntScene.noCentro && state.currentHuntSlug===slug,
         currentHunt:()=>state.hunts.find(h=>h.slug===state.currentHuntSlug)||null,
         sendHuntSelect:hunt=>{sent.push({t:'hunt.select',slug:hunt.slug});
             if(control.autoTravel)state.currentHuntSlug=hunt.slug;
