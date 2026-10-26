@@ -6,7 +6,7 @@
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
 // @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
-// @version      1.9.31
+// @version      1.9.32
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -20,7 +20,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.31');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.32');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -356,10 +356,13 @@
             'dex.stopped': 'Stopped · {count} species logged this week.',
             'dex.waiting': 'Waiting for the game connection and hunt catalog…',
             'dex.needsSync': 'Open Pokédex → Top Catch once to sync this week’s captured species before hunting.',
+            'dex.switching': 'Waiting for the first safe hunt-switch opening…',
+            'dex.recovering': 'Giving up and returning to the Pokémon Center…',
+            'dex.healing': 'Healing the team at the Pokémon Center…',
             'dex.hunting': 'Level {level} · {hunt} · {count} caught this week',
             'dex.traveling': 'Traveling to level {level}: {hunt} · {count} caught this week',
             'dex.done': 'All accessible hunt species completed · {count} caught.',
-            'dex.hint': 'Ordinary single-species hunts only. Open Pokédex → Top Catch once per week to synchronize the official list; progress then survives restarts. Auto Catch+ throws the balls; resets Sunday at 00:00 Brasília.',
+            'dex.hint': 'Ordinary single-species hunts. Open Pokédex → Top Catch once per week. Switching uses the first combat opening; if trapped, Give Up sends the team to the Center and may cost trainer XP. Auto Catch+ throws balls.',
             'filter.clear': 'Clear filters',
             'filter.defaults': 'Default filters',
             'filter.changedOne': '1 filter changed from default',
@@ -732,10 +735,13 @@
             'dex.stopped': 'Parado · {count} espécies registradas nesta semana.',
             'dex.waiting': 'Aguardando conexão com o jogo e lista de hunts…',
             'dex.needsSync': 'Abra Pokédex → Top Catch uma vez para sincronizar as capturas desta semana antes de caçar.',
+            'dex.switching': 'Aguardando a primeira abertura para trocar de hunt…',
+            'dex.recovering': 'Desistindo da hunt e indo ao Centro Pokémon…',
+            'dex.healing': 'Curando a equipe no Centro Pokémon…',
             'dex.hunting': 'Nível {level} · {hunt} · {count} capturados nesta semana',
             'dex.traveling': 'Indo para nível {level}: {hunt} · {count} capturados nesta semana',
             'dex.done': 'Espécies das hunts acessíveis concluídas · {count} capturadas.',
-            'dex.hint': 'Somente hunts comuns de uma espécie. Abra Pokédex → Top Catch uma vez na semana para sincronizar a lista oficial; o progresso fica salvo entre sessões. Auto Catch+ arremessa as bolas; zera domingo às 00h (Brasília).',
+            'dex.hint': 'Hunts comuns de uma espécie. Abra Pokédex → Top Catch uma vez na semana. A troca aproveita a primeira abertura; se a luta impedir a saída, Desistir envia a equipe ao Centro e pode custar XP de treinador. Auto Catch+ arremessa bolas.',
             'filter.clear': 'Limpar filtros',
             'filter.defaults': 'Filtros padrão',
             'filter.changedOne': '1 filtro alterado',
@@ -1311,11 +1317,14 @@
         sockets: 0,
         activeSocket: null,
         pendingTravel: null,
+        huntSwitchGate: {combatUntil:0, entryUntil:0, serverOffset:0,
+            wave:0, combatWave:0, lastAttackAt:0},
         pokedexAuto: {
             active: false, mode: 'idle', caught: new Set(),
             receipts: new Set(), targetSlug: null,
             lastTravelAt: 0, week: null, accountKey: 'profile',
-            serverSynced: false
+            serverSynced: false, switchTimer:null,
+            switchStartedAt:0, recovery:null
         },
 
         status: {
@@ -10269,6 +10278,9 @@
         auto.targetSlug = null;
         auto.lastTravelAt = 0;
         auto.serverSynced = saved.verified;
+        auto.switchStartedAt = 0;
+        auto.recovery = null;
+        dexAutoStopSwitchWatch();
         // A DOM grid from the *previous* week may remain mounted at midnight.
         // Keep its last signature so it cannot re-authorize the new week.
         if (previousWeek && previousWeek !== week) auto.lastDomWeek = previousWeek;
@@ -10418,6 +10430,93 @@
         return candidates[0] || null;
     }
 
+    // Upstream has 3s combat and 10s post-entry gates in server UNIX ms.
+    // The state snapshot includes servidorAgora for local clock correction.
+    function dexAutoObserveGate(gameState) {
+        if (!gameState || typeof gameState !== 'object') return;
+        const gate = state.huntSwitchGate;
+        const serverTime = Number(gameState.servidorAgora);
+        if (Number.isFinite(serverTime) && serverTime > 0)
+            gate.serverOffset = Date.now() - serverTime;
+        if (Object.hasOwn(gameState, 'centroLivreEm')) {
+            const stamp = Number(gameState.centroLivreEm);
+            if (Number.isFinite(stamp) && stamp >= 0) gate.combatUntil = stamp;
+        }
+        if (Object.hasOwn(gameState, 'trocaHuntLivreEm') ||
+            Object.hasOwn(gameState, 'trocaLivreEm')) {
+            const stamp = Number(gameState.trocaHuntLivreEm ??
+                gameState.trocaLivreEm);
+            if (Number.isFinite(stamp) && stamp >= 0) gate.entryUntil = stamp;
+        }
+        if (Object.hasOwn(gameState, 'ondaSeq')) {
+            const n = Number(gameState.ondaSeq);
+            if (Number.isSafeInteger(n) && n >= 0) gate.wave = n;
+        }
+        if (Object.hasOwn(gameState, 'combateOndaSeq')) {
+            const n = Number(gameState.combateOndaSeq);
+            if (Number.isSafeInteger(n) && n >= 0) gate.combatWave = n;
+        }
+    }
+
+    function dexAutoOnBattleEvent(event) {
+        if (!event || typeof event !== 'object') return;
+        const gate = state.huntSwitchGate;
+        if (event.k === 'hunt' && typeof event.slug === 'string') {
+            const entry = Number(event.trocaLivreEm);
+            if (Number.isFinite(entry) && entry > 0) gate.entryUntil = entry;
+            gate.combatUntil = 0;
+            gate.wave = 0;
+            gate.combatWave = 0;
+            state.pokedexAuto.switchStartedAt = 0;
+            state.pokedexAuto.recovery = null;
+        }
+        if (event.k === 'ataque' && isHuntHere()) {
+            gate.lastAttackAt = Date.now();
+            gate.combatUntil = Date.now() - gate.serverOffset + 3000;
+            gate.combatWave = gate.wave;
+        }
+        // Nurse confirms healing with curado, or joy:jaCurado if already well.
+        const recovery = state.pokedexAuto.recovery;
+        if (recovery && (event.k === 'curado' ||
+            (event.k === 'joy' &&
+                ['jaCurado', 'curou'].includes(event.fala)))) {
+            recovery.healed = true;
+            recovery.phase = 'healed';
+        }
+    }
+
+    function dexAutoSwitchGate(now = Date.now()) {
+        if (state.huntScene.noCentro) return {remaining:0, entryRemaining:0,
+            combatRemaining:0, combatKnown:true};
+        const gate = state.huntSwitchGate;
+        const serverNow = now - gate.serverOffset;
+        const entryRemaining = Math.max(0, gate.entryUntil - serverNow);
+        const waveOpen = gate.wave > 0 && gate.wave > gate.combatWave;
+        const combatRemaining = waveOpen ? 0 :
+            Math.max(0, gate.combatUntil - serverNow);
+        return {remaining:Math.max(entryRemaining, combatRemaining),
+            entryRemaining, combatRemaining,
+            combatKnown:gate.combatUntil > 0 || gate.lastAttackAt > 0};
+    }
+
+    function dexAutoStopSwitchWatch() {
+        const auto = state.pokedexAuto;
+        if (auto.switchTimer != null) {
+            clearInterval(auto.switchTimer);
+            auto.switchTimer = null;
+        }
+    }
+
+    function dexAutoStartSwitchWatch() {
+        const auto = state.pokedexAuto;
+        if (auto.switchTimer != null) return;
+        // Only use a fast timer while transitioning, never during hunting.
+        auto.switchTimer = setInterval(() => {
+            if (!auto.active) return dexAutoStopSwitchWatch();
+            stepPokedexAuto();
+        }, 100);
+    }
+
     function dexAutoSetMode(mode) {
         if (state.pokedexAuto.mode === mode) return;
         state.pokedexAuto.mode = mode;
@@ -10428,6 +10527,9 @@
         const auto = state.pokedexAuto;
         auto.active = false;
         auto.targetSlug = null;
+        auto.recovery = null;
+        auto.switchStartedAt = 0;
+        dexAutoStopSwitchWatch();
         dexAutoSetMode('stopped');
     }
 
@@ -10435,53 +10537,128 @@
         const auto = state.pokedexAuto;
         dexAutoSyncWeek();
         dexAutoSyncFromDom();
-        // Even after 'done' or a fresh page load, the week's progress remains.
         auto.targetSlug = null;
         auto.lastTravelAt = 0;
+        auto.switchStartedAt = 0;
+        auto.recovery = null;
         auto.active = true;
         auto.mode = 'waiting';
         queueRender();
         stepPokedexAuto();
     }
 
+    function dexAutoSend(command) {
+        if (!socketReady()) return false;
+        try {
+            state.activeSocket.send(JSON.stringify({t: command}));
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    function dexAutoRecoverAtCenter(now) {
+        const auto = state.pokedexAuto;
+        if (!auto.recovery)
+            auto.recovery = {phase:'healing', healed:false,
+                lastHealAt:0, sentAt:0};
+        if (!auto.recovery.healed) {
+            if (!auto.recovery.lastHealAt ||
+                now - auto.recovery.lastHealAt >= 2500) {
+                if (dexAutoSend('centro.curar'))
+                    auto.recovery.lastHealAt = now;
+            }
+            dexAutoSetMode('healing');
+            return false;
+        }
+        return true;
+    }
+
+    function dexAutoGiveUp(now) {
+        const auto = state.pokedexAuto;
+        if (!isHuntHere() || state.huntScene.noCentro ||
+            state.huntScene.casaDentro || state.huntScene.bossArena ||
+            state.huntScene.mistico) return false;
+        if (!dexAutoSend('centro.desistir')) return false;
+        // Matches the game's Give Up button, including KO and possible XP loss.
+        auto.recovery = {phase:'giving-up', sentAt:now,
+            healed:false, lastHealAt:0};
+        dexAutoSetMode('recovering');
+        return true;
+    }
+
     function stepPokedexAuto() {
         const auto = state.pokedexAuto;
         if (!auto.active) return;
         dexAutoSyncWeek();
-        dexAutoSyncFromDom();
+        if (!auto.serverSynced) dexAutoSyncFromDom();
         if (!auto.serverSynced) {
-            // Fail closed: without the authoritative weekly list we cannot
-            // know what happened before this script began recording.
+            dexAutoStopSwitchWatch();
             dexAutoSetMode('needsSync');
             return;
         }
         if (!socketReady() || !state.hunts.length) {
+            dexAutoStopSwitchWatch();
             dexAutoSetMode('waiting');
             return;
         }
-        let hunt = auto.targetSlug
-            ? state.hunts.find(row => row.slug === auto.targetSlug) : null;
+        let hunt = auto.targetSlug ?
+            state.hunts.find(row => row.slug === auto.targetSlug) : null;
         const key = dexAutoKey(dexAutoSpecies(hunt));
         if (!hunt || !isUnlocked(hunt) ||
             key === null || auto.caught.has(key)) {
             hunt = dexAutoNextHunt(state.hunts, auto.caught, isUnlocked);
             auto.targetSlug = hunt?.slug || null;
             auto.lastTravelAt = 0;
+            auto.switchStartedAt = 0;
         }
         if (!hunt) {
             auto.active = false;
+            auto.recovery = null;
+            dexAutoStopSwitchWatch();
             dexAutoSetMode('done');
             return;
         }
         if (isHuntHere(hunt.slug)) {
+            auto.recovery = null;
+            auto.switchStartedAt = 0;
+            dexAutoStopSwitchWatch();
             dexAutoSetMode('hunting');
             return;
         }
+        dexAutoStartSwitchWatch();
         const now = Date.now();
-        if (now - auto.lastTravelAt < 7000) return;
-        if (state.pendingTravel && state.pendingTravel.slug !== hunt.slug &&
-            now - state.pendingTravel.startedAt < 3000) return;
-        if (sendHuntSelect(hunt)) {
+        if (!auto.switchStartedAt) auto.switchStartedAt = now;
+
+        if (state.huntScene.noCentro && !state.huntScene.casaDentro) {
+            if (!dexAutoRecoverAtCenter(now)) return;
+        } else if (auto.recovery?.phase === 'giving-up') {
+            // Retry surrender at most once every 6s until Center is confirmed.
+            if (now - auto.recovery.sentAt >= 6000)
+                if (dexAutoSend('centro.desistir'))
+                    auto.recovery.sentAt = now;
+            dexAutoSetMode('recovering');
+            return;
+        } else if (isHuntHere()) {
+            const gate = dexAutoSwitchGate(now);
+            if (gate.remaining > 0) {
+                // Only Give Up after the 10s entry lock has passed and
+                // repeated attacks prevent a normal 3-second free window.
+                if (now - auto.switchStartedAt >= 14000 &&
+                    gate.entryRemaining <= 0 &&
+                    gate.combatRemaining > 350 &&
+                    now - state.huntSwitchGate.lastAttackAt < 2000 &&
+                    gate.combatKnown &&
+                    dexAutoGiveUp(now)) return;
+                dexAutoSetMode('switching');
+                return;
+            }
+        }
+
+        // No 7-second wait or 3-second global poll while switching.
+        // Bounded 350ms retries are permitted only when the gate reads open.
+        if (now - auto.lastTravelAt < 350) return;
+        if (sendHuntSelect(hunt, true)) {
             auto.lastTravelAt = now;
             dexAutoSetMode('traveling');
         } else {
@@ -10521,6 +10698,7 @@
         if (auto.active) {
             auto.targetSlug = null;
             auto.lastTravelAt = 0;
+            auto.switchStartedAt = 0;
             stepPokedexAuto();
         }
         queueRender();
@@ -10557,7 +10735,7 @@
     }
 
     function sendHuntSelect(
-        hunt
+        hunt, rapid = false
     ) {
         if (
             !hunt ||
@@ -10576,12 +10754,8 @@
         }
 
         try {
-            state.pendingTravel = {
-                slug:
-                    hunt.slug,
-                startedAt:
-                    Date.now()
-            };
+            const startedAt = Date.now();
+            state.pendingTravel = {slug:hunt.slug,startedAt};
 
             setStatus(
                 'status.traveling',
@@ -10613,13 +10787,13 @@
             setTimeout(
                 () => {
                     if (
-                        state.pendingTravel?.slug ===
-                            hunt.slug &&
+                        state.pendingTravel?.slug === hunt.slug &&
+                        state.pendingTravel?.startedAt === startedAt &&
                         !isHuntHere(
                             hunt.slug
                         )
                     ) {
-                        setStatus(
+                        if (!rapid) setStatus(
                             'status.notAccepted',
                             {
                                 hunt:
@@ -10634,7 +10808,7 @@
                         queueRender();
                     }
                 },
-                2500
+                rapid ? 400 : 2500
             );
 
             return true;
@@ -14977,7 +15151,8 @@
             // Check the official Top Catch grid if the weekly record is not
             // yet verified; no extra timer or server requests are needed.
             if (!state.pokedexAuto.serverSynced) dexAutoSyncFromDom();
-            if (state.pokedexAuto.active) stepPokedexAuto();
+            if (state.pokedexAuto.active &&
+                state.pokedexAuto.switchTimer == null) stepPokedexAuto();
             if(!isMapModalOpen()){
                 if(state.drawerOpen)cleanupMapIntegration();
                 return;
@@ -14992,7 +15167,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.31 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.32 experimental loaded'
         );
     }
 
