@@ -12,6 +12,7 @@ assert.ok(start >= 0 && end > start, 'Top Catch code block exists');
 const code = source.slice(start, end);
 
 function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00:00Z')}) {
+    const dom = {keys:null};
     const state = {
         pokedexAuto: {active:false, mode:'idle', caught:new Set(), receipts:new Set(),
             targetSlug:null, lastTravelAt:0, week:null, accountKey:'profile', serverSynced:false},
@@ -31,6 +32,9 @@ function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00
     const context = {
         state, localStorage, Date:ClockDate,
         DEX_AUTO_STORE_KEY:'moth-pokeidle-hunt-atlas-top-catch-v1',
+        q:selector=>selector==='#tc-grade' && dom.keys!==null ? dom : null,
+        qa:(selector,root)=>selector==='.tc-card' && root===dom
+            ? dom.keys.map(key=>({getAttribute:name=>name==='data-chave'?key:null})) : [],
         outlandNormalizeSpeciesId:id=>id,
         farmingReceiptIdentity:event=>event.receiptId || null,
         queueRender:()=>{},
@@ -42,8 +46,8 @@ function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00
     };
     const api=vm.runInNewContext(code+'\n({dexAutoWeek,dexAutoSyncWeek,dexAutoSetAccount,'+
         'dexAutoReconcileTopCatch,dexAutoObserveState,dexAutoNextHunt,'+
-        'recordPokedexAutoCatch,startPokedexAuto,stopPokedexAuto})',context);
-    return {api,state,storage,clock};
+        'recordPokedexAutoCatch,startPokedexAuto,stopPokedexAuto,dexAutoSyncFromDom})',context);
+    return {api,state,storage,clock,dom};
 }
 
 function capture(id, speciesId) {
@@ -59,6 +63,7 @@ test('Sunday 00:00 Brasília is the weekly boundary, not UTC midnight',()=>{
 
 test('captured species persist across a new page/session and Stop/Start',()=>{
     const first=harness();
+    first.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{}}});
     first.api.startPokedexAuto();
     assert.equal(first.state.pokedexAuto.targetSlug,'bulbasaur');
     assert.equal(first.api.recordPokedexAutoCatch(capture(101,1),false),true);
@@ -81,7 +86,7 @@ test('captured species persist across a new page/session and Stop/Start',()=>{
 
 test('confirmed normal-hunt capture is recorded even while automation is stopped',()=>{
     const h=harness();
-    h.api.dexAutoSyncWeek();
+    h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{}}});
     assert.equal(h.state.pokedexAuto.active,false);
     assert.equal(h.api.recordPokedexAutoCatch(capture(200,1),false),true);
     assert.deepEqual([...h.state.pokedexAuto.caught],[1]);
@@ -121,6 +126,7 @@ test('weekly reset discards last-week species only when Sunday begins',()=>{
     assert.equal(h.api.dexAutoSyncWeek(),true);
     assert.equal(h.state.pokedexAuto.week,'2026-11-01');
     assert.equal(h.state.pokedexAuto.caught.size,0);
+    assert.equal(h.state.pokedexAuto.serverSynced,false);
     const reloaded=harness(h.storage,h.clock);
     reloaded.api.dexAutoSyncWeek();
     assert.equal(reloaded.state.pokedexAuto.caught.size,0);
@@ -148,4 +154,77 @@ test('invalid or unconfirmed captures do not pollute the weekly log',()=>{
     assert.equal(h.api.recordPokedexAutoCatch(capture(2,7),false),false);
     assert.equal(h.state.pokedexAuto.caught.size,0);
     assert.doesNotMatch(code,/state\.pokedex\b|ownedSpecies/);
+});
+
+
+test('without official weekly evidence the automation waits instead of restarting',()=>{
+    const h=harness();
+    h.api.startPokedexAuto();
+    assert.equal(h.state.pokedexAuto.mode,'needsSync');
+    assert.equal(h.state.pokedexAuto.targetSlug,null);
+    assert.equal(h.state.currentHuntSlug,'bulbasaur');
+    // An old v1.9.30 local record is useful but NOT proof of all weekly catches.
+    const raw=[...h.storage.keys()][0];
+    h.storage.set(raw,JSON.stringify({schema:1,week:'2026-10-25',caught:[69]}));
+    const resumed=harness(h.storage);
+    resumed.api.startPokedexAuto();
+    assert.equal(resumed.state.pokedexAuto.mode,'needsSync');
+});
+
+test('real Top Catch card keys, including Bellsprout, skip already captured hunts',()=>{
+    const h=harness();
+    h.state.hunts=[
+        {slug:'bellsprout',nivel:1,especies:[{pokeId:69}]},
+        {slug:'bulbasaur',nivel:2,especies:[{pokeId:1}]},
+        {slug:'squirtle',nivel:3,especies:[{pokeId:7}]}
+    ];
+    h.state.currentHuntSlug='bellsprout';
+    h.api.startPokedexAuto();
+    assert.equal(h.state.pokedexAuto.mode,'needsSync');
+    // Captured "seg 00:38" and "seg 03:44" in the supplied Top Catch HTML:
+    // <div id="tc-grade"><div class="tc-card" data-poke="69"
+    // data-chave="69">Bellsprout</div><div class="tc-card"
+    // data-poke="1" data-chave="1">Bulbasaur</div></div>
+    h.dom.keys=['69','1'];
+    assert.equal(h.api.dexAutoSyncFromDom(),true);
+    h.api.startPokedexAuto();
+    assert.equal(h.state.pokedexAuto.targetSlug,'squirtle');
+    assert.equal(h.state.pokedexAuto.caught.has(69),true);
+    assert.equal(h.state.pokedexAuto.caught.has(1),true);
+    const reloaded=harness(h.storage);
+    reloaded.state.hunts=h.state.hunts;
+    reloaded.state.currentHuntSlug='bellsprout';
+    reloaded.api.startPokedexAuto();
+    assert.equal(reloaded.state.pokedexAuto.targetSlug,'squirtle',
+        'Bellsprout may never be visited again this week after a reload');
+    assert.equal(reloaded.state.pokedexAuto.serverSynced,true);
+});
+
+test('partially rendered or malformed official grid does not authorize navigation',()=>{
+    const h=harness();
+    h.api.startPokedexAuto();
+    h.dom.keys=[];
+    assert.equal(h.api.dexAutoSyncFromDom(),false);
+    assert.equal(h.state.pokedexAuto.serverSynced,false);
+    h.dom.keys=['69',null];
+    assert.equal(h.api.dexAutoSyncFromDom(),false);
+    assert.equal(h.state.pokedexAuto.serverSynced,false);
+    h.dom.keys=['69'];
+    assert.equal(h.api.dexAutoSyncFromDom(),true);
+    assert.equal(h.state.pokedexAuto.serverSynced,true);
+});
+
+test('old mounted Top Catch grid cannot reauthorize captures after Sunday reset',()=>{
+    const h=harness();
+    h.dom.keys=['69'];
+    assert.equal(h.api.dexAutoSyncFromDom(),true);
+    h.clock.now=Date.parse('2026-11-01T03:00:00Z');
+    h.api.startPokedexAuto();
+    assert.equal(h.state.pokedexAuto.mode,'needsSync',
+        'a still-mounted old weekly grid must not be accepted');
+    assert.equal(h.state.pokedexAuto.caught.size,0);
+    h.dom.keys=['7'];
+    assert.equal(h.api.dexAutoSyncFromDom(),true);
+    assert.equal(h.state.pokedexAuto.caught.has(69),false);
+    assert.equal(h.state.pokedexAuto.caught.has(7),true);
 });
