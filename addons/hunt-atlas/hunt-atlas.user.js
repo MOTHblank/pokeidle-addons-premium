@@ -5367,8 +5367,14 @@
             return;
         }
 
+        // Other packets (market, battle) can refer to other players. Only
+        // welcome/state may identify the logged-in account.
+        if (message?.t === 'welcome') {
+            const account = dexAutoAccountFromState(message);
+            if (account) dexAutoSetAccount(account);
+        }
         // Official Top Catch may arrive independently of regular state deltas.
-        dexAutoObserveState(message);
+        dexAutoReconcileTopCatch(message);
 
         if (
             message?.t === 'batalha' &&
