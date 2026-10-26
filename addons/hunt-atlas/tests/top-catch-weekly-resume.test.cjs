@@ -391,3 +391,41 @@ test('normal windows do not incur a knockout, and stopping disables fast timer',
     h.api.stepPokedexAuto();
     assert.equal(h.sent.some(x=>x.t==='centro.desistir'),false);
 });
+
+
+test('official server clock offset and hunt-entry receipt schedule the first switch',()=>{
+    const h=harness();
+    h.clock.now=Date.parse('2026-10-26T12:00:30Z');
+    h.api.dexAutoObserveGate({servidorAgora:h.clock.now-5000,
+        centroLivreEm:h.clock.now-5000+3000,
+        ondaSeq:5, combateOndaSeq:5});
+    assert.equal(h.state.huntSwitchGate.serverOffset,5000);
+    assert.equal(h.api.dexAutoSwitchGate().combatRemaining,3000);
+    h.api.dexAutoOnBattleEvent({k:'hunt',slug:'bulbasaur',
+        trocaLivreEm:h.clock.now-5000+10000});
+    assert.equal(h.api.dexAutoSwitchGate().entryRemaining,10000);
+    h.clock.now+=10000;
+    assert.equal(h.api.dexAutoSwitchGate().remaining,0);
+});
+
+test('native Joy jaCurado acknowledgment permits moving on from Center',()=>{
+    const h=harness();
+    h.control.autoTravel=false;
+    h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{'1':20}}});
+    h.state.huntScene.noCentro=true;
+    h.api.startPokedexAuto();
+    assert.equal(h.sent.at(-1).t,'centro.curar');
+    h.api.dexAutoOnBattleEvent({k:'joy',fala:'jaCurado'});
+    h.api.stepPokedexAuto();
+    assert.equal(h.sent.at(-1).t,'hunt.select');
+});
+
+test('runtime integration receives game gate snapshots and battle receipts',()=>{
+    assert.match(source,/dexAutoObserveGate\(gameState\)/);
+    assert.match(source,/dexAutoOnBattleEvent\(event\)/);
+    assert.match(source,/dexAutoOnBattleEvent\(huntEvent\)/);
+    assert.match(source,/sendHuntSelect\(hunt, true\)/);
+    assert.match(source,/rapid \? 400 : 2500/);
+    assert.match(source,/\bcentro\.desistir\b/);
+    assert.match(source,/\bcentro\.curar\b/);
+});
