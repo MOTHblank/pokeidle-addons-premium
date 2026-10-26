@@ -13,6 +13,8 @@ const code = source.slice(start, end);
 
 function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00:00Z')}) {
     const dom = {keys:null, textContent:''};
+    const sent=[];
+    const control={autoTravel:true, fastTimers:new Map(), nextTimer:1};
     const state = {
         pokedexAuto: {active:false, mode:'idle', caught:new Set(), receipts:new Set(),
             targetSlug:null, lastTravelAt:0, week:null, accountKey:'profile', serverSynced:false},
@@ -22,7 +24,11 @@ function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00
             {slug:'safari', nivel:6, especies:[{pokeId:25}]},
             {slug:'multi', nivel:8, especies:[{pokeId:2},{pokeId:3}]}
         ],
-        currentHuntSlug:'bulbasaur', farmingLedger:{slots:new Map()}, pendingTravel:null
+        currentHuntSlug:'bulbasaur', farmingLedger:{slots:new Map()}, pendingTravel:null,
+        huntScene:{noCentro:false,casaDentro:null,bossArena:null,mistico:false},
+        huntSwitchGate:{combatUntil:0,entryUntil:0,serverOffset:0,
+            wave:0,combatWave:0,lastAttackAt:0},
+        activeSocket:{send:packet=>sent.push(JSON.parse(packet))}
     };
     class ClockDate extends Date {static now(){return clock.now;}}
     const localStorage = {
@@ -33,6 +39,9 @@ function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00
         state, localStorage, Date:ClockDate,
         DEX_AUTO_STORE_KEY:'moth-pokeidle-hunt-atlas-top-catch-v1',
         q:selector=>selector==='#tc-grade' && dom.keys!==null ? dom : null,
+        setInterval:(callback,ms)=>{const id=control.nextTimer++;
+            control.fastTimers.set(id,{callback,ms});return id;},
+        clearInterval:id=>control.fastTimers.delete(id),
         qa:(selector,root)=>selector==='.tc-card' && root===dom
             ? dom.keys.map(key=>({getAttribute:name=>name==='data-chave'?key:null})) : [],
         outlandNormalizeSpeciesId:id=>id,
@@ -42,12 +51,16 @@ function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00
         isUnlocked:()=>true,
         isHuntHere:slug=>state.currentHuntSlug===slug,
         currentHunt:()=>state.hunts.find(h=>h.slug===state.currentHuntSlug)||null,
-        sendHuntSelect:hunt=>{state.currentHuntSlug=hunt.slug;return true;}
+        sendHuntSelect:hunt=>{sent.push({t:'hunt.select',slug:hunt.slug});
+            if(control.autoTravel)state.currentHuntSlug=hunt.slug;
+            return true;}
     };
     const api=vm.runInNewContext(code+'\n({dexAutoWeek,dexAutoSyncWeek,dexAutoSetAccount,'+
         'dexAutoReconcileTopCatch,dexAutoObserveState,dexAutoNextHunt,'+
-        'recordPokedexAutoCatch,startPokedexAuto,stopPokedexAuto,dexAutoSyncFromDom})',context);
-    return {api,state,storage,clock,dom};
+        'recordPokedexAutoCatch,startPokedexAuto,stopPokedexAuto,dexAutoSyncFromDom,'+
+        'dexAutoObserveGate,dexAutoOnBattleEvent,dexAutoSwitchGate,'+
+        'stepPokedexAuto})',context);
+    return {api,state,storage,clock,dom,control,sent};
 }
 
 function syncSettledGrid(h) {
@@ -286,4 +299,94 @@ test('an old account grid cannot silently verify another account',()=>{
     assert.equal(syncSettledGrid(h),true);
     assert.equal(h.state.pokedexAuto.caught.has(69),false);
     assert.equal(h.state.pokedexAuto.caught.has(7),true);
+});
+
+
+test('10s entry lock and 3s combat lock are honored without a 7s retry pause',()=>{
+    const h=harness();
+    h.control.autoTravel=false;
+    h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{'1':20}}});
+    h.state.huntSwitchGate.entryUntil=h.clock.now+10000;
+    h.state.huntSwitchGate.combatUntil=h.clock.now+3000;
+    h.api.startPokedexAuto();
+    assert.equal(h.sent.filter(x=>x.t==='hunt.select').length,0);
+    h.clock.now+=9900;
+    h.api.stepPokedexAuto();
+    assert.equal(h.sent.filter(x=>x.t==='hunt.select').length,0);
+    h.clock.now+=100;
+    h.api.stepPokedexAuto();
+    assert.equal(h.sent.filter(x=>x.t==='hunt.select').length,1);
+    assert.equal(h.sent.at(-1).slug,'squirtle');
+    assert.equal(h.control.fastTimers.size,1);
+    h.state.currentHuntSlug='squirtle';
+    h.api.stepPokedexAuto();
+    assert.equal(h.control.fastTimers.size,0,
+        'fast watcher must stop once target hunt is reached');
+});
+
+test('an open wave overrides the 3s combat lock but not the entry lock',()=>{
+    const h=harness();
+    h.control.autoTravel=false;
+    h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{'1':20}}});
+    h.api.startPokedexAuto();
+    h.sent.length=0;
+    h.state.huntSwitchGate.combatUntil=h.clock.now+3000;
+    h.state.huntSwitchGate.wave=4;
+    h.state.huntSwitchGate.combatWave=3;
+    h.api.stepPokedexAuto();
+    assert.equal(h.sent.filter(x=>x.t==='hunt.select').length,0,
+        'short throttle after the previous attempt still applies');
+    h.clock.now+=400;
+    h.api.stepPokedexAuto();
+    assert.equal(h.sent.filter(x=>x.t==='hunt.select').length,1);
+    h.state.huntSwitchGate.entryUntil=h.clock.now+5000;
+    assert.equal(h.api.dexAutoSwitchGate().entryRemaining,5000);
+    assert.equal(h.api.dexAutoSwitchGate().combatRemaining,0);
+});
+
+test('repeated damage preventing exit eventually gives up then heals at Center',()=>{
+    const h=harness();
+    h.control.autoTravel=false;
+    h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{'1':20}}});
+    h.state.huntSwitchGate.entryUntil=h.clock.now+10000;
+    h.api.startPokedexAuto();
+    h.clock.now+=14000;
+    h.api.dexAutoOnBattleEvent({k:'ataque'});
+    h.api.stepPokedexAuto();
+    assert.equal(h.sent.at(-1).t,'centro.desistir');
+    assert.equal(h.state.pokedexAuto.mode,'recovering');
+    // Await server-confirmed arrival; no hunt selection while in transit.
+    const travelBefore=h.sent.filter(x=>x.t==='hunt.select').length;
+    h.api.stepPokedexAuto();
+    assert.equal(h.sent.filter(x=>x.t==='hunt.select').length,travelBefore);
+    h.state.huntScene.noCentro=true;
+    h.api.stepPokedexAuto();
+    assert.equal(h.sent.at(-1).t,'centro.curar');
+    assert.equal(h.state.pokedexAuto.mode,'healing');
+    h.api.dexAutoOnBattleEvent({k:'joy',fala:'nocaute'});
+    h.api.stepPokedexAuto();
+    assert.equal(h.sent.at(-1).t,'centro.curar',
+        'unhealed or failed Joy responses must not allow the next hunt');
+    h.api.dexAutoOnBattleEvent({k:'curado'});
+    h.api.stepPokedexAuto();
+    assert.equal(h.sent.at(-1).t,'hunt.select');
+    assert.equal(h.sent.at(-1).slug,'squirtle');
+});
+
+test('normal windows do not incur a knockout, and stopping disables fast timer',()=>{
+    const h=harness();
+    h.control.autoTravel=false;
+    h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{'1':20}}});
+    h.state.huntSwitchGate.combatUntil=h.clock.now+3000;
+    h.state.huntSwitchGate.lastAttackAt=h.clock.now;
+    h.api.startPokedexAuto();
+    h.clock.now+=3000;
+    h.api.stepPokedexAuto();
+    assert.equal(h.sent.at(-1).t,'hunt.select');
+    assert.equal(h.sent.some(x=>x.t==='centro.desistir'),false);
+    h.api.stopPokedexAuto();
+    assert.equal(h.control.fastTimers.size,0);
+    h.clock.now+=30000;
+    h.api.stepPokedexAuto();
+    assert.equal(h.sent.some(x=>x.t==='centro.desistir'),false);
 });
