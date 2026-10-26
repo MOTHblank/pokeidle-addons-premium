@@ -50,6 +50,13 @@ function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00
     return {api,state,storage,clock,dom};
 }
 
+function syncSettledGrid(h) {
+    // First read observes a candidate; second read confirms a stable list.
+    h.api.dexAutoSyncFromDom();
+    h.clock.now += 750;
+    return h.api.dexAutoSyncFromDom();
+}
+
 function capture(id, speciesId) {
     return {k:'capturado',pokemon:{id, speciesId}};
 }
@@ -186,7 +193,7 @@ test('real Top Catch card keys, including Bellsprout, skip already captured hunt
     // data-chave="69">Bellsprout</div><div class="tc-card"
     // data-poke="1" data-chave="1">Bulbasaur</div></div>
     h.dom.keys=['69','1'];
-    assert.equal(h.api.dexAutoSyncFromDom(),true);
+    assert.equal(syncSettledGrid(h),true);
     h.api.startPokedexAuto();
     assert.equal(h.state.pokedexAuto.targetSlug,'squirtle');
     assert.equal(h.state.pokedexAuto.caught.has(69),true);
@@ -210,21 +217,42 @@ test('partially rendered or malformed official grid does not authorize navigatio
     assert.equal(h.api.dexAutoSyncFromDom(),false);
     assert.equal(h.state.pokedexAuto.serverSynced,false);
     h.dom.keys=['69'];
-    assert.equal(h.api.dexAutoSyncFromDom(),true);
+    assert.equal(syncSettledGrid(h),true);
     assert.equal(h.state.pokedexAuto.serverSynced,true);
 });
 
 test('old mounted Top Catch grid cannot reauthorize captures after Sunday reset',()=>{
     const h=harness();
     h.dom.keys=['69'];
-    assert.equal(h.api.dexAutoSyncFromDom(),true);
+    assert.equal(syncSettledGrid(h),true);
     h.clock.now=Date.parse('2026-11-01T03:00:00Z');
     h.api.startPokedexAuto();
     assert.equal(h.state.pokedexAuto.mode,'needsSync',
         'a still-mounted old weekly grid must not be accepted');
     assert.equal(h.state.pokedexAuto.caught.size,0);
     h.dom.keys=['7'];
-    assert.equal(h.api.dexAutoSyncFromDom(),true);
+    assert.equal(syncSettledGrid(h),true);
     assert.equal(h.state.pokedexAuto.caught.has(69),false);
     assert.equal(h.state.pokedexAuto.caught.has(7),true);
+});
+
+
+test('a partially built Top Catch panel cannot skip validation before Bellsprout is appended',()=>{
+    const h=harness();
+    h.state.hunts=[
+        {slug:'bellsprout',nivel:1,especies:[{pokeId:69}]},
+        {slug:'squirtle',nivel:2,especies:[{pokeId:7}]}
+    ];
+    h.state.currentHuntSlug='bellsprout';
+    h.api.startPokedexAuto();
+    h.dom.keys=['76']; // Golem rendered first; Bellsprout later in the grid.
+    assert.equal(h.api.dexAutoSyncFromDom(),false);
+    h.clock.now+=300;
+    h.dom.keys=['76','69'];
+    assert.equal(h.api.dexAutoSyncFromDom(),false,
+        'adding cards resets the stability wait');
+    h.clock.now+=800;
+    assert.equal(h.api.dexAutoSyncFromDom(),true);
+    h.api.startPokedexAuto();
+    assert.equal(h.state.pokedexAuto.targetSlug,'squirtle');
 });
