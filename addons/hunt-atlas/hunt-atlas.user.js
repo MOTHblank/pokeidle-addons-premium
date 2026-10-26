@@ -10272,6 +10272,8 @@
         // A DOM grid from the *previous* week may remain mounted at midnight.
         // Keep its last signature so it cannot re-authorize the new week.
         if (previousWeek && previousWeek !== week) auto.lastDomWeek = previousWeek;
+        auto.domCandidateSignature = null;
+        auto.domCandidateRoot = null;
         dexAutoSaveWeek();
         return true;
     }
@@ -10302,6 +10304,8 @@
         const auto = state.pokedexAuto;
         if (!accountKey || accountKey === auto.accountKey) return false;
         auto.accountKey = accountKey;
+        auto.domCandidateSignature = null;
+        auto.domCandidateRoot = null;
         auto.week = null;
         dexAutoSyncWeek();
         return true;
@@ -10367,11 +10371,27 @@
         dexAutoSyncWeek();
         const auto = state.pokedexAuto;
         const signature = keys.slice().sort((a,b)=>Number(a)-Number(b)).join(',');
-        if (auto.lastDomWeek && auto.lastDomWeek !== auto.week &&
-            auto.lastDomSignature === signature)
-            return false; // stale grid across Sunday's contest rollover
+        // DOM updates may append cards incrementally: an early partial grid
+        // could omit Bellsprout (near the end of the user's 44-card sample).
+        // Require the same full grid for 700 ms before trusting it.
+        const now = Date.now();
+        if (auto.domCandidateSignature !== signature ||
+            auto.domCandidateRoot !== root) {
+            auto.domCandidateSignature = signature;
+            auto.domCandidateRoot = root;
+            auto.domCandidateAt = now;
+            return false;
+        }
+        if (now - auto.domCandidateAt < 700) return false;
+        if (auto.lastDomSignature === signature &&
+            auto.lastDomRoot === root &&
+            (auto.lastDomWeek !== auto.week ||
+                auto.lastDomAccountKey !== auto.accountKey))
+            return false; // stale grid across week/account changes
         auto.lastDomSignature = signature;
         auto.lastDomWeek = auto.week;
+        auto.lastDomAccountKey = auto.accountKey;
+        auto.lastDomRoot = root;
         return dexAutoApplyOfficialKeys(keys);
     }
 
