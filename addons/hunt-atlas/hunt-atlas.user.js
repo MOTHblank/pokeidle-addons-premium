@@ -349,7 +349,7 @@
             'sort.matchup': 'Matchup',
             'sort.asc': 'Ascending',
             'sort.desc': 'Descending',
-            'dex.title': 'Session Pokédex auto-fill',
+            'dex.title': 'Weekly Top Catch',
             'dex.start': 'Start',
             'dex.stop': 'Stop',
             'dex.idle': 'Inactive · {count} species logged this week.',
@@ -725,7 +725,7 @@
             'sort.matchup': 'Matchup',
             'sort.asc': 'Crescente',
             'sort.desc': 'Decrescente',
-            'dex.title': 'Completar Pokédex nesta sessão',
+            'dex.title': 'Top Catch semanal',
             'dex.start': 'Iniciar',
             'dex.stop': 'Parar',
             'dex.idle': 'Inativo · {count} espécies registradas nesta semana.',
@@ -10359,9 +10359,12 @@
         const root = q('#tc-grade');
         if (!root) return false;
         const cards = qa('.tc-card', root);
-        // A card-free grid may still be loading. Do not mistake it for a
-        // verified empty Top Catch and start recatching earlier species.
-        if (!cards.length || cards.length > 3000) return false;
+        // A card-free grid may still be loading; only accept an explicit
+        // empty-state label provided by the game as a verified zero-catch week.
+        const emptyLabel = !cards.length &&
+            /(?:nenhuma? captura|nenhuma? espécie|ainda não captur|no captures|no species caught)/i
+                .test(String(root.textContent || ''));
+        if ((!cards.length && !emptyLabel) || cards.length > 3000) return false;
         const keys = [];
         for (const card of cards) {
             const key = card.getAttribute('data-chave');
@@ -10382,7 +10385,8 @@
             auto.domCandidateAt = now;
             return false;
         }
-        if (now - auto.domCandidateAt < 700) return false;
+        if (now - auto.domCandidateAt < (cards.length ? 700 : 1500))
+            return false;
         if (auto.lastDomSignature === signature &&
             auto.lastDomRoot === root &&
             (auto.lastDomWeek !== auto.week ||
