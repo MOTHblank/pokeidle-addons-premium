@@ -37,6 +37,7 @@ function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00
         socketReady:()=>true,
         isUnlocked:()=>true,
         isHuntHere:slug=>state.currentHuntSlug===slug,
+        currentHunt:()=>state.hunts.find(h=>h.slug===state.currentHuntSlug)||null,
         sendHuntSelect:hunt=>{state.currentHuntSlug=hunt.slug;return true;}
     };
     const api=vm.runInNewContext(code+'\n({dexAutoWeek,dexAutoSyncWeek,dexAutoSetAccount,'+
