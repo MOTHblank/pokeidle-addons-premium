@@ -6,7 +6,7 @@
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
 // @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
-// @version      1.9.29
+// @version      1.9.30
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -20,7 +20,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.29');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.30');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -46,6 +46,9 @@
 
     const PERF_KEY =
         'moth-pokeidle-hunt-atlas-performance-v2';
+
+    const DEX_AUTO_STORE_KEY =
+        'moth-pokeidle-hunt-atlas-top-catch-v1';
 
     const MARKET_CACHE_KEY =
         'moth-pokeidle-hunt-atlas-market-v2';
@@ -349,13 +352,13 @@
             'dex.title': 'Session Pokédex auto-fill',
             'dex.start': 'Start',
             'dex.stop': 'Stop',
-            'dex.idle': 'Inactive · no Pokédex data is read.',
-            'dex.stopped': 'Stopped · {count} species caught this session.',
+            'dex.idle': 'Inactive · {count} species logged this week.',
+            'dex.stopped': 'Stopped · {count} species logged this week.',
             'dex.waiting': 'Waiting for the game connection and hunt catalog…',
-            'dex.hunting': 'Level {level} · {hunt} · {count} caught this session',
-            'dex.traveling': 'Traveling to level {level}: {hunt} · {count} caught',
+            'dex.hunting': 'Level {level} · {hunt} · {count} caught this week',
+            'dex.traveling': 'Traveling to level {level}: {hunt} · {count} caught this week',
             'dex.done': 'All accessible hunt species completed · {count} caught.',
-            'dex.hint': 'Ordinary one-species hunts only, lowest levels first. Auto Catch+ handles Pokéballs. Stop/Start resumes; progress resets with the weekly contest.',
+            'dex.hint': 'Ordinary single-species hunts only. Weekly catches are saved across sessions and reconciled with official Top Catch data when supplied. Auto Catch+ throws the balls; Sunday 00:00 Brasília resets progress.',
             'filter.clear': 'Clear filters',
             'filter.defaults': 'Default filters',
             'filter.changedOne': '1 filter changed from default',
@@ -724,13 +727,13 @@
             'dex.title': 'Completar Pokédex nesta sessão',
             'dex.start': 'Iniciar',
             'dex.stop': 'Parar',
-            'dex.idle': 'Inativo · não consulta a Pokédex.',
-            'dex.stopped': 'Parado · {count} espécies capturadas nesta sessão.',
+            'dex.idle': 'Inativo · {count} espécies registradas nesta semana.',
+            'dex.stopped': 'Parado · {count} espécies registradas nesta semana.',
             'dex.waiting': 'Aguardando conexão com o jogo e lista de hunts…',
-            'dex.hunting': 'Nível {level} · {hunt} · {count} capturados nesta sessão',
-            'dex.traveling': 'Indo para nível {level}: {hunt} · {count} capturados',
+            'dex.hunting': 'Nível {level} · {hunt} · {count} capturados nesta semana',
+            'dex.traveling': 'Indo para nível {level}: {hunt} · {count} capturados nesta semana',
             'dex.done': 'Espécies das hunts acessíveis concluídas · {count} capturadas.',
-            'dex.hint': 'Somente hunts comuns de uma espécie, dos níveis menores aos maiores. Auto Catch+ arremessa as bolas. Parar/Iniciar retoma; o progresso zera com a semana.',
+            'dex.hint': 'Somente hunts comuns de uma espécie. As capturas da semana ficam salvas entre sessões e são conciliadas com o Top Catch oficial quando disponível. Auto Catch+ arremessa as bolas; o progresso zera domingo às 00h (Brasília).',
             'filter.clear': 'Limpar filtros',
             'filter.defaults': 'Filtros padrão',
             'filter.changedOne': '1 filtro alterado',
@@ -1309,7 +1312,8 @@
         pokedexAuto: {
             active: false, mode: 'idle', caught: new Set(),
             receipts: new Set(), targetSlug: null,
-            lastTravelAt: 0, week: null
+            lastTravelAt: 0, week: null, accountKey: 'profile',
+            serverSynced: false
         },
 
         status: {
@@ -4957,6 +4961,8 @@
             full ||
             gameState.cheio === true;
 
+        dexAutoObserveState(gameState);
+
         if (
             Number.isFinite(
                 Number(gameState.level)
@@ -5360,6 +5366,9 @@
         } catch {
             return;
         }
+
+        // Official Top Catch may arrive independently of regular state deltas.
+        dexAutoObserveState(message);
 
         if (
             message?.t === 'batalha' &&
@@ -10178,9 +10187,10 @@
     // Hunt navigation
     // ------------------------------------------------------------------
 
-    // Top Catch for ordinary one-species hunts only. Auto Catch+ throws the
-    // balls independently; we only react to confirmed server captures.
-    // Never consult the player's Pokédex or persist the local weekly set.
+    // Top Catch: the *weekly* ball-capture species ledger, NOT the lifetime
+    // Pokédex. Keep it across reloads/reconnects and preserve it on Stop/Start.
+    // Auto Catch+ remains solely responsible for throwing the Pokéballs.
+    // TOP CATCH AUTO BEGIN.
     function dexAutoSpecies(hunt) {
         if (!hunt?.slug || ['safari', 'arena_mistica'].includes(String(hunt.slug)) ||
             !Array.isArray(hunt.especies) || hunt.especies.length !== 1)
@@ -10189,9 +10199,8 @@
         return Number.isSafeInteger(speciesId) && speciesId > 0 ? speciesId : null;
     }
 
-    // Match shared/pokedex.mjs: chavePokedex → dexDe, with the legacy
-    // Outland remap already present in the Atlas. Orre 13xxx share a
-    // national Pokédex key; regular regional forms retain their own IDs.
+    // Match upstream shared/pokedex.mjs chavePokedex, including the Atlas'
+    // existing Outland remapping. Orre 13xxx uses the national Pokédex key.
     function dexAutoKey(rawId) {
         if (rawId === null || rawId === undefined) return null;
         const id = Number(outlandNormalizeSpeciesId(rawId));
@@ -10206,16 +10215,118 @@
         return brasilia.toISOString().slice(0, 10);
     }
 
+    function dexAutoStorageKey() {
+        return DEX_AUTO_STORE_KEY + ':' + state.pokedexAuto.accountKey;
+    }
+
+    function dexAutoLoadWeek(week) {
+        try {
+            const saved = JSON.parse(localStorage.getItem(dexAutoStorageKey()) || 'null');
+            if (saved?.schema !== 1 || saved.week !== week ||
+                !Array.isArray(saved.caught)) return new Set();
+            return new Set(saved.caught.slice(0, 3000).map(Number).filter(id =>
+                Number.isSafeInteger(id) && id > 0 && id <= 9999999));
+        } catch {
+            return new Set();
+        }
+    }
+
+    function dexAutoSaveWeek() {
+        const auto = state.pokedexAuto;
+        try {
+            localStorage.setItem(dexAutoStorageKey(), JSON.stringify({
+                schema: 1, week: auto.week, caught: [...auto.caught].sort((a,b)=>a-b)
+            }));
+        } catch {
+            // Continue this session even when storage is blocked or full.
+        }
+    }
+
     function dexAutoSyncWeek(now = Date.now()) {
         const auto = state.pokedexAuto;
         const week = dexAutoWeek(now);
         if (week === auto.week) return false;
         auto.week = week;
-        auto.caught.clear();
+        auto.caught = dexAutoLoadWeek(week);
         auto.receipts.clear();
         auto.targetSlug = null;
         auto.lastTravelAt = 0;
+        auto.serverSynced = false;
+        // Replace last week's record immediately; never carry it into a reset.
+        dexAutoSaveWeek();
         return true;
+    }
+
+    function dexAutoAccountFromState(packet) {
+        // Prefer an authenticated player identity when supplied by the game.
+        // Profiles lacking those fields still keep an isolated browser-profile
+        // ledger. Never store access tokens or the original game packet.
+        if (!packet || typeof packet !== 'object') return null;
+        const ids = [packet.userId, packet.playerId, packet.jogadorId,
+            packet.usuarioId, packet.idUsuario, packet.user?.id,
+            packet.player?.id, packet.jogador?.id, packet.usuario?.id];
+        for (const id of ids) {
+            if ((typeof id === 'number' || typeof id === 'string') &&
+                /^[1-9]\d{0,17}$/.test(String(id)))
+                return 'id-' + id;
+        }
+        const names = [packet.username, packet.nick, packet.user?.username,
+            packet.player?.nome, packet.jogador?.nome, packet.usuario?.nome];
+        for (const name of names) {
+            if (typeof name === 'string' && /^[\w.-]{2,64}$/.test(name))
+                return 'name-' + name.toLowerCase();
+        }
+        return null;
+    }
+
+    function dexAutoSetAccount(accountKey) {
+        const auto = state.pokedexAuto;
+        if (!accountKey || accountKey === auto.accountKey) return false;
+        auto.accountKey = accountKey;
+        auto.week = null;
+        dexAutoSyncWeek();
+        return true;
+    }
+
+    function dexAutoReconcileTopCatch(packet) {
+        if (!packet || typeof packet !== 'object') return false;
+        // Official shared/top-catch.mjs uses {s: week, e: {dexKey: minute}}.
+        // Import ONLY that week's explicit ball-capture entries, not pokedex
+        // c counters (which include past weeks, eggs and evolutions).
+        const candidate = packet.topCatch ?? packet.top_catch ??
+            packet.topCatchSemanal ?? packet.topCatchEstado;
+        const official = candidate?.estado ?? candidate;
+        if (!official || typeof official !== 'object' ||
+            official.s !== dexAutoWeek() || !official.e ||
+            typeof official.e !== 'object' || Array.isArray(official.e)) return false;
+        dexAutoSyncWeek();
+        const auto = state.pokedexAuto;
+        let changed = false;
+        for (const key of Object.keys(official.e).slice(0, 3000)) {
+            if (!/^[1-9]\d{0,6}$/.test(key)) continue;
+            const id = Number(key);
+            if (!auto.caught.has(id)) {
+                auto.caught.add(id);
+                changed = true;
+            }
+        }
+        auto.serverSynced = true;
+        if (changed) {
+            dexAutoSaveWeek();
+            const target = state.hunts.find(h => h.slug === auto.targetSlug);
+            if (target && auto.caught.has(dexAutoKey(dexAutoSpecies(target)))) {
+                auto.targetSlug = null;
+                auto.lastTravelAt = 0;
+            }
+            queueRender();
+        }
+        return changed;
+    }
+
+    function dexAutoObserveState(packet) {
+        const account = dexAutoAccountFromState(packet);
+        if (account) dexAutoSetAccount(account);
+        dexAutoReconcileTopCatch(packet);
     }
 
     function dexAutoNextHunt(hunts, caught, allowed) {
@@ -10246,13 +10357,8 @@
 
     function startPokedexAuto() {
         const auto = state.pokedexAuto;
-        // Stop/Start resumes within the same week; a fresh run after
-        // completion starts empty. No Pokédex data is used.
         dexAutoSyncWeek();
-        if (auto.mode !== 'stopped') {
-            auto.caught.clear();
-            auto.receipts.clear();
-        }
+        // Even after 'done' or a fresh page load, the week's progress remains.
         auto.targetSlug = null;
         auto.lastTravelAt = 0;
         auto.active = true;
@@ -10300,12 +10406,13 @@
     }
 
     function recordPokedexAutoCatch(event, ledgerAccepted) {
-        const auto = state.pokedexAuto;
-        if (!auto.active || event?.k !== 'capturado') return false;
+        if (event?.k !== 'capturado') return false;
         dexAutoSyncWeek();
-        if (!auto.targetSlug || !isHuntHere(auto.targetSlug)) return false;
-        const hunt = state.hunts.find(row => row.slug === auto.targetSlug);
+        // Record ordinary-hunt captures even if automation is paused. These
+        // are confirmed ball captures, not Pokédex ownership or a past catch.
+        const hunt = state.hunts.find(row => isHuntHere(row.slug));
         const targetKey = dexAutoKey(dexAutoSpecies(hunt));
+        const auto = state.pokedexAuto;
         if (targetKey === null || auto.caught.has(targetKey)) return false;
         const slot = event.slot ?? event.s;
         const corpse = slot === undefined || slot === null ? null :
@@ -10314,8 +10421,6 @@
             event.speciesId ?? event.pokeId ?? corpse?.speciesId ??
             dexAutoSpecies(hunt);
         if (dexAutoKey(rawId) !== targetKey) return false;
-        // Prefer the unique caught Pokémon ID/receipt; otherwise only trust
-        // an accepted, deduplicated server capture linked to a corpse slot.
         const instanceId = Number(event.pokemon?.id);
         const eventId = farmingReceiptIdentity(event);
         const identity = Number.isSafeInteger(instanceId) && instanceId > 0
@@ -10328,9 +10433,12 @@
         if (auto.receipts.size > 512)
             auto.receipts.delete(auto.receipts.values().next().value);
         auto.caught.add(targetKey);
-        auto.targetSlug = null;
-        auto.lastTravelAt = 0;
-        stepPokedexAuto();
+        dexAutoSaveWeek();
+        if (auto.active) {
+            auto.targetSlug = null;
+            auto.lastTravelAt = 0;
+            stepPokedexAuto();
+        }
         queueRender();
         return true;
     }
@@ -10338,6 +10446,7 @@
     function renderPokedexAuto(drawer) {
         const host = q('[data-mha-dex-auto]', drawer);
         if (!host) return;
+        dexAutoSyncWeek();
         const auto = state.pokedexAuto;
         const button = q('[data-mha-dex-toggle]', host);
         button.textContent = tr(auto.active ? 'dex.stop' : 'dex.start');
@@ -10352,7 +10461,7 @@
                 auto.mode === 'stopped' ? 'dex.stopped' : 'dex.idle';
         q('[data-mha-dex-status]', host).textContent = tr(key, params);
     }
-
+    // TOP CATCH AUTO END.
 
     function socketReady() {
         return Boolean(
@@ -14762,6 +14871,7 @@
     };
 
     function bootstrap() {
+        dexAutoSyncWeek();
         injectStyles();
         // Capture rarity/ball modeling must work even with the Atlas closed.
         // Reuses the existing cached catalog loader; no timer or game scan.
@@ -14795,7 +14905,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.29 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.30 experimental loaded'
         );
     }
 
