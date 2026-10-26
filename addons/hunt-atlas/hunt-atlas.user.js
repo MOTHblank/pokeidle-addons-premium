@@ -10766,9 +10766,10 @@
 
         try {
             const startedAt = Date.now();
+            const announce = !rapid || state.pendingTravel?.slug !== hunt.slug;
             state.pendingTravel = {slug:hunt.slug,startedAt};
 
-            setStatus(
+            if (announce) setStatus(
                 'status.traveling',
                 {
                     hunt:
@@ -10793,7 +10794,7 @@
                 })
             );
 
-            queueRender();
+            if (announce) queueRender();
 
             setTimeout(
                 () => {
@@ -10816,7 +10817,7 @@
                         state.pendingTravel =
                             null;
 
-                        queueRender();
+                        if (!rapid) queueRender();
                     }
                 },
                 rapid ? 400 : 2500
