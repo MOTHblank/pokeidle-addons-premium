@@ -4688,6 +4688,7 @@
             const event of
             events
         ) {
+            dexAutoOnBattleEvent(event);
             recordFarmingEvidence(state.farmingLedger, event);
             if (!hunting) {
                 // Boss and supplies are session events, never normal hunt
@@ -4973,6 +4974,7 @@
             gameState.cheio === true;
 
         dexAutoObserveState(gameState);
+        dexAutoObserveGate(gameState);
 
         if (
             Number.isFinite(
@@ -5310,6 +5312,7 @@
         }
         state.currentHuntSlug =
             huntEvent.slug;
+        dexAutoOnBattleEvent(huntEvent);
 
         /*
          * A hunt battle event is authoritative proof that the normal hunt
@@ -5402,6 +5405,7 @@
             processCombatEvents(
                 message.ev
             );
+            if (state.pokedexAuto.active) stepPokedexAuto();
 
             return;
         }
@@ -5509,6 +5513,7 @@
                     state.nativeXpContext,{tiposBoost:message.tiposBoost});
 
             saveCache();
+            if (state.pokedexAuto.active) stepPokedexAuto();
 
             if (
                 state.drawerOpen
@@ -5532,6 +5537,7 @@
 
             saveCache();
             queueRender();
+            if (state.pokedexAuto.active) stepPokedexAuto();
         }
     }
 
@@ -10491,7 +10497,12 @@
         const gate = state.huntSwitchGate;
         const serverNow = now - gate.serverOffset;
         const entryRemaining = Math.max(0, gate.entryUntil - serverNow);
-        const waveOpen = gate.wave > 0 && gate.wave > gate.combatWave;
+        const huntHud = q('#hunt-saida');
+        const leaveButton = q('#ir-centro');
+        const uiOpen = huntHud && !huntHud.classList.contains('hidden') &&
+            leaveButton && !leaveButton.disabled;
+        const waveOpen = (gate.wave > 0 && gate.wave > gate.combatWave) ||
+            Boolean(uiOpen);
         const combatRemaining = waveOpen ? 0 :
             Math.max(0, gate.combatUntil - serverNow);
         return {remaining:Math.max(entryRemaining, combatRemaining),
