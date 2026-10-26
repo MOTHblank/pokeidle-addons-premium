@@ -10416,7 +10416,7 @@
         dexAutoSyncWeek();
         // Record ordinary-hunt captures even if automation is paused. These
         // are confirmed ball captures, not Pokédex ownership or a past catch.
-        const hunt = state.hunts.find(row => isHuntHere(row.slug));
+        const hunt = currentHunt();
         const targetKey = dexAutoKey(dexAutoSpecies(hunt));
         const auto = state.pokedexAuto;
         if (targetKey === null || auto.caught.has(targetKey)) return false;
