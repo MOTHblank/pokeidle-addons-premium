@@ -12,7 +12,7 @@ assert.ok(start >= 0 && end > start, 'Top Catch code block exists');
 const code = source.slice(start, end);
 
 function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00:00Z')}) {
-    const dom = {keys:null};
+    const dom = {keys:null, textContent:''};
     const state = {
         pokedexAuto: {active:false, mode:'idle', caught:new Set(), receipts:new Set(),
             targetSlug:null, lastTravelAt:0, week:null, accountKey:'profile', serverSynced:false},
@@ -255,4 +255,35 @@ test('a partially built Top Catch panel cannot skip validation before Bellsprout
     assert.equal(h.api.dexAutoSyncFromDom(),true);
     h.api.startPokedexAuto();
     assert.equal(h.state.pokedexAuto.targetSlug,'squirtle');
+});
+
+
+test('an explicitly empty official Top Catch can authorize a fresh week',()=>{
+    const h=harness();
+    h.dom.keys=[];
+    h.dom.textContent='Nenhuma captura com bola nesta semana.';
+    assert.equal(h.api.dexAutoSyncFromDom(),false);
+    h.clock.now+=1600;
+    assert.equal(h.api.dexAutoSyncFromDom(),true);
+    assert.equal(h.state.pokedexAuto.serverSynced,true);
+    h.api.startPokedexAuto();
+    assert.equal(h.state.pokedexAuto.targetSlug,'bulbasaur');
+});
+
+test('an old account grid cannot silently verify another account',()=>{
+    const h=harness();
+    h.dom.keys=['69'];
+    assert.equal(syncSettledGrid(h),true);
+    h.api.dexAutoSetAccount('id-123');
+    assert.equal(h.api.dexAutoSyncFromDom(),false);
+    h.clock.now+=800;
+    assert.equal(h.api.dexAutoSyncFromDom(),false,
+        'the previous account grid has not been rebuilt');
+    h.api.startPokedexAuto();
+    assert.equal(h.state.pokedexAuto.mode,'needsSync');
+    // The next account opens its own Top Catch screen.
+    h.dom.keys=['7'];
+    assert.equal(syncSettledGrid(h),true);
+    assert.equal(h.state.pokedexAuto.caught.has(69),false);
+    assert.equal(h.state.pokedexAuto.caught.has(7),true);
 });
