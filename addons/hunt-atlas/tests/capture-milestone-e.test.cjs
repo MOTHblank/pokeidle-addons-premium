@@ -80,7 +80,7 @@ test('stage table follows branched and cross-generation evolution links',()=>{
     assert.ok(from>=0&&end>from);
     const ids=[133,134,135,25,26,4026,57,979,1,2,3,2001];
     const state={speciesCombat:new Map(ids.map(id=>[id,{}])),
-        captureStageCaps:new Map()};
+        captureStageCaps:new Map(),evolutionStages:new Map()};
     state.speciesCombat.get(1).evolvesToId=2;
     state.speciesCombat.get(2).evolvesToId=3;
     vm.runInNewContext(source.slice(from,end)+
