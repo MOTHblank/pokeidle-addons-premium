@@ -191,17 +191,35 @@ test('missing evolution stage never uses the retired price-based odds',()=>{
         'known final stage ranks above unmodeled low-level species');
 });
 
-test('Top Catch uses Atlas-selected Ultra or Beast, not an assumed ball',()=>{
+test('Top Catch always ranks with Ultra Ball even when Beast preview is selected',()=>{
     const h=harness();
     h.state.captureStageCaps.set(69,20);
     h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{}}});
     h.state.filters.captureBall='beast';
     h.api.startPokedexAuto();
-    assert.ok(h.control.usedBalls.includes(5));
+    assert.deepEqual(h.control.usedBalls,[4]);
     h.state.filters.captureBall='ultra';
     h.state.pokedexAuto.targetSlug=null;
     h.api.stepPokedexAuto();
-    assert.ok(h.control.usedBalls.includes(4));
+    assert.deepEqual(h.control.usedBalls,[4,4]);
+    assert.equal(h.state.pokedexAuto.targetSlug,'bulbasaur');
+});
+
+
+test('Top Catch ranks with Ultra odds even if Beast efficiency is unavailable',()=>{
+    const h=harness();
+    h.state.hunts=[
+        {slug:'late-first',nivel:280,especies:[{pokeId:69}]},
+        {slug:'early-final',nivel:100,especies:[{pokeId:3}]}
+    ];
+    h.state.captureStageCaps.set(69,20);
+    h.state.captureStageCaps.set(3,100);
+    h.control.ballRates[5]=null;
+    h.state.filters.captureBall='beast';
+    h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{}}});
+    h.api.startPokedexAuto();
+    assert.equal(h.state.pokedexAuto.targetSlug,'late-first');
+    assert.deepEqual(h.control.usedBalls,[4]);
 });
 
 test('Top Catch waits for capture catalog, then chooses by chance',()=>{

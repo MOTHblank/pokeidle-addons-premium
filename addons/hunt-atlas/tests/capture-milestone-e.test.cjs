@@ -34,6 +34,28 @@ test('on a defeated body wiki Ultra is x4 and Beast is x8 before caps',()=>{
     assert.equal(h.captureWikiChance(100,4,-1),null);
     assert.ok(h.captureWikiChance(100,8)/h.captureWikiChance(100,4)<2.01);
 });
+test('ordinary capture cards never substitute old rarity when evolution stage is missing',()=>{
+    const stageModel=vm.runInNewContext(blocks+
+        '\n({captureHuntChance,captureForecast,captureSpeciesForecast})',
+        {state:{captureStageCaps:new Map([[1,20]])}});
+    const hunting={slug:'hunt',area:'kanto',especies:[{pokeId:1},{pokeId:2}]};
+    const rarity=new Map([[1,100],[2,100]]);
+    const chance=stageModel.captureHuntChance(hunting,rarity,4,null,'kills',true);
+    assert.equal(chance.chance,null,'partial stage coverage must not claim an aggregate rate');
+    assert.equal(chance.coverage,50);
+    const predicted=stageModel.captureForecast(hunting,rarity,500,4,{stageOnly:true});
+    assert.equal(predicted.chance,null);
+    assert.equal(predicted.catchesH,null);
+    assert.equal(stageModel.captureSpeciesForecast(hunting,2,100,4,500,
+        {stageOnly:true}),null);
+    const valid=stageModel.captureSpeciesForecast(hunting,1,100,4,500,
+        {stageOnly:true});
+    near(valid.chance,.0075*4/2.8669*1.4);
+    const allKnown=stageModel.captureHuntChance(
+        {slug:'known',especies:[{pokeId:1}]},rarity,4,null,'kills',true);
+    near(allKnown.chance,.0075*4/2.8669*1.4);
+});
+
 test('upstream evolution stages replace NPC-value odds on ordinary hunts',()=>{
     const staged=vm.runInNewContext(blocks+
         '\n({captureWikiChance,captureHuntChance,captureSpeciesForecast})',
@@ -58,7 +80,7 @@ test('stage table follows branched and cross-generation evolution links',()=>{
     assert.ok(from>=0&&end>from);
     const ids=[133,134,135,25,26,4026,57,979,1,2,3,2001];
     const state={speciesCombat:new Map(ids.map(id=>[id,{}])),
-        captureStageCaps:new Map()};
+        captureStageCaps:new Map(),evolutionStages:new Map()};
     state.speciesCombat.get(1).evolvesToId=2;
     state.speciesCombat.get(2).evolvesToId=3;
     vm.runInNewContext(source.slice(from,end)+

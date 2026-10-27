@@ -6,7 +6,7 @@
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
 // @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
-// @version      1.9.34
+// @version      1.9.35
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -20,7 +20,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.34');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.35');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -362,7 +362,7 @@
             'dex.hunting': 'Level {level} · {hunt} · {count} caught this week',
             'dex.traveling': 'Traveling to level {level}: {hunt} · {count} caught this week',
             'dex.done': 'All accessible hunt species completed · {count} caught.',
-            'dex.hint': 'Ordinary single-species hunts, easiest estimated catches first using the ball selected in Atlas (Ultra/Beast). Open Pokédex → Top Catch once per week. Switching uses the first combat opening; if trapped, Give Up sends the team to the Center and may cost trainer XP. Auto Catch+ throws balls.',
+            'dex.hint': 'Ordinary single-species hunts, easiest estimated catches first assuming Ultra Balls. Open Pokédex → Top Catch once per week. Switching uses the first combat opening; if trapped, Give Up sends the team to the Center and may cost trainer XP. Auto Catch+ throws balls.',
             'filter.clear': 'Clear filters',
             'filter.defaults': 'Default filters',
             'filter.changedOne': '1 filter changed from default',
@@ -741,7 +741,7 @@
             'dex.hunting': 'Nível {level} · {hunt} · {count} capturados nesta semana',
             'dex.traveling': 'Indo para nível {level}: {hunt} · {count} capturados nesta semana',
             'dex.done': 'Espécies das hunts acessíveis concluídas · {count} capturadas.',
-            'dex.hint': 'Hunts comuns de uma espécie, priorizando as maiores chances estimadas de captura com a bola selecionada no Atlas (Ultra/Beast). Abra Pokédex → Top Catch uma vez na semana. A troca aproveita a primeira abertura; se a luta impedir a saída, Desistir envia a equipe ao Centro e pode custar XP de treinador. Auto Catch+ arremessa bolas.',
+            'dex.hint': 'Hunts comuns de uma espécie, priorizando as maiores chances estimadas de captura com Ultra Ball. Abra Pokédex → Top Catch uma vez na semana. A troca aproveita a primeira abertura; se a luta impedir a saída, Desistir envia a equipe ao Centro e pode custar XP de treinador. Auto Catch+ arremessa bolas.',
             'filter.clear': 'Limpar filtros',
             'filter.defaults': 'Filtros padrão',
             'filter.changedOne': '1 filtro alterado',
@@ -3800,7 +3800,7 @@
         }
         return null;
     }
-    function captureHuntChance(hunt,rarities,efficiency,mix=null,mixMode='kills') {
+    function captureHuntChance(hunt,rarities,efficiency,mix=null,mixMode='kills',stageOnly=false) {
         if(!Array.isArray(hunt?.especies)||!hunt.especies.length)
             return {chance:null,coverage:0,source:'no-spawns'};
         const measured=mix&&Object.values(mix).reduce((n,x)=>n+(x[mixMode]||0),0)>=30;
@@ -3810,7 +3810,9 @@
             const weight=measured?(mix?.[id]?.[mixMode]??0):
                 Math.max(1,Number(row.pontos)||1);
             total+=weight;
-            const rarity=captureRarityForSpecies(rarities,id);
+            // All actual hunt cards use the current stage-only rules.
+            // Price-derived fallback is reserved for explicit legacy previews.
+            const rarity=stageOnly?null:captureRarityForSpecies(rarities,id);
             const chance=captureWikiChance(rarity,efficiency,0,id);
             if(chance!==null){covered+=weight;weighted+=weight*chance;}
         }
@@ -3821,7 +3823,7 @@
     }
     function captureForecast(hunt,rarities,killsH,efficiency,options={}) {
         const base=captureHuntChance(hunt,rarities,efficiency,
-            options.mix,options.mixMode??'kills');
+            options.mix,options.mixMode??'kills',options.stageOnly===true);
         const fraction=options.acceptedFraction;
         const observed=typeof fraction==='number'&&
             Number.isFinite(fraction)&&fraction>=0&&fraction<=1;
@@ -3869,7 +3871,8 @@
             if(Number(outlandNormalizeSpeciesId(row.pokeId))===target)
                 matches+=weight;
         }
-        const chance=captureWikiChance(rarity,efficiency,0,target);
+        const chance=captureWikiChance(options.stageOnly===true?null:rarity,
+            efficiency,0,target);
         if(!total||!matches||chance===null)return null;
         const hasMeasuredFraction=typeof options.acceptedFraction==='number' &&
             Number.isFinite(options.acceptedFraction) &&
@@ -7129,7 +7132,7 @@
             Math.min(1,Math.max(0,observed.throws/observed.kills)):null;
         const predicted=captureForecast(hunt,state.captureRarities,
             xp?.killsH??null,ball.efficiency,{
-                mix:measuredMix,mixMode:'throws',
+                stageOnly:true,mix:measuredMix,mixMode:'throws',
                 acceptedFraction:fraction,
                 coinPrice:ball.coins,
                 diamondPrice:ball.diamondPrice,
@@ -7164,7 +7167,7 @@
         return captureSpeciesForecast(hunt,species.id,
             captureRarityForSpecies(state.captureRarities,species.id),
             ball.efficiency,estimate?.killsH??null,{
-                mix,acceptedFraction:acceptance,
+                stageOnly:true,mix,acceptedFraction:acceptance,
                 hypotheticalLure:state.filters.shinyLurePreview
             });
     }
@@ -10440,7 +10443,9 @@
     }
 
     function dexAutoNextHunt(hunts, caught, allowed) {
-        const ball = captureInfoForBall(state.filters.captureBall === 'beast' ? 5 : 4);
+        // Top Catch always assumes Ultra Ball; the Beast preview filter does
+        // not change its targets or the Auto Catch+ ball configuration.
+        const ball = captureInfoForBall(4);
         const candidates = (Array.isArray(hunts) ? hunts : [])
             .filter(hunt => {
                 const key = dexAutoKey(dexAutoSpecies(hunt));
@@ -15214,7 +15219,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.34 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.35 experimental loaded'
         );
     }
 
