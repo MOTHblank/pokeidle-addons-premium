@@ -4,7 +4,7 @@
 >
 > **Scope:** the formula and model provenance are updated for upstream v1.314.2. Native and Premium Hunt Atlas now model evolution-stage odds for ordinary hunts; auto-throw and restocking behavior are unchanged.
 
-**Reviewed:** 2026-10-18 (upstream v1.314.2)  
+**Capture formula checked against supplied wiki and shared upstream:** 2026-10-27 (original broader review: 2026-10-18).  
 **Source tiers:** **[WIKI]** owner-supplied current rules; **[UPSTREAM]** inspected client/shared mirror in [MOTHblank/pokeidle-upstream](https://github.com/MOTHblank/pokeidle-upstream); **[ADDON]** present implementation in pokeidle-addons; **[DERIVED]** arithmetic/engineering inference with assumptions; **[UNVERIFIED]** needs deployed server or observed, authorized game messages.  
 **Important:** this upstream mirror does **not** contain the full authoritative server simulation. Functions referenced by wiki/client such as the ordinary server `chanceCaptura` are not available in the checked files; a client-side formula is not proof that every live server path currently applies it.
 
@@ -32,7 +32,7 @@ p_raw      = 0.0075 × ballEfficiency / fator × (1.4 − currentHP / maxHP)
 p_final    = clamp(p_raw after applicable bonuses, 0.003, 0.10)
 ```
 
-**Legendary and Mythical special encounters** keep their separate capture contracts; non-hunt species can retain the earlier economic-rarity factor `1 + (log10(max(100,price))-1)^3/17`. Do not substitute specimen sale value, NPC price, or hunt level for the evolutionary stage in ordinary hunts. The model is a client/shared-source forecast until confirmed against live accepted server throws.
+**Legendary and Mythical special encounters** keep their separate capture contracts; non-hunt species can retain the earlier economic-rarity factor `1 + (log10(max(100,price))-1)^3/17`. Do not substitute specimen sale value, NPC price, or hunt level for the evolutionary stage in ordinary hunts. The model is supported by the game's shared capture-stage module and the supplied current wiki (which describes the same server calculation); exact deployed-server bonus handling remains unverified via accepted live throws.
 
 **Source:** `shared/captura-degrau.mjs`, `shared/teto-captura.mjs`, `shared/evolucoes-ramificadas.mjs`; the last is essential for Eevee, regional branches, and other non-linear evolution chains. The latest native and userscript models construct their stage table once from the public catalogs.
 
@@ -141,19 +141,19 @@ expectedCapturesPer1000Throws = 1000 * p
 
 This is **statistical cost at stationary conditions**, not a guarantee, and excludes fighting, potions, revives, restock travel/delay and shiny scarcity. If throws fail to get accepted and **no ball is consumed**, they are not part of the denominator. Use measured **accepted** ball consumption when possible.
 
-**[DERIVED] Cheapest-species example, from wiki base values (no boosts):**
+**[DERIVED] First of a three-stage evolution chain (cap 20), from the current stage-based ordinary-hunt formula at zero HP (no boosts):**
 
 | Ball | Coins per throw | Catch chance | Mean accepted balls/success | Expected Coins per success |
 | --- | ---: | ---: | ---: | ---: |
-| Poké | 5 | 0.9917% | ~100.8 | ~504 |
-| Great | 20 | 1.9833% | ~50.4 | ~1,008 |
-| Super | 50 | 2.9750% | ~33.6 | ~1,681 |
-| Ultra | 130 | 3.9667% | ~25.2 | ~3,277 |
-| Beast | **Diamonds** | 7.9333% | ~12.6 | **No Coin cost assigned** |
+| Poké | 5 | 0.366% | ~273.0 | ~1,365 |
+| Great | 20 | 0.732% | ~136.5 | ~2,730 |
+| Super | 50 | 1.099% | ~91.0 | ~4,551 |
+| Ultra | 130 | 1.465% | ~68.3 | ~8,874 |
+| Beast | **Diamonds** | 2.930% | ~34.1 | **No Coin cost assigned** |
 
 **Interpretation:** more expensive balls generally reduce bodies/throw attempts per captured Pokémon but are not cheapest in Coins per success. For capture scarcity or time-limited targets, throughput can dominate Coins efficiency. It is misleading to say “Ultra is always best” or “Poké is always best” without the player's objective.
 
-**Capture per unit time** also depends on corpse throughput. If the user's 600 kills/hour all offer an accepted Poké Ball throw, the simplest easiest-species example predicts only ~5.95 captures/h; Great ~11.9, Ultra ~23.8. These are math illustrations, **not guaranteed live rates**.
+**Capture per unit time** also depends on corpse throughput. If a first-stage hunt yields 600 killed targets/hour and all offer an accepted throw, that implies about **2.20 captures/h** with Poké, **4.39/h** with Great, or **8.79/h** with Ultra; Beast would give about **17.58/h**, excluding travel/stock limits. These are math illustrations, **not guaranteed live rates**.
 
 **Do not price a captured specimen as a typical eligible RMT listing.** Each capture creates a distinct draw of potency/quality/IV/shiny; N/market eligibility cannot be pre-known. At most, estimate *NPC resale* with a distribution of quality and captured level, while keeping individual high-value outcomes distinct.
 
@@ -358,7 +358,7 @@ A game account can have **native healing active, Auto Catch+ capture off, and ad
 
 ## 13. Testing / validation checklist for implementation
 
-1. Formula reference `precoNpc=100` (corpse HP=0) yields **0.9917% / 1.9833% / 2.975% / 3.9667% / 7.9333%** pre-boost.
+1. **Ordinary hunt** at corpse HP=0: evolutionary cap **20** yields approximately **0.366% / 0.732% / 1.099% / 1.465% / 2.930%** for Poké / Great / Super / Ultra / Beast. Evolutionary cap **40** yields **1.17% Ultra / 2.35% Beast**; cap **100** yields **0.94% Ultra / 1.88% Beast**. No species price or wild hunt level belongs in this ordinary-hunt formula.
 2. The 10% cap can cause **Beast+Capture Boost** to be less than exactly twice its pre-boost effective probability.
 3. Separate **shiny rolled**, **capture succeeded**, and **shiny caught**. A failed shiny roll still counts as seen, not captured.
 4. For confirmed successful and failed `bola` events, use actual ball consumption; exclude clicks rejected by server from accepted-attempt statistics.
