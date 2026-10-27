@@ -10,11 +10,21 @@ const start = source.indexOf('    // TOP CATCH AUTO BEGIN.');
 const end = source.indexOf('    // TOP CATCH AUTO END.', start);
 assert.ok(start >= 0 && end > start, 'Top Catch code block exists');
 const code = source.slice(start, end);
+// Exercise the actual Atlas capture formula (not a separate test estimate).
+const wikiStart = source.indexOf('    function captureWikiChance(');
+const wikiEnd = source.indexOf('    function captureBallCatalog(', wikiStart);
+const rarityStart = source.indexOf('    function captureRarityForSpecies(');
+const rarityEnd = source.indexOf('    function captureHuntChance(', rarityStart);
+assert.ok(wikiStart >= 0 && wikiEnd > wikiStart &&
+    rarityStart >= 0 && rarityEnd > rarityStart);
+const chanceModel = source.slice(wikiStart, wikiEnd) +
+    source.slice(rarityStart, rarityEnd);
 
 function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00:00Z')}) {
     const dom = {keys:null, textContent:''};
     const sent=[];
-    const control={autoTravel:true, fastTimers:new Map(), nextTimer:1};
+    const control={autoTravel:true, fastTimers:new Map(), nextTimer:1,
+        ballRates:{4:4,5:8}, usedBalls:[], catalogRequests:0};
     const state = {
         pokedexAuto: {active:false, mode:'idle', caught:new Set(), receipts:new Set(),
             targetSlug:null, lastTravelAt:0, week:null, accountKey:'profile', serverSynced:false},
@@ -25,6 +35,8 @@ function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00
             {slug:'multi', nivel:8, especies:[{pokeId:2},{pokeId:3}]}
         ],
         currentHuntSlug:'bulbasaur', farmingLedger:{slots:new Map()}, pendingTravel:null,
+        filters:{captureBall:'ultra'}, captureStageCaps:new Map(),
+        captureRarities:new Map(), combatCatalogStatus:'ready',
         huntScene:{noCentro:false,casaDentro:null,bossArena:null,mistico:false},
         huntSwitchGate:{combatUntil:0,entryUntil:0,serverOffset:0,
             wave:0,combatWave:0,lastAttackAt:0},
@@ -45,6 +57,15 @@ function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00
         qa:(selector,root)=>selector==='.tc-card' && root===dom
             ? dom.keys.map(key=>({getAttribute:name=>name==='data-chave'?key:null})) : [],
         outlandNormalizeSpeciesId:id=>id,
+        captureInfoForBall:id=>{
+            control.usedBalls.push(id);
+            return {efficiency:control.ballRates[id]};
+        },
+        ensureCombatCatalog:()=>{
+            control.catalogRequests++;
+            if(state.combatCatalogStatus==='idle')
+                state.combatCatalogStatus='loading';
+        },
         farmingReceiptIdentity:event=>event.receiptId || null,
         queueRender:()=>{},
         socketReady:()=>true,
@@ -56,10 +77,11 @@ function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00
             if(control.autoTravel)state.currentHuntSlug=hunt.slug;
             return true;}
     };
-    const api=vm.runInNewContext(code+'\n({dexAutoWeek,dexAutoSyncWeek,dexAutoSetAccount,'+
+    const api=vm.runInNewContext(chanceModel+code+'\n({dexAutoWeek,dexAutoSyncWeek,dexAutoSetAccount,'+
         'dexAutoReconcileTopCatch,dexAutoObserveState,dexAutoNextHunt,'+
         'recordPokedexAutoCatch,startPokedexAuto,stopPokedexAuto,dexAutoSyncFromDom,'+
         'dexAutoObserveGate,dexAutoOnBattleEvent,dexAutoSwitchGate,'+
+        'dexAutoCatchChance,dexAutoNextHunt,'+
         'stepPokedexAuto})',context);
     return {api,state,storage,clock,dom,control,sent};
 }
@@ -74,6 +96,99 @@ function syncSettledGrid(h) {
 function capture(id, speciesId) {
     return {k:'capturado',pokemon:{id, speciesId}};
 }
+
+test('Top Catch chooses the higher Atlas catch rate, even at level 280 vs 100',()=>{
+    const h=harness();
+    h.state.hunts=[
+        {slug:'venusaur',nivel:100,especies:[{pokeId:3}]},
+        {slug:'bellsprout',nivel:280,especies:[{pokeId:69}]}
+    ];
+    // Three-stage initial form vs final form: the capture ceiling changes
+    // the per-ball odds much more than hunt level does.
+    h.state.captureStageCaps.set(3,100);
+    h.state.captureStageCaps.set(69,20);
+    h.state.captureRarities.set(3,12000);
+    h.state.captureRarities.set(69,40000);
+    const ultra={efficiency:4};
+    const lower=h.api.dexAutoCatchChance(h.state.hunts[0],ultra);
+    const higher=h.api.dexAutoCatchChance(h.state.hunts[1],ultra);
+    assert.ok(higher>lower, 'evolution stage makes level 280 easier');
+    h.control.autoTravel=false; // Do not simulate arrival until explicitly confirmed.
+    h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{}}});
+    h.api.startPokedexAuto();
+    assert.equal(h.state.pokedexAuto.targetSlug,'bellsprout');
+    assert.equal(h.api.recordPokedexAutoCatch(capture(301,69),false),false,
+        'only captures from the hunt actually occupied count');
+    h.state.currentHuntSlug='bellsprout';
+    assert.equal(h.api.recordPokedexAutoCatch(capture(302,69),false),true);
+    assert.equal(h.state.pokedexAuto.targetSlug,'venusaur');
+});
+
+test('unknown catch rates go last; equal probabilities use level and slug',()=>{
+    const h=harness();
+    h.state.hunts=[
+        {slug:'unknown',nivel:1,especies:[{pokeId:7777}]},
+        {slug:'known',nivel:280,especies:[{pokeId:69}]}
+    ];
+    h.state.captureStageCaps.set(69,20);
+    h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{}}});
+    h.api.startPokedexAuto();
+    assert.equal(h.state.pokedexAuto.targetSlug,'known');
+    h.state.currentHuntSlug='known';
+    assert.equal(h.api.recordPokedexAutoCatch(capture(400,69),false),true);
+    assert.equal(h.state.pokedexAuto.targetSlug,'unknown',
+        'unmodeled species are still attempted after known ones');
+    h.state.hunts=[
+        {slug:'zeta',nivel:7,especies:[{pokeId:69}]},
+        {slug:'alpha',nivel:7,especies:[{pokeId:25}]},
+        {slug:'beta',nivel:9,especies:[{pokeId:10}]}
+    ];
+    for(const id of [69,25,10])h.state.captureStageCaps.set(id,20);
+    h.state.pokedexAuto.caught.clear();
+    assert.equal(h.api.dexAutoNextHunt?.(h.state.hunts,new Set(),()=>true)?.slug,
+        'alpha');
+});
+
+test('Top Catch uses Atlas-selected Ultra or Beast, not an assumed ball',()=>{
+    const h=harness();
+    h.state.captureStageCaps.set(69,20);
+    h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{}}});
+    h.state.filters.captureBall='beast';
+    h.api.startPokedexAuto();
+    assert.ok(h.control.usedBalls.includes(5));
+    h.state.filters.captureBall='ultra';
+    h.state.pokedexAuto.targetSlug=null;
+    h.api.stepPokedexAuto();
+    assert.ok(h.control.usedBalls.includes(4));
+});
+
+test('Top Catch waits for capture catalog, then chooses by chance',()=>{
+    const h=harness();
+    h.state.hunts=[
+        {slug:'hard',nivel:100,especies:[{pokeId:3}]},
+        {slug:'easy',nivel:280,especies:[{pokeId:69}]}
+    ];
+    h.state.combatCatalogStatus='idle';
+    h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{}}});
+    h.api.startPokedexAuto();
+    assert.equal(h.state.pokedexAuto.mode,'waiting');
+    assert.equal(h.state.pokedexAuto.targetSlug,null);
+    assert.equal(h.control.catalogRequests,1);
+    h.state.captureStageCaps.set(3,100);
+    h.state.captureStageCaps.set(69,20);
+    h.state.combatCatalogStatus='ready';
+    h.api.stepPokedexAuto();
+    assert.equal(h.state.pokedexAuto.targetSlug,'easy');
+    assert.equal(h.state.currentHuntSlug,'easy');
+});
+
+test('unavailable catalog falls back to stable level ordering, without stalling',()=>{
+    const h=harness();
+    h.state.combatCatalogStatus='error';
+    h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{}}});
+    h.api.startPokedexAuto();
+    assert.equal(h.state.pokedexAuto.targetSlug,'bulbasaur');
+});
 
 test('Sunday 00:00 Brasília is the weekly boundary, not UTC midnight',()=>{
     const {api}=harness();

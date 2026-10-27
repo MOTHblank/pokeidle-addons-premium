@@ -6,7 +6,7 @@
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
 // @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
-// @version      1.9.32
+// @version      1.9.33
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -20,7 +20,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.32');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.33');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -354,7 +354,7 @@
             'dex.stop': 'Stop',
             'dex.idle': 'Inactive · {count} species logged this week.',
             'dex.stopped': 'Stopped · {count} species logged this week.',
-            'dex.waiting': 'Waiting for the game connection and hunt catalog…',
+            'dex.waiting': 'Waiting for the game connection, hunts and capture estimates…',
             'dex.needsSync': 'Open Pokédex → Top Catch once to sync this week’s captured species before hunting.',
             'dex.switching': 'Waiting for the first safe hunt-switch opening…',
             'dex.recovering': 'Giving up and returning to the Pokémon Center…',
@@ -362,7 +362,7 @@
             'dex.hunting': 'Level {level} · {hunt} · {count} caught this week',
             'dex.traveling': 'Traveling to level {level}: {hunt} · {count} caught this week',
             'dex.done': 'All accessible hunt species completed · {count} caught.',
-            'dex.hint': 'Ordinary single-species hunts. Open Pokédex → Top Catch once per week. Switching uses the first combat opening; if trapped, Give Up sends the team to the Center and may cost trainer XP. Auto Catch+ throws balls.',
+            'dex.hint': 'Ordinary single-species hunts, easiest estimated catches first using the ball selected in Atlas (Ultra/Beast). Open Pokédex → Top Catch once per week. Switching uses the first combat opening; if trapped, Give Up sends the team to the Center and may cost trainer XP. Auto Catch+ throws balls.',
             'filter.clear': 'Clear filters',
             'filter.defaults': 'Default filters',
             'filter.changedOne': '1 filter changed from default',
@@ -733,7 +733,7 @@
             'dex.stop': 'Parar',
             'dex.idle': 'Inativo · {count} espécies registradas nesta semana.',
             'dex.stopped': 'Parado · {count} espécies registradas nesta semana.',
-            'dex.waiting': 'Aguardando conexão com o jogo e lista de hunts…',
+            'dex.waiting': 'Aguardando conexão, hunts e estimativas de captura…',
             'dex.needsSync': 'Abra Pokédex → Top Catch uma vez para sincronizar as capturas desta semana antes de caçar.',
             'dex.switching': 'Aguardando a primeira abertura para trocar de hunt…',
             'dex.recovering': 'Desistindo da hunt e indo ao Centro Pokémon…',
@@ -741,7 +741,7 @@
             'dex.hunting': 'Nível {level} · {hunt} · {count} capturados nesta semana',
             'dex.traveling': 'Indo para nível {level}: {hunt} · {count} capturados nesta semana',
             'dex.done': 'Espécies das hunts acessíveis concluídas · {count} capturadas.',
-            'dex.hint': 'Hunts comuns de uma espécie. Abra Pokédex → Top Catch uma vez na semana. A troca aproveita a primeira abertura; se a luta impedir a saída, Desistir envia a equipe ao Centro e pode custar XP de treinador. Auto Catch+ arremessa bolas.',
+            'dex.hint': 'Hunts comuns de uma espécie, priorizando as maiores chances estimadas de captura com a bola selecionada no Atlas (Ultra/Beast). Abra Pokédex → Top Catch uma vez na semana. A troca aproveita a primeira abertura; se a luta impedir a saída, Desistir envia a equipe ao Centro e pode custar XP de treinador. Auto Catch+ arremessa bolas.',
             'filter.clear': 'Limpar filtros',
             'filter.defaults': 'Filtros padrão',
             'filter.changedOne': '1 filtro alterado',
@@ -7373,6 +7373,9 @@
             refreshCaptureRarities();
             state.combatCatalogStatus = 'ready';
             state.combatCatalogError = null;
+            // A waiting Top Catch route can now choose the true easiest target
+            // immediately instead of waiting for the 3s housekeeping poll.
+            if (state.pokedexAuto.active) stepPokedexAuto();
             state.combatRevision++;
             state.modelRevision++;
             state.combatProfileCache = null;
@@ -7380,6 +7383,8 @@
         })().catch(error => {
             state.combatCatalogStatus = 'error';
             state.combatCatalogError = String(error?.message || error);
+            // Keep Top Catch usable via its stable unknown-rate fallback.
+            if (state.pokedexAuto.active) stepPokedexAuto();
             console.warn('[PokéIdle Hunt Atlas] combat catalog failed', error);
         }).finally(() => {
             state.combatCatalogPromise = null;
@@ -10423,17 +10428,39 @@
         dexAutoReconcileTopCatch(packet);
     }
 
+    // Prioritize the chance of catching ONE corpse with the ball selected in
+    // Atlas, not hunt level or XP/hour. Reuse the same 0-HP stage/rarity model
+    // as the capture cards, with no assumed event or premium boosts.
+    function dexAutoCatchChance(hunt, ball) {
+        const speciesId = dexAutoSpecies(hunt);
+        if (speciesId === null || !ball || !(ball.efficiency > 0))
+            return null;
+        return captureWikiChance(
+            captureRarityForSpecies(state.captureRarities, speciesId),
+            ball.efficiency, 0, speciesId);
+    }
+
     function dexAutoNextHunt(hunts, caught, allowed) {
+        const ball = captureInfoForBall(state.filters.captureBall === 'beast' ? 5 : 4);
         const candidates = (Array.isArray(hunts) ? hunts : [])
             .filter(hunt => {
-                const species = dexAutoSpecies(hunt);
-                const key = dexAutoKey(species);
+                const key = dexAutoKey(dexAutoSpecies(hunt));
                 return Number(hunt?.nivel) > 0 && key !== null &&
                     allowed(hunt) && !caught.has(key);
-            });
-        candidates.sort((a, b) => Number(a.nivel) - Number(b.nivel) ||
-            String(a.slug).localeCompare(String(b.slug)));
-        return candidates[0] || null;
+            })
+            .map(hunt => ({hunt, chance:dexAutoCatchChance(hunt, ball)}));
+        candidates.sort((a, b) => {
+            const aKnown = Number.isFinite(a.chance);
+            const bKnown = Number.isFinite(b.chance);
+            // Never pretend an unknown catch chance is 0% or 100%.
+            if (aKnown !== bKnown) return aKnown ? -1 : 1;
+            if (aKnown && a.chance !== b.chance)
+                return b.chance - a.chance;
+            // Equal rates (or equally unknown rates) remain deterministic.
+            return Number(a.hunt.nivel) - Number(b.hunt.nivel) ||
+                String(a.hunt.slug).localeCompare(String(b.hunt.slug));
+        });
+        return candidates[0]?.hunt || null;
     }
 
     // Upstream has 3s combat and 10s post-entry gates in server UNIX ms.
@@ -10609,6 +10636,15 @@
             return;
         }
         if (!socketReady() || !state.hunts.length) {
+            dexAutoStopSwitchWatch();
+            dexAutoSetMode('waiting');
+            return;
+        }
+        // Do not lock onto a low-level target while the evolution-stage
+        // capture reference is still being loaded asynchronously.
+        if (state.combatCatalogStatus === 'idle' ||
+            state.combatCatalogStatus === 'loading') {
+            ensureCombatCatalog();
             dexAutoStopSwitchWatch();
             dexAutoSetMode('waiting');
             return;
@@ -15179,7 +15215,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.32 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.33 experimental loaded'
         );
     }
 
