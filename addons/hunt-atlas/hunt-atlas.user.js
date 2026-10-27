@@ -6,7 +6,7 @@
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
 // @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
-// @version      1.9.33
+// @version      1.9.34
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -20,7 +20,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.33');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.34');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -10428,16 +10428,15 @@
         dexAutoReconcileTopCatch(packet);
     }
 
-    // Prioritize the chance of catching ONE corpse with the ball selected in
-    // Atlas, not hunt level or XP/hour. Reuse the same 0-HP stage/rarity model
-    // as the capture cards, with no assumed event or premium boosts.
+    // Ordinary-hunt catch odds depend on evolution stage, ball efficiency,
+    // and HP (zero for a fallen target), never NPC price or hunt level.
+    // Keep the Atlas capture model but deliberately disable its price-based
+    // special-encounter fallback when a species' stage is unavailable.
     function dexAutoCatchChance(hunt, ball) {
         const speciesId = dexAutoSpecies(hunt);
         if (speciesId === null || !ball || !(ball.efficiency > 0))
             return null;
-        return captureWikiChance(
-            captureRarityForSpecies(state.captureRarities, speciesId),
-            ball.efficiency, 0, speciesId);
+        return captureWikiChance(null, ball.efficiency, 0, speciesId);
     }
 
     function dexAutoNextHunt(hunts, caught, allowed) {
@@ -15215,7 +15214,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.33 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.34 experimental loaded'
         );
     }
 
