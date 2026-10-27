@@ -149,6 +149,48 @@ test('unknown catch rates go last; equal probabilities use level and slug',()=>{
         'alpha');
 });
 
+test('ordinary-hunt catch odds depend only on evolutionary stage, not market rarity',()=>{
+    const h=harness();
+    const caps=[20,40,100];
+    const expectedBeast=[.0293,.0235,.0188];
+    const expectedUltra=[.0146,.0117,.0094];
+    for(const [i,cap] of caps.entries()){
+        const id=200+i;
+        const hunt={slug:'test-'+id,nivel:i===0?280:100,
+            especies:[{pokeId:id}]};
+        h.state.captureStageCaps.set(id,cap);
+        h.state.captureRarities.set(id,100000 + 100000*i);
+        const beast=h.api.dexAutoCatchChance(hunt,{efficiency:8});
+        const ultra=h.api.dexAutoCatchChance(hunt,{efficiency:4});
+        assert.ok(Math.abs(beast-expectedBeast[i])<0.00006,
+            'Beast should match upstream for cap '+cap);
+        assert.ok(Math.abs(ultra-expectedUltra[i])<0.00006,
+            'Ultra should match upstream for cap '+cap);
+        assert.ok(Math.abs(beast-2*ultra)<1e-12);
+        h.state.captureRarities.set(id,100);
+        assert.equal(h.api.dexAutoCatchChance(hunt,{efficiency:8}),beast,
+            'old NPC price rarity must not alter stage-based rates');
+    }
+});
+
+test('missing evolution stage never uses the retired price-based odds',()=>{
+    const h=harness();
+    const cheapUnknown={slug:'cheap-unknown',nivel:1,
+        especies:[{pokeId:9997}]};
+    const knownFinal={slug:'known-final',nivel:280,
+        especies:[{pokeId:3}]};
+    h.state.hunts=[cheapUnknown,knownFinal];
+    h.state.captureRarities.set(9997,100);
+    h.state.captureRarities.set(3,500000);
+    h.state.captureStageCaps.set(3,100);
+    assert.equal(h.api.dexAutoCatchChance(cheapUnknown,{efficiency:8}),null,
+        'unmodeled ordinary species may not use their former price odds');
+    h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{}}});
+    h.api.startPokedexAuto();
+    assert.equal(h.state.pokedexAuto.targetSlug,'known-final',
+        'known final stage ranks above unmodeled low-level species');
+});
+
 test('Top Catch uses Atlas-selected Ultra or Beast, not an assumed ball',()=>{
     const h=harness();
     h.state.captureStageCaps.set(69,20);
