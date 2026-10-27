@@ -113,6 +113,7 @@ test('Top Catch chooses the higher Atlas catch rate, even at level 280 vs 100',(
     const lower=h.api.dexAutoCatchChance(h.state.hunts[0],ultra);
     const higher=h.api.dexAutoCatchChance(h.state.hunts[1],ultra);
     assert.ok(higher>lower, 'evolution stage makes level 280 easier');
+    h.control.autoTravel=false; // Do not simulate arrival until explicitly confirmed.
     h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{}}});
     h.api.startPokedexAuto();
     assert.equal(h.state.pokedexAuto.targetSlug,'bellsprout');
