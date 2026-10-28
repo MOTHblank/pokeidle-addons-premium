@@ -20,7 +20,8 @@
                 id: String(rule?.id || ('fixed-' + index + '-' + itemId)),
                 itemId,
                 currency: rule?.currency === 'orb' ? 'orb' : 'gold',
-                buyEnabled: rule?.buyEnabled !== false && Number(rule?.buyMax) > 0,
+                // Old saved rules without an explicit Buy opt-in must remain off.
+                buyEnabled: rule?.buyEnabled === true && Number(rule?.buyMax) > 0,
                 buyMax: Math.max(0, Math.floor(Number(rule?.buyMax) || 0)),
                 ...sanitizeRuleCaps(rule),
             };

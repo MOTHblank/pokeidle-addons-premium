@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.6.19
+// @version      0.6.20
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/moth-watch/moth-watch.user.js
@@ -15,7 +15,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.19');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.20');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -200,6 +200,16 @@
     };
 
     let config = loadConfig();
+    let lastSavedConfigText;
+    let configSaveFailed = false;
+    // Each tab has its own in-memory config; browser storage is shared.
+    // Keep the displayed switches in step when another tab edits a rule.
+    window.addEventListener('storage', event => {
+        if (event.key !== CONFIG_KEY && event.key !== null) return;
+        if (!syncConfigFromStorage()) return;
+        if (!hasAnyBuyingRules()) state.ruleItemKeys.clear();
+        queueRender();
+    });
     // Do not load an order journal before the game identifies the account.
 
     function q(selector, root) {
@@ -803,7 +813,8 @@
                 id: String(rule?.id || ('fixed-' + index + '-' + itemId)),
                 itemId,
                 currency: rule?.currency === 'orb' ? 'orb' : 'gold',
-                buyEnabled: rule?.buyEnabled !== false && Number(rule?.buyMax) > 0,
+                // Old saved rules without an explicit Buy opt-in must remain off.
+                buyEnabled: rule?.buyEnabled === true && Number(rule?.buyMax) > 0,
                 buyMax: Math.max(0, Math.floor(Number(rule?.buyMax) || 0)),
                 ...sanitizeRuleCaps(rule),
             };
@@ -1173,7 +1184,7 @@
     }
 
     function currentRuleMatches(rule, candidate, price) {
-        if (!rule || rule.currency !== candidate.currency || price > rule.buyMax) return false;
+        if (!rule?.buyEnabled || rule.currency !== candidate.currency || price > rule.buyMax) return false;
         if (rule.type === 'fixed') return candidate.kind === 'item' && candidate.itemId === rule.itemId;
         if (rule.type === 'any') return candidate.kind === 'item';
         return candidate.kind === 'pokemon' &&
@@ -1200,12 +1211,7 @@
     }
     // END MOTHWATCH ORDERS GENERATED
 
-    function loadConfig() {
-        let saved = {};
-        try {
-            saved = JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}') || {};
-        } catch {}
-
+    function normalizeConfig(saved) {
         // Retired configurations never re-enable removed automation.
         const loaded = { ...DEFAULTS };
         for (const key of Object.keys(DEFAULTS)) {
@@ -1217,8 +1223,46 @@
         return loaded;
     }
 
+    function loadConfig() {
+        let saved = {};
+        try {
+            saved = JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}') || {};
+        } catch {}
+        return normalizeConfig(saved);
+    }
+
+    // Reload from durable settings rather than trusting this tab's old rules.
+    // An unreadable or corrupt stored configuration never authorizes an order;
+    // a deleted configuration loads inactive defaults.
+    function syncConfigFromStorage() {
+        if (configSaveFailed) return false;
+        let raw;
+        try { raw = localStorage.getItem(CONFIG_KEY); }
+        catch { return false; }
+        if (raw === lastSavedConfigText) return true;
+        let saved = {};
+        if (raw !== null) {
+            try { saved = JSON.parse(raw); } catch { return false; }
+            if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return false;
+        }
+        config = normalizeConfig(saved);
+        lastSavedConfigText = raw;
+        return true;
+    }
+
     function saveConfig() {
-        localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+        try {
+            const raw = JSON.stringify(config);
+            localStorage.setItem(CONFIG_KEY, raw);
+            lastSavedConfigText = raw;
+            configSaveFailed = false;
+            return true;
+        } catch {
+            // If a switch cannot be persisted, do not silently resume buying.
+            configSaveFailed = true;
+            console.warn('Moth Watch: settings save failed; automatic buying stopped.');
+            return false;
+        }
     }
 
     function emptyBaseline() {
@@ -3139,6 +3183,9 @@
     }
 
     function tryBuy(candidate, manual, requestedQuantity = null, fixedRule = false, snatchRelease = false) {
+        // Final dispatch gate: changes made in another tab must take effect
+        // before a market.comprar packet is sent, not merely at the next scan.
+        if (!syncConfigFromStorage()) return false;
         // Rule eligibility is revalidated against the latest saved settings.
         if (config.purchasesPaused ||
             !(freshQuote(candidate, !!manual,
@@ -3693,6 +3740,9 @@
     }
 
     function runMarketAutomation(justSettled = false) {
+        // Another tab can disable buying while this tab is still running.
+        // Never plan automatic orders against an out-of-date settings snapshot.
+        if (!syncConfigFromStorage()) { state.ruleItemKeys.clear(); return; }
         if (!hasAnyBuyingRules() || gameIsLoading()) {
             state.ruleItemKeys.clear();
             return;
@@ -4088,6 +4138,8 @@
 
     function snatchTick() {
         state.snatchWake = null;
+        // Snatch targets are long-lived: update rules before evaluating them.
+        if (!syncConfigFromStorage()) { snatchSchedule(1000); return; }
         const now = Date.now();
         const server = serverNow();
         if (!state.orderJournal?.accountKey || !config.enabled || config.purchasesPaused ||

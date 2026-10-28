@@ -314,7 +314,7 @@
     }
 
     function currentRuleMatches(rule, candidate, price) {
-        if (!rule || rule.currency !== candidate.currency || price > rule.buyMax) return false;
+        if (!rule?.buyEnabled || rule.currency !== candidate.currency || price > rule.buyMax) return false;
         if (rule.type === 'fixed') return candidate.kind === 'item' && candidate.itemId === rule.itemId;
         if (rule.type === 'any') return candidate.kind === 'item';
         return candidate.kind === 'pokemon' &&
