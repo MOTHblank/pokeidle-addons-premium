@@ -45,6 +45,9 @@
         ).map(o => ({
             listingId: o.listingId, currency: o.currency, sentAt: o.sentAt,
             qty: o.qty, spend: o.spend, ruleId: String(o.ruleId || ''),
+            ruleType: ['fixed', 'any', 'pokemon'].includes(o.ruleType) ? o.ruleType : '',
+            source: ['rule', 'manual', 'rule-snatch', 'manual-snatch'].includes(o.source)
+                ? o.source : '',
             kind: String(o.kind || ''), sessionId: String(o.sessionId || ''),
             day: String(o.day || ''),
             status: ['prepared', 'submitted'].includes(o.status) ? 'unknown' : o.status,

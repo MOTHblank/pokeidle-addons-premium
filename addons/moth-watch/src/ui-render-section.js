@@ -201,6 +201,9 @@
                     configField('Pause all purchases (kill switch)', 'purchasesPaused', 'checkbox') +
                     '</div><p class="moth-mw-rule-hint">' + escapeHtml(tr('Includes reserved unverified orders. 0 means unlimited; per-purchase caps are separate.')) +
                     '</p></section>' +
+                    '<p class="moth-mw-rule-hint">' +
+                    escapeHtml(tr('An enabled Any item rule can buy an item even when its specific item rule is OFF. Moth Controller native buying has separate settings.')) +
+                    '</p>' +
                     fixedRulesHtml() + categoryRulesHtml('any') + categoryRulesHtml('pokemon') +
                     '<details class="moth-mw-advanced"><summary>' + escapeHtml(tr('Advanced monitoring & references')) +
                     '</summary><div class="moth-mw-advanced-body"><p class="moth-mw-advanced-note">' +
@@ -217,6 +220,9 @@
                     ' <button type="button" class="moth-mw-btn" data-moth-goto="pricing">' +
                     escapeHtml(tr('Open Pokémon values')) + '</button></p>' +
                     '<div class="moth-mw-reference-tools" id="moth-mw-reference-tools"></div>' +
+                    '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Saved purchase authorizations')) + '</h4><span>' +
+                    escapeHtml(tr('Account-local history of rule and manual purchase requests.')) + '</span></div>' +
+                    '<div class="moth-mw-log" id="moth-mw-order-audit"></div>' +
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Recent activity')) + '</h4><span>' +
                     escapeHtml(tr('Purchase attempts, confirmations, and errors.')) + '</span></div>' +
                     '<div class="moth-mw-log" id="moth-mw-activity-log"></div>' +
@@ -301,6 +307,31 @@
                 '<button type="button" class="moth-mw-btn" id="moth-mw-refresh-baseline">' + escapeHtml(tr('Refresh saved fallback')) + '</button>' +
                 '<button type="button" class="moth-mw-btn" id="moth-mw-export-baseline">' + escapeHtml(tr('Copy reference data')) + '</button>';
             if (refs && refs.innerHTML !== html) refs.innerHTML = html;
+            const audit = q('#moth-mw-order-audit', content);
+            if (audit) {
+                // The durable journal also covers purchases from older script
+                // versions. Missing source labels remain explicitly unknown.
+                const recentOrders = (state.orderJournal?.orders || [])
+                    .filter(order => order.status !== 'prepared').slice(-30).reverse();
+                const rows = recentOrders.map(order => {
+                    const source = order.source === 'manual-snatch' ? tr('Manual Snatch') :
+                        order.source === 'manual' ? tr('Direct purchase') :
+                        order.ruleId ? tr('Rule') + ' ' +
+                            (order.ruleType ? order.ruleType + ':' : '') + order.ruleId :
+                        tr('Unattributed purchase request');
+                    return '<div>' +
+                        escapeHtml(new Date(order.sentAt).toLocaleString(currentLocale())) +
+                        ' · #' + escapeHtml(String(order.listingId)) + ' · ' +
+                        escapeHtml(source) + ' · ' +
+                        escapeHtml(String(order.qty)) + ' × ' +
+                        escapeHtml(String(Math.floor(order.spend / order.qty))) + ' ' +
+                        escapeHtml(tr(order.currency === 'orb' ? 'Gems' : 'Coins')) +
+                        ' · ' + escapeHtml(tr(order.status)) + '</div>';
+                });
+                const html = rows.length ? rows.join('') :
+                    '<div>' + escapeHtml(tr('No saved purchase requests for this account.')) + '</div>';
+                if (audit.innerHTML !== html) audit.innerHTML = html;
+            }
             const log = q('#moth-mw-activity-log', content);
             const logHtml = state.buyLog.length ? state.buyLog.map(row =>
                 '<div>' + new Date(row.at).toLocaleTimeString(currentLocale()) + ' · ' + escapeHtml(translateLog(row.text)) + '</div>').join('') :

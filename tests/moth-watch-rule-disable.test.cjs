@@ -154,3 +154,16 @@ test('generated buyer and Snatch sections match the maintained sources', () => {
         assert.equal(fromBundle.trim(), fromSource.trim(), name);
     }
 });
+
+test('order journal shows authorization provenance and script defines its own logger', () => {
+    assert.match(script, /function addLog\(message\)/);
+    assert.match(script, /ruleType: rule\?\.type/);
+    assert.match(script, /source: snatchRelease \?/);
+    assert.match(script, /state\.buyLog\.unshift/);
+    assert.match(script, /moth-mw-order-audit/);
+    assert.match(script, /An enabled Any item rule can buy an item even when its specific item rule is OFF/);
+    const block = codeBetween(script,
+        '    // BEGIN MOTHWATCH UI_RENDER GENERATED\n',
+        '\n    // END MOTHWATCH UI_RENDER GENERATED');
+    assert.equal(block.trim(), fs.readFileSync(path.join(root, 'src', 'ui-render-section.js'), 'utf8').trim());
+});
