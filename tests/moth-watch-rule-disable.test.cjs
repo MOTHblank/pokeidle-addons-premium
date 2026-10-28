@@ -151,7 +151,7 @@ test('generated buyer and Snatch sections match the maintained sources', () => {
         const fromBundle = codeBetween(script,
             '    // BEGIN MOTHWATCH ' + name + ' GENERATED\n',
             '\n    // END MOTHWATCH ' + name + ' GENERATED');
-        assert.equal(fromBundle.trim(), fromSource.trim(), name);
+        assert.equal(fromBundle.slice(('    // BEGIN MOTHWATCH ' + name + ' GENERATED\n').length).trim(), fromSource.trim(), name);
     }
 });
 
@@ -165,5 +165,5 @@ test('order journal shows authorization provenance and script defines its own lo
     const block = codeBetween(script,
         '    // BEGIN MOTHWATCH UI_RENDER GENERATED\n',
         '\n    // END MOTHWATCH UI_RENDER GENERATED');
-    assert.equal(block.trim(), fs.readFileSync(path.join(root, 'src', 'ui-render-section.js'), 'utf8').trim());
+    assert.equal(block.slice('    // BEGIN MOTHWATCH UI_RENDER GENERATED\n'.length).trim(), fs.readFileSync(path.join(root, 'src', 'ui-render-section.js'), 'utf8').trim());
 });
