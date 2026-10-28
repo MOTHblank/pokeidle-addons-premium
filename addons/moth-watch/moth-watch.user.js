@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Moth Watch
 // @namespace    moth.pokeidle
-// @version      0.6.20
+// @version      0.6.21
 // @description  Community Market and guarded item, category-wide and Pokémon purchase rules.
 // @match        https://pokeidle.io/app*
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/moth-watch/moth-watch.user.js
@@ -15,7 +15,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.20');
+        document.documentElement?.setAttribute('data-moth-addon-version-market-bot', '0.6.21');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -210,6 +210,16 @@
         if (!hasAnyBuyingRules()) state.ruleItemKeys.clear();
         queueRender();
     });
+    // The Activity view and native bridge use this small, in-memory audit.
+    // This must be defined locally: after a market.comprar send, an undefined
+    // logger can throw and interrupt purchase bookkeeping.
+    function addLog(message) {
+        const value = String(message || '');
+        if (!value) return;
+        state.buyLog.unshift({ at: Date.now(), text: value });
+        if (state.buyLog.length > 100) state.buyLog.length = 100;
+        queueRender();
+    }
     // Do not load an order journal before the game identifies the account.
 
     function q(selector, root) {
@@ -696,6 +706,18 @@
         "Set a positive maximum buy price.": "Defina um preço máximo de compra maior que zero.",
         "Rule saved: {name}. Turn on rule-based buying to start.": "Regra salva: {name}. Ative a compra por regras para começar.",
         "Rule-based buying is on, but no Buy rules are active. Create or enable a rule first.": "A compra por regras está ativada, mas não há regras de compra ativas. Crie ou ative uma regra primeiro.",
+        "Saved purchase authorizations": "Autorizações de compra salvas",
+        "Account-local history of rule and manual purchase requests.": "Histórico desta conta de solicitações de compra manuais e por regras.",
+        "No saved purchase requests for this account.": "Nenhuma solicitação de compra salva para esta conta.",
+        "Unattributed purchase request": "Solicitação de compra sem origem identificada",
+        "Direct purchase": "Compra direta",
+        "Rule": "Regra",
+        "confirmed": "Confirmada",
+        "refused": "Recusada",
+        "unknown": "Não confirmada",
+        "submitted": "Enviada",
+        "Manual Snatch": "Arremate manual",
+        "An enabled Any item rule can buy an item even when its specific item rule is OFF. Moth Controller native buying has separate settings.": "Uma regra ativa de Qualquer item pode comprar um item mesmo com a regra específica dele DESLIGADA. As compras nativas do Moth Controller têm configurações separadas.",
         "Rule-based buying is on. No other purchase switches are required. Spending safeguards still apply.": "Compra por regras ativada. Nenhuma outra chave de compra é necessária. Os limites de segurança continuam valendo.",
         "Pause all purchases (kill switch)": "Pausar todas as compras (interruptor de emergência)",
         "Maximum Coins per session": "Máximo de moedas por sessão",
@@ -915,6 +937,9 @@
         ).map(o => ({
             listingId: o.listingId, currency: o.currency, sentAt: o.sentAt,
             qty: o.qty, spend: o.spend, ruleId: String(o.ruleId || ''),
+            ruleType: ['fixed', 'any', 'pokemon'].includes(o.ruleType) ? o.ruleType : '',
+            source: ['rule', 'manual', 'rule-snatch', 'manual-snatch'].includes(o.source)
+                ? o.source : '',
             kind: String(o.kind || ''), sessionId: String(o.sessionId || ''),
             day: String(o.day || ''),
             status: ['prepared', 'submitted'].includes(o.status) ? 'unknown' : o.status,
@@ -3250,6 +3275,10 @@
         const order = {
             listingId: candidate.listingId, currency: candidate.currency,
             sentAt: now, qty, spend, ruleId: rule?.id || '',
+            // Durable provenance: manual action, an automatic rule, or Snatch.
+            ruleType: rule?.type || '',
+            source: snatchRelease ? (manual ? 'manual-snatch' : 'rule-snatch') :
+                (manual ? 'manual' : 'rule'),
             kind: candidate.kind, sessionId: state.orderJournal.sessionId,
             day: orderDay(now), status: 'prepared'
         };
@@ -3302,7 +3331,9 @@
         saveOrderJournal();
         state.lastPurchaseOutcome = 'awaiting acknowledgement';
         addLog(
-            (fixedRule ? 'RULE BUY' : 'BUY') + ' · ' +
+            (manual ? (snatchRelease ? 'MANUAL SNATCH' : 'DIRECT BUY') :
+                'RULE BUY [' + rule.type + ':' + rule.id + ']' +
+                (snatchRelease ? ' SNATCH' : '')) + ' · ' +
             candidate.name + ' · ' + qty + ' × ' + num(unitPrice) + ' ' +
             (candidate.currency === 'orb' ? 'Gems' : 'Coins') +
             ' · offered ' + num(Number(candidate.qty) || 0) +
@@ -6805,6 +6836,9 @@
                     configField('Pause all purchases (kill switch)', 'purchasesPaused', 'checkbox') +
                     '</div><p class="moth-mw-rule-hint">' + escapeHtml(tr('Includes reserved unverified orders. 0 means unlimited; per-purchase caps are separate.')) +
                     '</p></section>' +
+                    '<p class="moth-mw-rule-hint">' +
+                    escapeHtml(tr('An enabled Any item rule can buy an item even when its specific item rule is OFF. Moth Controller native buying has separate settings.')) +
+                    '</p>' +
                     fixedRulesHtml() + categoryRulesHtml('any') + categoryRulesHtml('pokemon') +
                     '<details class="moth-mw-advanced"><summary>' + escapeHtml(tr('Advanced monitoring & references')) +
                     '</summary><div class="moth-mw-advanced-body"><p class="moth-mw-advanced-note">' +
@@ -6821,6 +6855,9 @@
                     ' <button type="button" class="moth-mw-btn" data-moth-goto="pricing">' +
                     escapeHtml(tr('Open Pokémon values')) + '</button></p>' +
                     '<div class="moth-mw-reference-tools" id="moth-mw-reference-tools"></div>' +
+                    '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Saved purchase authorizations')) + '</h4><span>' +
+                    escapeHtml(tr('Account-local history of rule and manual purchase requests.')) + '</span></div>' +
+                    '<div class="moth-mw-log" id="moth-mw-order-audit"></div>' +
                     '<div class="moth-mw-section-title"><h4>' + escapeHtml(tr('Recent activity')) + '</h4><span>' +
                     escapeHtml(tr('Purchase attempts, confirmations, and errors.')) + '</span></div>' +
                     '<div class="moth-mw-log" id="moth-mw-activity-log"></div>' +
@@ -6905,6 +6942,31 @@
                 '<button type="button" class="moth-mw-btn" id="moth-mw-refresh-baseline">' + escapeHtml(tr('Refresh saved fallback')) + '</button>' +
                 '<button type="button" class="moth-mw-btn" id="moth-mw-export-baseline">' + escapeHtml(tr('Copy reference data')) + '</button>';
             if (refs && refs.innerHTML !== html) refs.innerHTML = html;
+            const audit = q('#moth-mw-order-audit', content);
+            if (audit) {
+                // The durable journal also covers purchases from older script
+                // versions. Missing source labels remain explicitly unknown.
+                const recentOrders = (state.orderJournal?.orders || [])
+                    .filter(order => order.status !== 'prepared').slice(-30).reverse();
+                const rows = recentOrders.map(order => {
+                    const source = order.source === 'manual-snatch' ? tr('Manual Snatch') :
+                        order.source === 'manual' ? tr('Direct purchase') :
+                        order.ruleId ? tr('Rule') + ' ' +
+                            (order.ruleType ? order.ruleType + ':' : '') + order.ruleId :
+                        tr('Unattributed purchase request');
+                    return '<div>' +
+                        escapeHtml(new Date(order.sentAt).toLocaleString(currentLocale())) +
+                        ' · #' + escapeHtml(String(order.listingId)) + ' · ' +
+                        escapeHtml(source) + ' · ' +
+                        escapeHtml(String(order.qty)) + ' × ' +
+                        escapeHtml(String(Math.floor(order.spend / order.qty))) + ' ' +
+                        escapeHtml(tr(order.currency === 'orb' ? 'Gems' : 'Coins')) +
+                        ' · ' + escapeHtml(tr(order.status)) + '</div>';
+                });
+                const html = rows.length ? rows.join('') :
+                    '<div>' + escapeHtml(tr('No saved purchase requests for this account.')) + '</div>';
+                if (audit.innerHTML !== html) audit.innerHTML = html;
+            }
             const log = q('#moth-mw-activity-log', content);
             const logHtml = state.buyLog.length ? state.buyLog.map(row =>
                 '<div>' + new Date(row.at).toLocaleTimeString(currentLocale()) + ' · ' + escapeHtml(translateLog(row.text)) + '</div>').join('') :
