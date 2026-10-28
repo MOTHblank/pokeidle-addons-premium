@@ -288,6 +288,8 @@
 
     function snatchTick() {
         state.snatchWake = null;
+        // Snatch targets are long-lived: update rules before evaluating them.
+        if (!syncConfigFromStorage()) { snatchSchedule(1000); return; }
         const now = Date.now();
         const server = serverNow();
         if (!state.orderJournal?.accountKey || !config.enabled || config.purchasesPaused ||

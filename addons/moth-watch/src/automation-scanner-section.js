@@ -262,6 +262,9 @@
     }
 
     function runMarketAutomation(justSettled = false) {
+        // Another tab can disable buying while this tab is still running.
+        // Never plan automatic orders against an out-of-date settings snapshot.
+        if (!syncConfigFromStorage()) { state.ruleItemKeys.clear(); return; }
         if (!hasAnyBuyingRules() || gameIsLoading()) {
             state.ruleItemKeys.clear();
             return;
