@@ -6,7 +6,7 @@
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
 // @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
-// @version      1.9.35
+// @version      1.9.36
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -362,7 +362,7 @@
             'dex.hunting': 'Level {level} · {hunt} · {count} caught this week',
             'dex.traveling': 'Traveling to level {level}: {hunt} · {count} caught this week',
             'dex.done': 'All accessible hunt species completed · {count} caught.',
-            'dex.hint': 'Ordinary single-species hunts, easiest estimated catches first assuming Ultra Balls. Open Pokédex → Top Catch once per week. Switching uses the first combat opening; if trapped, Give Up sends the team to the Center and may cost trainer XP. Auto Catch+ throws balls.',
+            'dex.hint': 'Ordinary single-species hunts, highest estimated captures/hour first using your lead Pokémon’s kill speed and Ultra Ball catch odds. When combat estimates are missing, catch odds break ties. Open Pokédex → Top Catch once per week. Switching uses the first combat opening; if trapped, Give Up sends the team to the Center and may cost trainer XP. Auto Catch+ throws balls.',
             'filter.clear': 'Clear filters',
             'filter.defaults': 'Default filters',
             'filter.changedOne': '1 filter changed from default',
@@ -741,7 +741,7 @@
             'dex.hunting': 'Nível {level} · {hunt} · {count} capturados nesta semana',
             'dex.traveling': 'Indo para nível {level}: {hunt} · {count} capturados nesta semana',
             'dex.done': 'Espécies das hunts acessíveis concluídas · {count} capturadas.',
-            'dex.hint': 'Hunts comuns de uma espécie, priorizando as maiores chances estimadas de captura com Ultra Ball. Abra Pokédex → Top Catch uma vez na semana. A troca aproveita a primeira abertura; se a luta impedir a saída, Desistir envia a equipe ao Centro e pode custar XP de treinador. Auto Catch+ arremessa bolas.',
+            'dex.hint': 'Hunts comuns de uma espécie, priorizando capturas estimadas por hora conforme a velocidade de abate do Pokémon líder e a chance da Ultra Ball. Sem estimativa de combate, usa a chance de captura. Abra Pokédex → Top Catch uma vez na semana. A troca aproveita a primeira abertura; se a luta impedir a saída, Desistir envia a equipe ao Centro e pode custar XP de treinador. Auto Catch+ arremessa bolas.',
             'filter.clear': 'Limpar filtros',
             'filter.defaults': 'Filtros padrão',
             'filter.changedOne': '1 filtro alterado',
@@ -10442,6 +10442,24 @@
         return captureWikiChance(null, ball.efficiency, 0, speciesId);
     }
 
+    // A defeated opponent provides the opportunity for an Ultra Ball
+    // attempt. Use the Atlas's existing lead-specific kill projection (or
+    // same-context observed kills/h) instead of ranking by ball odds alone.
+    // One attempted Ultra Ball per defeated target is the comparable baseline;
+    // Auto Catch+ still controls how many balls are actually thrown.
+    function dexAutoCaptureProjection(hunt, ball) {
+        const chance = dexAutoCatchChance(hunt, ball);
+        const combat = huntXpEstimate(hunt);
+        // Number(null) is zero: missing combat evidence must stay unknown,
+        // not be mistaken for an opponent the lead cannot defeat.
+        const killsH = typeof combat?.killsH === 'number' &&
+            Number.isFinite(combat.killsH) && combat.killsH >= 0
+            ? combat.killsH : null;
+        return {hunt, chance, killsH,
+            catchesH:Number.isFinite(chance) && killsH !== null
+                ? killsH * chance : null};
+    }
+
     function dexAutoNextHunt(hunts, caught, allowed) {
         // Top Catch always assumes Ultra Ball; the Beast preview filter does
         // not change its targets or the Auto Catch+ ball configuration.
@@ -10452,15 +10470,28 @@
                 return Number(hunt?.nivel) > 0 && key !== null &&
                     allowed(hunt) && !caught.has(key);
             })
-            .map(hunt => ({hunt, chance:dexAutoCatchChance(hunt, ball)}));
+            .map(hunt => dexAutoCaptureProjection(hunt, ball));
         candidates.sort((a, b) => {
+            const aRate = Number.isFinite(a.catchesH) && a.catchesH > 0;
+            const bRate = Number.isFinite(b.catchesH) && b.catchesH > 0;
+            // Fully modeled, achievable captures/hour outrank speculative
+            // catch-odds-only entries, regardless of the opponent's level.
+            if (aRate !== bRate) return aRate ? -1 : 1;
+            if (aRate && a.catchesH !== b.catchesH)
+                return b.catchesH - a.catchesH;
+            // A confirmed zero kills/hour (e.g. complete immunity) belongs
+            // after unknown estimates: it is not a feasible next capture.
+            const aBlocked = a.catchesH === 0;
+            const bBlocked = b.catchesH === 0;
+            if (aBlocked !== bBlocked) return aBlocked ? 1 : -1;
+            // With incomplete combat evidence, retain the prior catch-odds
+            // ordering rather than invent a common kills/hour baseline.
             const aKnown = Number.isFinite(a.chance);
             const bKnown = Number.isFinite(b.chance);
-            // Never pretend an unknown catch chance is 0% or 100%.
             if (aKnown !== bKnown) return aKnown ? -1 : 1;
             if (aKnown && a.chance !== b.chance)
                 return b.chance - a.chance;
-            // Equal rates (or equally unknown rates) remain deterministic.
+            // True ties are deterministic across sessions and reloads.
             return Number(a.hunt.nivel) - Number(b.hunt.nivel) ||
                 String(a.hunt.slug).localeCompare(String(b.hunt.slug));
         });
