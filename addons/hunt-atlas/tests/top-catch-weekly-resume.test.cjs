@@ -24,7 +24,7 @@ function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00
     const dom = {keys:null, textContent:''};
     const sent=[];
     const control={autoTravel:true, fastTimers:new Map(), nextTimer:1,
-        ballRates:{4:4,5:8}, usedBalls:[], catalogRequests:0};
+        ballRates:{4:4,5:8}, usedBalls:[], catalogRequests:0, killsH:new Map()};
     const state = {
         pokedexAuto: {active:false, mode:'idle', caught:new Set(), receipts:new Set(),
             targetSlug:null, lastTravelAt:0, week:null, accountKey:'profile', serverSynced:false},
@@ -67,6 +67,8 @@ function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00
                 state.combatCatalogStatus='loading';
         },
         farmingReceiptIdentity:event=>event.receiptId || null,
+        // A focused stand-in for Atlas's personalized/observed kills/hour.
+        huntXpEstimate:hunt=>({killsH:control.killsH.get(hunt.slug) ?? null}),
         queueRender:()=>{},
         socketReady:()=>true,
         isUnlocked:()=>true,
@@ -81,7 +83,7 @@ function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00
         'dexAutoReconcileTopCatch,dexAutoObserveState,dexAutoNextHunt,'+
         'recordPokedexAutoCatch,startPokedexAuto,stopPokedexAuto,dexAutoSyncFromDom,'+
         'dexAutoObserveGate,dexAutoOnBattleEvent,dexAutoSwitchGate,'+
-        'dexAutoCatchChance,dexAutoNextHunt,'+
+        'dexAutoCatchChance,dexAutoCaptureProjection,dexAutoNextHunt,'+
         'stepPokedexAuto})',context);
     return {api,state,storage,clock,dom,control,sent};
 }
@@ -122,6 +124,72 @@ test('Top Catch chooses the higher Atlas catch rate, even at level 280 vs 100',(
     h.state.currentHuntSlug='bellsprout';
     assert.equal(h.api.recordPokedexAutoCatch(capture(302,69),false),true);
     assert.equal(h.state.pokedexAuto.targetSlug,'venusaur');
+});
+
+test('Top Catch uses projected successful Ultra captures/hour, not chance alone',()=>{
+    const h=harness();
+    h.state.hunts=[
+        {slug:'quick-final',nivel:100,especies:[{pokeId:3}]},
+        {slug:'slow-first',nivel:280,especies:[{pokeId:69}]}
+    ];
+    h.state.captureStageCaps.set(3,100);
+    h.state.captureStageCaps.set(69,20);
+    h.control.killsH.set('quick-final',300);
+    h.control.killsH.set('slow-first',50);
+    const final=h.api.dexAutoCaptureProjection(h.state.hunts[0],{efficiency:4});
+    const first=h.api.dexAutoCaptureProjection(h.state.hunts[1],{efficiency:4});
+    assert.ok(first.chance>final.chance,
+        'first evolution has a higher chance per Ultra Ball');
+    assert.ok(final.catchesH>first.catchesH,
+        'fast kills give the final evolution more catches per hour');
+    assert.ok(Math.abs(final.catchesH-final.chance*300)<1e-12);
+    assert.ok(Math.abs(first.catchesH-first.chance*50)<1e-12);
+    h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{}}});
+    h.api.startPokedexAuto();
+    assert.equal(h.state.pokedexAuto.targetSlug,'quick-final');
+    h.state.currentHuntSlug='quick-final';
+    assert.equal(h.api.recordPokedexAutoCatch(capture(611,3),false),true);
+    assert.equal(h.state.pokedexAuto.targetSlug,'slow-first',
+        'successful weekly capture advances to the next feasible species');
+});
+
+test('Top Catch uses the lead-specific kill rate for equal catch chances',()=>{
+    const h=harness();
+    h.state.hunts=[
+        {slug:'slower',nivel:5,especies:[{pokeId:69}]},
+        {slug:'faster',nivel:280,especies:[{pokeId:25}]}
+    ];
+    h.state.captureStageCaps.set(69,20);
+    h.state.captureStageCaps.set(25,20);
+    h.control.killsH.set('slower',50);
+    h.control.killsH.set('faster',200);
+    assert.equal(h.api.dexAutoNextHunt(h.state.hunts,new Set(),()=>true).slug,
+        'faster', 'lead combat efficiency outranks level tie breaking');
+});
+
+test('Top Catch does not treat unknown kill speed as zero or prioritize immunity',()=>{
+    const h=harness();
+    h.state.hunts=[
+        {slug:'unmodeled',nivel:1,especies:[{pokeId:69}]},
+        {slug:'blocked',nivel:2,especies:[{pokeId:25}]},
+        {slug:'modeled',nivel:280,especies:[{pokeId:3}]}
+    ];
+    for(const [id,stage] of [[69,20],[25,20],[3,100]])
+        h.state.captureStageCaps.set(id,stage);
+    h.control.killsH.set('blocked',0);
+    h.control.killsH.set('modeled',20);
+    const projected=h.state.hunts.map(hunt=>
+        h.api.dexAutoCaptureProjection(hunt,{efficiency:4}));
+    assert.equal(projected[0].killsH,null);
+    assert.equal(projected[0].catchesH,null);
+    assert.equal(projected[1].catchesH,0);
+    assert.equal(h.api.dexAutoNextHunt(h.state.hunts,new Set(),()=>true).slug,
+        'modeled', 'known attainable captures per hour go first');
+    assert.equal(h.api.dexAutoNextHunt(h.state.hunts,
+        new Set([3]),()=>true).slug,'unmodeled',
+        'unknown combat estimates are safer than confirmed zero kills/hour');
+    assert.equal(h.api.dexAutoNextHunt(h.state.hunts,
+        new Set([3,69]),()=>true).slug,'blocked');
 });
 
 test('unknown catch rates go last; equal probabilities use level and slug',()=>{
