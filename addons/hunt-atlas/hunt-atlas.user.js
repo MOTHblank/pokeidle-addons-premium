@@ -6,7 +6,7 @@
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
 // @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
-// @version      1.9.36
+// @version      1.9.37
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -362,7 +362,7 @@
             'dex.hunting': 'Level {level} · {hunt} · {count} caught this week',
             'dex.traveling': 'Traveling to level {level}: {hunt} · {count} caught this week',
             'dex.done': 'All accessible hunt species completed · {count} caught.',
-            'dex.hint': 'Ordinary single-species hunts, highest estimated captures/hour first using your lead Pokémon’s kill speed and Ultra Ball catch odds. When combat estimates are missing, catch odds break ties. Open Pokédex → Top Catch once per week. Switching uses the first combat opening; if trapped, Give Up sends the team to the Center and may cost trainer XP. Auto Catch+ throws balls.',
+            'dex.hint': 'Ordinary single-species hunts, ranked by the same Ultra Ball captures/hour as the Atlas sort, including observed kill and throw rates. Strongly underperforming hunts are reconsidered after enough real kills. When combat estimates are missing, catch odds break ties. Open Pokédex → Top Catch once per week. Auto Catch+ throws balls.',
             'filter.clear': 'Clear filters',
             'filter.defaults': 'Default filters',
             'filter.changedOne': '1 filter changed from default',
@@ -741,7 +741,7 @@
             'dex.hunting': 'Nível {level} · {hunt} · {count} capturados nesta semana',
             'dex.traveling': 'Indo para nível {level}: {hunt} · {count} capturados nesta semana',
             'dex.done': 'Espécies das hunts acessíveis concluídas · {count} capturadas.',
-            'dex.hint': 'Hunts comuns de uma espécie, priorizando capturas estimadas por hora conforme a velocidade de abate do Pokémon líder e a chance da Ultra Ball. Sem estimativa de combate, usa a chance de captura. Abra Pokédex → Top Catch uma vez na semana. A troca aproveita a primeira abertura; se a luta impedir a saída, Desistir envia a equipe ao Centro e pode custar XP de treinador. Auto Catch+ arremessa bolas.',
+            'dex.hint': 'Hunts comuns de uma espécie, com a mesma estimativa de capturas/h da ordenação do Atlas (Ultra Ball, abates e arremessos observados). Hunts com desempenho real muito inferior são reavaliadas após amostras suficientes. Sem estimativa de combate, usa a chance de captura. Abra Pokédex → Top Catch uma vez na semana. Auto Catch+ arremessa bolas.',
             'filter.clear': 'Limpar filtros',
             'filter.defaults': 'Filtros padrão',
             'filter.changedOne': '1 filtro alterado',
@@ -4602,7 +4602,9 @@
             {at: now, trainerXp, pokemonXp, gold,
                 killGold:receipt.killCoins, autoSale:receipt.autoSaleCoins});
         const stableRate = farmingObservedRates(record.rateWindow, now);
-        if (stableRate?.trainerXpH !== null && stableRate?.trainerXpH !== undefined &&
+        // Kill throughput is measurable even when an XP receipt is missing.
+        // Persist it for capture ranking independently of the XP stream.
+        if (Number.isFinite(stableRate?.killsH) &&
             stableRate.samples >= 6 && stableRate.windowMs >= 60000) {
             record.lastMeasured = {...stableRate, measuredAt: now};
         }
@@ -8977,8 +8979,7 @@
                 (record.rateWindow?.lastAt
                     ? farmingObservedRates(record.rateWindow,
                         Number(record.rateWindow.lastAt)) : null);
-            if (historical?.trainerXpH === null ||
-                historical?.trainerXpH === undefined ||
+            if (!Number.isFinite(historical?.killsH) ||
                 historical.samples < 6 || historical.windowMs < 60000)
                 continue;
             const at = Number(historical.measuredAt || record.updatedAt || 0);
@@ -9025,8 +9026,8 @@
         const record = performanceRecord(hunt?.slug, false);
         const observed = observedRates(record);
         const saved = savedObservedRates(hunt);
-        const chosenObserved = observed?.trainerXpH !== null &&
-            observed?.trainerXpH !== undefined ? observed : saved;
+        const chosenObserved = Number.isFinite(observed?.killsH)
+            ? observed : Number.isFinite(saved?.killsH) ? saved : null;
         const savedOnly = chosenObserved === saved && chosenObserved !== observed;
 
 
@@ -9035,7 +9036,7 @@
          * Always check the live measurement before using a cached model.
          * Measurements evolve during a hunt and must take precedence.
          */
-        if (chosenObserved && chosenObserved.trainerXpH !== null) {
+        if (chosenObserved && Number.isFinite(chosenObserved.killsH)) {
             const residual = savedOnly ? null :
                 recordForecastResidual(hunt, record, chosenObserved);
             const frozen = record?.predictedBeforeMeasurement;
@@ -10442,22 +10443,51 @@
         return captureWikiChance(null, ball.efficiency, 0, speciesId);
     }
 
-    // A defeated opponent provides the opportunity for an Ultra Ball
-    // attempt. Use the Atlas's existing lead-specific kill projection (or
-    // same-context observed kills/h) instead of ranking by ball odds alone.
-    // One attempted Ultra Ball per defeated target is the comparable baseline;
-    // Auto Catch+ still controls how many balls are actually thrown.
+    // Match the existing Atlas "sort by captures" calculation exactly:
+    // same Ultra Ball, same lead-specific kills/hour, and the same observed
+    // accepted-throw fraction. A separate odds × kills shortcut overstates
+    // captures/hour whenever Auto Catch+ skips defeated opponents.
     function dexAutoCaptureProjection(hunt, ball) {
-        const chance = dexAutoCatchChance(hunt, ball);
+        const speciesId = dexAutoSpecies(hunt);
         const combat = huntXpEstimate(hunt);
-        // Number(null) is zero: missing combat evidence must stay unknown,
-        // not be mistaken for an opponent the lead cannot defeat.
+        const plan = speciesId === null ? null :
+            capturePlanForSpecies({id:speciesId, hunt}, 4, combat);
+        const chance = Number.isFinite(plan?.chance) ? plan.chance :
+            dexAutoCatchChance(hunt, ball);
         const killsH = typeof combat?.killsH === 'number' &&
             Number.isFinite(combat.killsH) && combat.killsH >= 0
             ? combat.killsH : null;
         return {hunt, chance, killsH,
-            catchesH:Number.isFinite(chance) && killsH !== null
-                ? killsH * chance : null};
+            catchesH:typeof plan?.catchesH === 'number' &&
+                Number.isFinite(plan.catchesH) && plan.catchesH >= 0
+                ? plan.catchesH : null,
+            observed:combat?.observed === true,
+            samples:combat?.samples ?? 0,
+            windowMs:combat?.windowMs ?? 0};
+    }
+
+    // A previously selected modeled target is not permanently locked in
+    // after actual server kills reveal a much worse rate. Review only once
+    // per minute with at least two minutes and 12 kills of live evidence;
+    // require a 75% better alternative to avoid hunt-switch oscillations.
+    function dexAutoReplanMeasuredHunt(hunt, now) {
+        const auto = state.pokedexAuto;
+        if (!hunt || !isHuntHere(hunt.slug) ||
+            now - (auto.lastRateReviewAt || 0) < 60000) return hunt;
+        auto.lastRateReviewAt = now;
+        const current = dexAutoCaptureProjection(hunt, captureInfoForBall(4));
+        if (!current.observed || current.samples < 12 ||
+            current.windowMs < 120000 ||
+            !(current.catchesH >= 0)) return hunt;
+        const best = dexAutoNextHunt(state.hunts, auto.caught, isUnlocked);
+        if (!best || best.slug === hunt.slug) return hunt;
+        const alternative = dexAutoCaptureProjection(best, captureInfoForBall(4));
+        if (!(alternative.catchesH > current.catchesH * 1.75))
+            return hunt;
+        auto.targetSlug = best.slug;
+        auto.lastTravelAt = 0;
+        auto.switchStartedAt = 0;
+        return best;
     }
 
     function dexAutoNextHunt(hunts, caught, allowed) {
@@ -10612,6 +10642,7 @@
         dexAutoSyncFromDom();
         auto.targetSlug = null;
         auto.lastTravelAt = 0;
+        auto.lastRateReviewAt = 0;
         auto.switchStartedAt = 0;
         auto.recovery = null;
         auto.active = true;
@@ -10702,11 +10733,16 @@
             return;
         }
         if (isHuntHere(hunt.slug)) {
-            auto.recovery = null;
-            auto.switchStartedAt = 0;
-            dexAutoStopSwitchWatch();
-            dexAutoSetMode('hunting');
-            return;
+            // Only reconsider after robust measured performance. An initial
+            // optimistic combat simulation must not strand Top Catch here.
+            hunt = dexAutoReplanMeasuredHunt(hunt, Date.now());
+            if (isHuntHere(hunt.slug)) {
+                auto.recovery = null;
+                auto.switchStartedAt = 0;
+                dexAutoStopSwitchWatch();
+                dexAutoSetMode('hunting');
+                return;
+            }
         }
         dexAutoStartSwitchWatch();
         const now = Date.now();
