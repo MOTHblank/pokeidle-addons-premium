@@ -9498,10 +9498,13 @@
             bonusCaveat: 'uses game-reported XP bonus fields and upstream timed rules; '+
                 'catch-up threshold transitions and missing boost catalog remain unverified',
             source: 'moth-controller-native-model',
-            oneHitSimulation: nativePace?.oneHit === true,
-            simulatedKills: simulation.sampledKills || 0,
+            // Controller's one_hit means the PLAYER can be one-shot,
+            // not that the player kills every enemy in one blow.
+            oneHitSimulation: false,
+            nativeOneShotRisk: nativePace?.oneHit === true,
+            simulatedKills: 32,
             modelHitsPerKill: null,
-            modelSampledHpFights: 32,
+            modelSampledHpFights: 0,
             modelBasicHitShare: null,
             modelCombatMsPerKill: nativePace?.secondsPerKill*1000 ?? null,
             modelIdealKillMs: nativePace?.secondsPerKill*1000 ?? null,
@@ -9512,7 +9515,7 @@
             nativeWorstHitFraction: nativePace?.worstHitFraction ?? null,
             confidence: moveConfidence,
             samples: 0, // No battle sample from another hunt affects this forecast.
-            fallbackReason: 'wiki-scheduling-and-wild-stat-approximation',
+            fallbackReason: 'controller-native-field-and-survival-model',
             calibration: calibrationDiagnostics(),
             ...coverageFields
         };
