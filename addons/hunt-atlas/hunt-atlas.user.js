@@ -596,6 +596,7 @@
             'xp.hitsShort': '{hits} hits',
             'xp.oneHitExplanation': 'Every sampled opponent fell in one hit. At this speed the model cannot distinguish hunts by enemy HP, defense or typing; travel, spawn timing and sustain remain uncertain.',
             'xp.sourceModel': 'personalized combat projection',
+            'xp.nativeAoe': 'Model AoE combat (explicit simulation only)',
             'xp.sourceBaseline': 'unboosted static baseline',
             'xp.sourceImmunity': 'known immunity',
             'xp.ranged': 'heuristic range {low}–{high} trainer XP/h',
@@ -975,6 +976,7 @@
             'xp.hitsShort': '{hits} golpes',
             'xp.oneHitExplanation': 'Cada adversário simulado caiu em um golpe. Nessa velocidade, o modelo não diferencia hunts por HP, defesa ou tipo; deslocamento, respawn e sustentação ainda são incertos.',
             'xp.sourceModel': 'projeção personalizada de combate',
+            'xp.nativeAoe': 'Simular combate em área (apenas previsão)',
             'xp.sourceBaseline': 'estimativa-base sem bônus',
             'xp.sourceImmunity': 'imunidade conhecida',
             'xp.ranged': 'faixa heurística {low}–{high} XP de treinador/h',
@@ -1371,6 +1373,7 @@
             outlandPreviewTier: 1,
             captureBall: 'ultra',
             shinyLurePreview: false,
+            nativeAoeForecast: false,
             rareSortItem: 70000,
             detailOpen: false,
             referenceOpen: false,
@@ -1412,6 +1415,7 @@
             next.captureBall=['ultra','beast'].includes(next.captureBall)
                 ?next.captureBall:'ultra';
             next.shinyLurePreview=next.shinyLurePreview===true;
+            next.nativeAoeForecast=next.nativeAoeForecast===true;
             next.rareSortItem=[70000,70011,70012,70013,70017].includes(
                 Number(next.rareSortItem))?Number(next.rareSortItem):70000;
             next.detailOpen=next.detailOpen===true;
@@ -8803,7 +8807,7 @@
     // Copy its full deterministic single-target pipeline: 32 wild HP IVs,
     // carried skill cooldowns, travel, wave refill, and survival uptime.
     // No implicit AoE: the native default estimate_with_aoe(...,false) also
-    // requires a separate explicit opt-in that this UI does not offer.
+    // requires an explicit opt-in, now available in Atlas's detail panel.
     const NATIVE_PACE = Object.freeze({
         retarget:1, minCycle:1.8, waveGap:2.8, waveJitter:2.6,
         wildTile:1.9, playerTile:0.26, search:.31,
@@ -9038,9 +9042,15 @@
         incomingDps/=weight;
         const cycle=Math.max(ttk+NATIVE_PACE.retarget,NATIVE_PACE.minCycle);
         const soloKills=nativeSingleTargetKills(distances,cycle,hunt);
-        // Controller's default is single target; no implicit AoE.
-        const aoe=false,engaged=1;
-        let killsH=soloKills;
+        // Matches controller's explicit UI preference. Do not infer this
+        // scenario from an owned Pokémon's partially populated TM flags.
+        const aoe=state.filters?.nativeAoeForecast===true;
+        let killsH=soloKills,engaged=1;
+        if(aoe) {
+            killsH=Math.max(killsH,nativeAoeKills(distances,ttk,hunt));
+            engaged=Math.min(NATIVE_PACE.maxEngaged,
+                1+killsH*ttk/3600);
+        }
         const maxHp=Number(lead.maxHp??lead.maxHP);
         const ownHp=maxHp>0?maxHp:
             Math.max(24,Math.round(Number(player.hp)*12));
@@ -9054,6 +9064,13 @@
         const uptime=aliveSeconds/(aliveSeconds+recovery);
         const deathsH=killsPerLife>=999?0:3600/(aliveSeconds+recovery);
         killsH*=uptime;
+        if(aoe) {
+            const soloLife=hitMax>=ownHp?
+                ownHp/Math.max(hitMax,1e-6):999;
+            const soloAlive=soloLife*3600/Math.max(soloKills,1e-6);
+            killsH=Math.max(killsH,
+                soloKills*soloAlive/(soloAlive+recovery));
+        }
         if(!Number.isFinite(killsH)||!Number.isFinite(ttk))return null;
         return {killsH,secondsPerKill:ttk,coverage:coverage*100,
             deathsH,oneHit,aoe,engaged,worstHitFraction:fatalHit/ownHp,
@@ -9268,6 +9285,7 @@
             [
                 leadSignature() || '',
                 state.modelRevision,
+                state.filters.nativeAoeForecast,
                 state.combatCatalogStatus,
                 state.moveIndexStatus,
                 state.typeStatus,
@@ -14617,6 +14635,10 @@
                         )
                     )}
                 </div>
+                <div class="mha-xp-note"><label><input type="checkbox"
+                    data-mha-native-aoe
+                    ${state.filters.nativeAoeForecast?'checked':''}/>
+                    ${escapeHtml(tr('xp.nativeAoe'))}</label></div>
                 ${nativeBonusHtml}
                 ${captureHtml}
                 ${economyHtml}
@@ -14718,6 +14740,11 @@
         q('[data-mha-more]',host)?.addEventListener('toggle',event=>{
             state.filters.detailOpen=event.target.open;
             saveFilters();
+        });
+        q('[data-mha-native-aoe]',host)?.addEventListener('change',event=>{
+            state.filters.nativeAoeForecast=event.target.checked;
+            saveFilters();
+            renderDrawer();
         });
         q('[data-mha-local-diagnostics]',host)?.addEventListener('change',event=>{
             state.diagnosticsEnabled=event.target.checked;
