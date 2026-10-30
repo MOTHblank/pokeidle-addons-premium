@@ -8878,6 +8878,13 @@
         };
     }
     function nativeMeanTtk(moves, tackle, globalGap, hp, downtime) {
+        // Exact no-kill rejection for the controller's 4,000-attack limit.
+        // Avoid burning thousands of JS main-thread iterations on foes whose
+        // HP exceeds the maximum damage possible within that limit.
+        const maxDamage=Math.max(tackle.damage,
+            ...moves.map(move=>move.damage));
+        if(!(maxDamage>0)||hp.some(value=>value>4000*maxDamage))
+            return null;
         const priority=moves.map((move,i)=>({move,i}))
             .filter(row=>row.move.damage>0)
             .sort((a,b)=>b.move.damage-a.move.damage);
