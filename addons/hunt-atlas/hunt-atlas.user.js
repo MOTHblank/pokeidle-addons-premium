@@ -6,7 +6,7 @@
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
 // @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
-// @version      1.9.36
+// @version      1.9.37
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -362,7 +362,7 @@
             'dex.hunting': 'Level {level} · {hunt} · {count} caught this week',
             'dex.traveling': 'Traveling to level {level}: {hunt} · {count} caught this week',
             'dex.done': 'All accessible hunt species completed · {count} caught.',
-            'dex.hint': 'Ordinary single-species hunts, highest estimated captures/hour first using your lead Pokémon’s kill speed and Ultra Ball catch odds. When combat estimates are missing, catch odds break ties. Open Pokédex → Top Catch once per week. Switching uses the first combat opening; if trapped, Give Up sends the team to the Center and may cost trainer XP. Auto Catch+ throws balls.',
+            'dex.hint': 'Ordinary single-species hunts, ranked by the same Ultra Ball captures/hour as the Atlas sort, including observed kill and throw rates. Strongly underperforming hunts are reconsidered after enough real kills. When combat estimates are missing, catch odds break ties. Open Pokédex → Top Catch once per week. Auto Catch+ throws balls.',
             'filter.clear': 'Clear filters',
             'filter.defaults': 'Default filters',
             'filter.changedOne': '1 filter changed from default',
@@ -596,6 +596,7 @@
             'xp.hitsShort': '{hits} hits',
             'xp.oneHitExplanation': 'Every sampled opponent fell in one hit. At this speed the model cannot distinguish hunts by enemy HP, defense or typing; travel, spawn timing and sustain remain uncertain.',
             'xp.sourceModel': 'personalized combat projection',
+            'xp.nativeAoe': 'Model AoE combat (explicit simulation only)',
             'xp.sourceBaseline': 'unboosted static baseline',
             'xp.sourceImmunity': 'known immunity',
             'xp.ranged': 'heuristic range {low}–{high} trainer XP/h',
@@ -741,7 +742,7 @@
             'dex.hunting': 'Nível {level} · {hunt} · {count} capturados nesta semana',
             'dex.traveling': 'Indo para nível {level}: {hunt} · {count} capturados nesta semana',
             'dex.done': 'Espécies das hunts acessíveis concluídas · {count} capturadas.',
-            'dex.hint': 'Hunts comuns de uma espécie, priorizando capturas estimadas por hora conforme a velocidade de abate do Pokémon líder e a chance da Ultra Ball. Sem estimativa de combate, usa a chance de captura. Abra Pokédex → Top Catch uma vez na semana. A troca aproveita a primeira abertura; se a luta impedir a saída, Desistir envia a equipe ao Centro e pode custar XP de treinador. Auto Catch+ arremessa bolas.',
+            'dex.hint': 'Hunts comuns de uma espécie, com a mesma estimativa de capturas/h da ordenação do Atlas (Ultra Ball, abates e arremessos observados). Hunts com desempenho real muito inferior são reavaliadas após amostras suficientes. Sem estimativa de combate, usa a chance de captura. Abra Pokédex → Top Catch uma vez na semana. Auto Catch+ arremessa bolas.',
             'filter.clear': 'Limpar filtros',
             'filter.defaults': 'Filtros padrão',
             'filter.changedOne': '1 filtro alterado',
@@ -975,6 +976,7 @@
             'xp.hitsShort': '{hits} golpes',
             'xp.oneHitExplanation': 'Cada adversário simulado caiu em um golpe. Nessa velocidade, o modelo não diferencia hunts por HP, defesa ou tipo; deslocamento, respawn e sustentação ainda são incertos.',
             'xp.sourceModel': 'projeção personalizada de combate',
+            'xp.nativeAoe': 'Simular combate em área (apenas previsão)',
             'xp.sourceBaseline': 'estimativa-base sem bônus',
             'xp.sourceImmunity': 'imunidade conhecida',
             'xp.ranged': 'faixa heurística {low}–{high} XP de treinador/h',
@@ -1371,6 +1373,7 @@
             outlandPreviewTier: 1,
             captureBall: 'ultra',
             shinyLurePreview: false,
+            nativeAoeForecast: false,
             rareSortItem: 70000,
             detailOpen: false,
             referenceOpen: false,
@@ -1412,6 +1415,7 @@
             next.captureBall=['ultra','beast'].includes(next.captureBall)
                 ?next.captureBall:'ultra';
             next.shinyLurePreview=next.shinyLurePreview===true;
+            next.nativeAoeForecast=next.nativeAoeForecast===true;
             next.rareSortItem=[70000,70011,70012,70013,70017].includes(
                 Number(next.rareSortItem))?Number(next.rareSortItem):70000;
             next.detailOpen=next.detailOpen===true;
@@ -4602,7 +4606,9 @@
             {at: now, trainerXp, pokemonXp, gold,
                 killGold:receipt.killCoins, autoSale:receipt.autoSaleCoins});
         const stableRate = farmingObservedRates(record.rateWindow, now);
-        if (stableRate?.trainerXpH !== null && stableRate?.trainerXpH !== undefined &&
+        // Kill throughput is measurable even when an XP receipt is missing.
+        // Persist it for capture ranking independently of the XP stream.
+        if (Number.isFinite(stableRate?.killsH) &&
             stableRate.samples >= 6 && stableRate.windowMs >= 60000) {
             record.lastMeasured = {...stableRate, measuredAt: now};
         }
@@ -8797,6 +8803,287 @@
         return rolls[(encounter + 3 * hit) % rolls.length] / 0.925;
     }
 
+    // Moth Controller native_atlas_combat.rs parity port (2026-10-30).
+    // Copy its full deterministic single-target pipeline: 32 wild HP IVs,
+    // carried skill cooldowns, travel, wave refill, and survival uptime.
+    // No implicit AoE: the native default estimate_with_aoe(...,false) also
+    // requires an explicit opt-in, now available in Atlas's detail panel.
+    const NATIVE_PACE = Object.freeze({
+        retarget:1, minCycle:1.8, waveGap:2.8, waveJitter:2.6,
+        wildTile:1.9, playerTile:0.26, search:.31,
+        defaultDistance:20.6, maxSpawns:16, maxEngaged:15,
+        wildDamage:1.8, wildAttackGap:1.4, respawn:3
+    });
+
+    function nativeIv(lead) {
+        const raw=lead?.speedIV ?? lead?.speedIv ??
+            lead?.ivs?.speed ?? lead?.ivs?.spd ??
+            lead?.iv?.speed ?? 1;
+        const value=Number(raw);
+        return Number.isFinite(value)?Math.max(1,Math.min(32,value)):1;
+    }
+    function nativeIvCooldown(ms, lead) {
+        return Math.max(400,ms-nativeIv(lead)*10);
+    }
+    function nativeMoveCooldown(ms, baseSpeed, lead) {
+        const potential=Math.min(7,baseSpeed<=120
+            ? Math.max(0,baseSpeed)/20 : 6+(baseSpeed-120)/40);
+        return Math.round(ms*(1-potential*nativeIv(lead)/3200));
+    }
+    function nativeWildStat(base, level, iv=16) {
+        return (base+2*iv)*level/100;
+    }
+    // Same attack formula and ordinary-hunt type amplification as Rust's
+    // native_atlas::damage/effect. Missing stats must remain unknown.
+    function nativeDamage(level, power, atk, def, type, attackers, defenders) {
+        return battleDamage(level,Math.max(15,power),atk,def,
+            type,attackers,defenders);
+    }
+    function nativeTackleType(types, foes) {
+        const first=types[0]||'NORMAL';
+        return huntEffectiveness(first,foes)===0
+            ? types[1]||first : first;
+    }
+    function nativeThreat(meta, level, leadTypes, foeTypes, player) {
+        const enemyMoves=(meta?.attacks||[]).filter(move=>
+            (Number(move.learnLevel)||1)<=level);
+        const blows=[];
+        for(const move of enemyMoves) {
+            const special=String(move.category||'').toUpperCase()==='SPECIAL';
+            const physical=String(move.category||'').toUpperCase()==='PHYSICAL';
+            if(!special&&!physical)continue;
+            const base=Number(special?meta.baseSpAtk:meta.baseAtk);
+            const def=battleStat(special?player.spDef:player.def);
+            if(!(base>0)||!def)return null;
+            const damage=nativeDamage(level,Number(move.power),
+                nativeWildStat(base,level),def,move.type,
+                foeTypes,leadTypes);
+            if(damage===null)return null;
+            blows.push(damage);
+        }
+        const baseAtk=Number(meta?.baseAtk);
+        const playerDef=battleStat(player.def);
+        if(!(baseAtk>0)||!playerDef)return null;
+        const tackle=nativeDamage(level,30,nativeWildStat(baseAtk,level),
+            playerDef,nativeTackleType(foeTypes,leadTypes),
+            foeTypes,leadTypes);
+        if(tackle===null)return null;
+        const mean=blows.length
+            ? blows.reduce((a,b)=>a+b,0)/blows.length*0.92+tackle*0.08
+            : tackle;
+        return {
+            dps:mean*NATIVE_PACE.wildDamage/NATIVE_PACE.wildAttackGap,
+            meanHit:mean*NATIVE_PACE.wildDamage,
+            worstHit:Math.max(tackle,...blows)/0.925*NATIVE_PACE.wildDamage
+        };
+    }
+    function nativeMeanTtk(moves, tackle, globalGap, hp, downtime) {
+        // Exact no-kill rejection for the controller's 4,000-attack limit.
+        // Avoid burning thousands of JS main-thread iterations on foes whose
+        // HP exceeds the maximum damage possible within that limit.
+        const maxDamage=Math.max(tackle.damage,
+            ...moves.map(move=>move.damage));
+        if(!(maxDamage>0)||hp.some(value=>value>4000*maxDamage))
+            return null;
+        const priority=moves.map((move,i)=>({move,i}))
+            .filter(row=>row.move.damage>0)
+            .sort((a,b)=>b.move.damage-a.move.damage);
+        const ready=moves.map(()=>0);
+        let tackleReady=0,t=0,spent=0;
+        for(const targetHp of hp) {
+            const start=t;
+            let dealt=0,last=t,attempts=0;
+            while(dealt<targetHp) {
+                if(++attempts>4000)return null;
+                const next=priority.find(row=>ready[row.i]<=t);
+                if(next) {
+                    dealt+=next.move.damage;
+                    ready[next.i]=t+next.move.cooldown;
+                    last=t;
+                    t+=globalGap;
+                } else if(tackle.damage>0&&tackleReady<=t) {
+                    dealt+=tackle.damage;
+                    tackleReady=t+tackle.cooldown;
+                    last=t;
+                    t+=globalGap;
+                } else {
+                    const wake=Math.min(tackle.damage>0
+                        ? tackleReady:Infinity,
+                        ...priority.map(row=>ready[row.i]));
+                    if(!Number.isFinite(wake))return null;
+                    t=Math.max(t,wake);
+                }
+            }
+            spent+=last-start;
+            t=last+downtime;
+        }
+        return spent/hp.length;
+    }
+    function nativeSpawnDistances(hunt) {
+        const weighted=(hunt.especies||[]).reduce((total,sp)=>
+            total+Math.max(0,Number(sp.pontos)||0),0);
+        const reported=Number(hunt.totalSpawns??hunt.total_spawns);
+        const count=Math.max(1,Math.min(NATIVE_PACE.maxSpawns,
+            Math.trunc(reported>0?reported:weighted>0?Math.round(weighted):15)));
+        // Native uses full-wave position quantiles if recorded; the browser
+        // Atlas currently has no validated distance telemetry.
+        return Array(count).fill(NATIVE_PACE.defaultDistance);
+    }
+    function nativeReplenishmentCap(hunt, count) {
+        if(Number(hunt.nivel)<=150)return Infinity;
+        const region=String(hunt.regiao??hunt.region??hunt.area??'')
+            .toLowerCase();
+        const sinnoh=region==='sinnoh'||
+            String(hunt.slug||'').endsWith('_sinnoh');
+        return count*3600/(sinnoh?30:65);
+    }
+    function nativeSingleTargetKills(distances,cycle,hunt) {
+        const count=distances.length;
+        const avg=distances.reduce((a,b)=>a+b,0)/count;
+        const walk=avg*NATIVE_PACE.playerTile*NATIVE_PACE.search;
+        const meeting=NATIVE_PACE.wildTile*NATIVE_PACE.playerTile/
+            (NATIVE_PACE.wildTile+NATIVE_PACE.playerTile);
+        let time=0;
+        for(const distance of distances)
+            time=Math.max(time+cycle+walk,distance*meeting);
+        return Math.min(3600/cycle,
+            count*3600/(time+NATIVE_PACE.waveGap),
+            nativeReplenishmentCap(hunt,count));
+    }
+    function nativeAoeKills(distances,ttk,hunt) {
+        const n=distances.length;
+        const rhythm=n>1?distances[n-2]:distances[0];
+        const arrival=Math.max(0,rhythm-5)*NATIVE_PACE.wildTile;
+        return Math.min(n*3600/(arrival+NATIVE_PACE.waveGap),
+            nativeReplenishmentCap(hunt,n),
+            3600*NATIVE_PACE.maxEngaged/Math.max(ttk,NATIVE_PACE.minCycle));
+    }
+    function nativeCombatForecast(hunt) {
+        const lead=leadPokemon(), leadMeta=speciesCombatMeta(lead?.speciesId);
+        const level=Number(hunt?.nivel), leadLevel=Number(lead?.level);
+        const player=lead?.stats||{};
+        const leadTypes=battleLeadTypes(lead);
+        const typesReady=leadTypes.length>0;
+        const statKeys=['atk','def','spAtk','spDef','hp'];
+        if(!(level>0)||!(leadLevel>0)||!leadMeta||!typesReady||
+            !(Number(leadMeta.baseSpeed)>0)||
+            statKeys.some(k=>!(battleStat(player[k])>0)))return null;
+        const distances=nativeSpawnDistances(hunt);
+        const count=distances.length;
+        const downtime=NATIVE_PACE.waveJitter/count+NATIVE_PACE.retarget;
+        const gap=nativeIvCooldown(900,lead)/1000;
+        const moves=battleMovesForLead(lead);
+        let weight=0,ttk=0,hitMean=0,hitMax=0,incomingDps=0;
+        for(const row of hunt.especies||[]) {
+            const w=Math.max(0,Number(row.pontos) || 0);
+            if(w===0)continue;
+            const meta=speciesCombatMeta(row.pokeId);
+            if(!meta)continue;
+            const foeTypes=(state.typesBySpecies.get(Number(row.pokeId))||
+                [meta.type1,meta.type2]).filter(Boolean)
+                .map(type=>String(type).toUpperCase());
+            const foeBase=[meta.baseHp,meta.baseAtk,meta.baseDef,
+                meta.baseSpAtk,meta.baseSpDef,meta.baseSpeed];
+            if(!foeTypes.length || foeBase.some(x=>!(Number(x)>0)))
+                continue;
+            const attacks=[];
+            for(const move of moves) {
+                if((Number(move.learnLevel)||1)>leadLevel||
+                    move.tmElemental)continue;
+                const category=String(move.category||'').toUpperCase();
+                const special=category==='SPECIAL';
+                if(!special&&category!=='PHYSICAL')continue;
+                const cd=Number(move.cooldownMs)>0
+                    ? Number(move.cooldownMs) : xpCooldownFromPower(move.power);
+                // The controller derives cooldowns from the transformed move
+                // catalog. Runtime-adjusted values are already final.
+                const cooldown=move.cooldownAdjusted||move.runtimeMove
+                    ? cd : nativeMoveCooldown(cd,Number(leadMeta.baseSpeed),lead);
+                const atk=battleStat(special?player.spAtk:player.atk);
+                const def=nativeWildStat(Number(special?meta.baseSpDef:
+                    meta.baseDef),level);
+                const damage=nativeDamage(leadLevel,Number(move.power),
+                    atk,def,move.type,leadTypes,foeTypes);
+                if(damage===null)return null;
+                attacks.push({damage,cooldown:cooldown/1000});
+            }
+            if(lead.tmElemental) {
+                const element=String(lead.tmElemental).toUpperCase();
+                if(leadTypes.includes(element)) {
+                    const damage=nativeDamage(leadLevel,2800,
+                        battleStat(player.spAtk),
+                        nativeWildStat(Number(meta.baseSpDef),level),
+                        element,leadTypes,foeTypes);
+                    if(damage===null)return null;
+                    attacks.push({damage,cooldown:nativeMoveCooldown(60000,
+                        Number(leadMeta.baseSpeed),lead)/1000});
+                }
+            }
+            const tackleType=nativeTackleType(leadTypes,foeTypes);
+            const tackleDamage=nativeDamage(leadLevel,30,
+                battleStat(player.atk),
+                nativeWildStat(Number(meta.baseDef),level),
+                tackleType,leadTypes,foeTypes);
+            if(tackleDamage===null)return null;
+            const tackle={damage:tackleDamage,
+                cooldown:nativeIvCooldown(2000,lead)/1000};
+            const hp=Array.from({length:32},(_,i)=>
+                Math.max(24,Math.round(
+                    nativeWildStat(Number(meta.baseHp),level,i+1)*12))*5);
+            const time=nativeMeanTtk(attacks,tackle,gap,hp,downtime);
+            if(time===null)return null;
+            const threat=nativeThreat(meta,level,leadTypes,foeTypes,player);
+            if(!threat)return null;
+            weight+=w; ttk+=w*time;
+            incomingDps+=w*threat.dps;
+            hitMean+=w*threat.meanHit;
+            hitMax=Math.max(hitMax,threat.worstHit);
+        }
+        const total=(hunt.especies||[]).reduce((sum,row)=>
+            sum+Math.max(0,Number(row.pontos)||0),0);
+        if(weight<=0||total<=0)return null;
+        const coverage=weight/total;
+        if(coverage<0.6)return null;
+        ttk/=weight;
+        hitMean/=weight;
+        incomingDps/=weight;
+        const cycle=Math.max(ttk+NATIVE_PACE.retarget,NATIVE_PACE.minCycle);
+        const soloKills=nativeSingleTargetKills(distances,cycle,hunt);
+        // Matches controller's explicit UI preference. Do not infer this
+        // scenario from an owned Pokémon's partially populated TM flags.
+        const aoe=state.filters?.nativeAoeForecast===true;
+        let killsH=soloKills,engaged=1;
+        if(aoe) {
+            killsH=Math.max(killsH,nativeAoeKills(distances,ttk,hunt));
+            engaged=Math.min(NATIVE_PACE.maxEngaged,
+                1+killsH*ttk/3600);
+        }
+        const maxHp=Number(lead.maxHp??lead.maxHP);
+        const ownHp=maxHp>0?maxHp:
+            Math.max(24,Math.round(Number(player.hp)*12));
+        const fatalHit=hitMax+(engaged-1)*hitMean;
+        const oneHit=fatalHit>=ownHp;
+        const incomingPerKill=incomingDps*engaged*ttk;
+        const killsPerLife=oneHit?ownHp/Math.max(fatalHit,1e-6):999;
+        const recovery=NATIVE_PACE.respawn+
+            distances.reduce((a,b)=>a+b,0)/count*NATIVE_PACE.playerTile;
+        const aliveSeconds=killsPerLife*3600/Math.max(killsH,1e-6);
+        const uptime=aliveSeconds/(aliveSeconds+recovery);
+        const deathsH=killsPerLife>=999?0:3600/(aliveSeconds+recovery);
+        killsH*=uptime;
+        if(aoe) {
+            const soloLife=hitMax>=ownHp?
+                ownHp/Math.max(hitMax,1e-6):999;
+            const soloAlive=soloLife*3600/Math.max(soloKills,1e-6);
+            killsH=Math.max(killsH,
+                soloKills*soloAlive/(soloAlive+recovery));
+        }
+        if(!Number.isFinite(killsH)||!Number.isFinite(ttk))return null;
+        return {killsH,secondsPerKill:ttk,coverage:coverage*100,
+            deathsH,oneHit,aoe,engaged,worstHitFraction:fatalHit/ownHp,
+            incomingDamagePerKill:incomingPerKill};
+    }
+
     function rawPredictedKillMs(hunt, coverage = huntCombatCoverage(hunt),
                                 simulation = null) {
         if (coverage.blocked) return Infinity;
@@ -8977,8 +9264,7 @@
                 (record.rateWindow?.lastAt
                     ? farmingObservedRates(record.rateWindow,
                         Number(record.rateWindow.lastAt)) : null);
-            if (historical?.trainerXpH === null ||
-                historical?.trainerXpH === undefined ||
+            if (!Number.isFinite(historical?.killsH) ||
                 historical.samples < 6 || historical.windowMs < 60000)
                 continue;
             const at = Number(historical.measuredAt || record.updatedAt || 0);
@@ -9006,6 +9292,7 @@
             [
                 leadSignature() || '',
                 state.modelRevision,
+                state.filters.nativeAoeForecast,
                 state.combatCatalogStatus,
                 state.moveIndexStatus,
                 state.typeStatus,
@@ -9025,8 +9312,8 @@
         const record = performanceRecord(hunt?.slug, false);
         const observed = observedRates(record);
         const saved = savedObservedRates(hunt);
-        const chosenObserved = observed?.trainerXpH !== null &&
-            observed?.trainerXpH !== undefined ? observed : saved;
+        const chosenObserved = Number.isFinite(observed?.killsH)
+            ? observed : Number.isFinite(saved?.killsH) ? saved : null;
         const savedOnly = chosenObserved === saved && chosenObserved !== observed;
 
 
@@ -9035,7 +9322,7 @@
          * Always check the live measurement before using a cached model.
          * Measurements evolve during a hunt and must take precedence.
          */
-        if (chosenObserved && chosenObserved.trainerXpH !== null) {
+        if (chosenObserved && Number.isFinite(chosenObserved.killsH)) {
             const residual = savedOnly ? null :
                 recordForecastResidual(hunt, record, chosenObserved);
             const frozen = record?.predictedBeforeMeasurement;
@@ -9113,7 +9400,13 @@
 
         const coverage = huntCombatCoverage(hunt);
         const simulation = {};
-        const rawKillMs = rawPredictedKillMs(hunt, coverage, simulation);
+        // Use Moth Controller's full native throughput simulation, not the
+        // former idealized cross-hunt kill timer. Actual same-hunt receipts
+        // still win above this branch.
+        const nativePace = nativeCombatForecast(hunt);
+        const rawKillMs = nativePace?.killsH>0
+            ? 3600000/nativePace.killsH
+            : coverage.blocked ? Infinity : null;
         const coverageFields = {
             coverage: coverage.percentage,
             coveredPoints: coverage.covered,
@@ -9164,7 +9457,7 @@
                         state.playerLevel).trainer,
                 idealKillMs: simulation.idealKillMs ?? null,
                 pacingAllowanceMs: simulation.pacingAllowanceMs ?? null,
-                modelVersion: '1.9.29',
+                modelVersion: 'native-controller-parity-1',
                 leadId: lead?.id ?? null
             };
         }
@@ -9211,18 +9504,25 @@
                 pokemon:nativeBonus.pokemon},
             bonusCaveat: 'uses game-reported XP bonus fields and upstream timed rules; '+
                 'catch-up threshold transitions and missing boost catalog remain unverified',
-            source: knownMoves ? 'stat/move model' : 'stat/basic-attack model',
-            oneHitSimulation: simulation.allOneHit === true,
-            simulatedKills: simulation.sampledKills || 0,
-            modelHitsPerKill: simulation.hitsPerKill ?? null,
-            modelSampledHpFights: simulation.sampledHpFights || 0,
-            modelBasicHitShare: simulation.basicHitShare ?? null,
-            modelCombatMsPerKill: simulation.combatMsPerKill ?? null,
-            modelIdealKillMs: simulation.idealKillMs ?? null,
-            modelPacingAllowanceMs: simulation.pacingAllowanceMs ?? null,
+            source: 'moth-controller-native-model',
+            // Controller's one_hit means the PLAYER can be one-shot,
+            // not that the player kills every enemy in one blow.
+            oneHitSimulation: false,
+            nativeOneShotRisk: nativePace?.oneHit === true,
+            simulatedKills: 32,
+            modelHitsPerKill: null,
+            modelSampledHpFights: 0,
+            modelBasicHitShare: null,
+            modelCombatMsPerKill: nativePace?.secondsPerKill*1000 ?? null,
+            modelIdealKillMs: nativePace?.secondsPerKill*1000 ?? null,
+            modelPacingAllowanceMs: nativePace?.secondsPerKill>0
+                ? killMs-nativePace.secondsPerKill*1000 : null,
+            nativeDeathsH: nativePace?.deathsH ?? null,
+            nativeIncomingPerKill: nativePace?.incomingDamagePerKill ?? null,
+            nativeWorstHitFraction: nativePace?.worstHitFraction ?? null,
             confidence: moveConfidence,
             samples: 0, // No battle sample from another hunt affects this forecast.
-            fallbackReason: 'wiki-scheduling-and-wild-stat-approximation',
+            fallbackReason: 'controller-native-field-and-survival-model',
             calibration: calibrationDiagnostics(),
             ...coverageFields
         };
@@ -10442,22 +10742,51 @@
         return captureWikiChance(null, ball.efficiency, 0, speciesId);
     }
 
-    // A defeated opponent provides the opportunity for an Ultra Ball
-    // attempt. Use the Atlas's existing lead-specific kill projection (or
-    // same-context observed kills/h) instead of ranking by ball odds alone.
-    // One attempted Ultra Ball per defeated target is the comparable baseline;
-    // Auto Catch+ still controls how many balls are actually thrown.
+    // Match the existing Atlas "sort by captures" calculation exactly:
+    // same Ultra Ball, same lead-specific kills/hour, and the same observed
+    // accepted-throw fraction. A separate odds × kills shortcut overstates
+    // captures/hour whenever Auto Catch+ skips defeated opponents.
     function dexAutoCaptureProjection(hunt, ball) {
-        const chance = dexAutoCatchChance(hunt, ball);
+        const speciesId = dexAutoSpecies(hunt);
         const combat = huntXpEstimate(hunt);
-        // Number(null) is zero: missing combat evidence must stay unknown,
-        // not be mistaken for an opponent the lead cannot defeat.
+        const plan = speciesId === null ? null :
+            capturePlanForSpecies({id:speciesId, hunt}, 4, combat);
+        const chance = Number.isFinite(plan?.chance) ? plan.chance :
+            dexAutoCatchChance(hunt, ball);
         const killsH = typeof combat?.killsH === 'number' &&
             Number.isFinite(combat.killsH) && combat.killsH >= 0
             ? combat.killsH : null;
         return {hunt, chance, killsH,
-            catchesH:Number.isFinite(chance) && killsH !== null
-                ? killsH * chance : null};
+            catchesH:typeof plan?.catchesH === 'number' &&
+                Number.isFinite(plan.catchesH) && plan.catchesH >= 0
+                ? plan.catchesH : null,
+            observed:combat?.observed === true,
+            samples:combat?.samples ?? 0,
+            windowMs:combat?.windowMs ?? 0};
+    }
+
+    // A previously selected modeled target is not permanently locked in
+    // after actual server kills reveal a much worse rate. Review only once
+    // per minute with at least two minutes and 12 kills of live evidence;
+    // require a 75% better alternative to avoid hunt-switch oscillations.
+    function dexAutoReplanMeasuredHunt(hunt, now) {
+        const auto = state.pokedexAuto;
+        if (!hunt || !isHuntHere(hunt.slug) ||
+            now - (auto.lastRateReviewAt || 0) < 60000) return hunt;
+        auto.lastRateReviewAt = now;
+        const current = dexAutoCaptureProjection(hunt, captureInfoForBall(4));
+        if (!current.observed || current.samples < 12 ||
+            current.windowMs < 120000 ||
+            !(current.catchesH >= 0)) return hunt;
+        const best = dexAutoNextHunt(state.hunts, auto.caught, isUnlocked);
+        if (!best || best.slug === hunt.slug) return hunt;
+        const alternative = dexAutoCaptureProjection(best, captureInfoForBall(4));
+        if (!(alternative.catchesH > current.catchesH * 1.75))
+            return hunt;
+        auto.targetSlug = best.slug;
+        auto.lastTravelAt = 0;
+        auto.switchStartedAt = 0;
+        return best;
     }
 
     function dexAutoNextHunt(hunts, caught, allowed) {
@@ -10612,6 +10941,7 @@
         dexAutoSyncFromDom();
         auto.targetSlug = null;
         auto.lastTravelAt = 0;
+        auto.lastRateReviewAt = 0;
         auto.switchStartedAt = 0;
         auto.recovery = null;
         auto.active = true;
@@ -10702,11 +11032,16 @@
             return;
         }
         if (isHuntHere(hunt.slug)) {
-            auto.recovery = null;
-            auto.switchStartedAt = 0;
-            dexAutoStopSwitchWatch();
-            dexAutoSetMode('hunting');
-            return;
+            // Only reconsider after robust measured performance. An initial
+            // optimistic combat simulation must not strand Top Catch here.
+            hunt = dexAutoReplanMeasuredHunt(hunt, Date.now());
+            if (isHuntHere(hunt.slug)) {
+                auto.recovery = null;
+                auto.switchStartedAt = 0;
+                dexAutoStopSwitchWatch();
+                dexAutoSetMode('hunting');
+                return;
+            }
         }
         dexAutoStartSwitchWatch();
         const now = Date.now();
@@ -14310,6 +14645,10 @@
                         )
                     )}
                 </div>
+                <div class="mha-xp-note"><label><input type="checkbox"
+                    data-mha-native-aoe
+                    ${state.filters.nativeAoeForecast?'checked':''}/>
+                    ${escapeHtml(tr('xp.nativeAoe'))}</label></div>
                 ${nativeBonusHtml}
                 ${captureHtml}
                 ${economyHtml}
@@ -14411,6 +14750,11 @@
         q('[data-mha-more]',host)?.addEventListener('toggle',event=>{
             state.filters.detailOpen=event.target.open;
             saveFilters();
+        });
+        q('[data-mha-native-aoe]',host)?.addEventListener('change',event=>{
+            state.filters.nativeAoeForecast=event.target.checked;
+            saveFilters();
+            renderDrawer();
         });
         q('[data-mha-local-diagnostics]',host)?.addEventListener('change',event=>{
             state.diagnosticsEnabled=event.target.checked;

@@ -17,14 +17,23 @@ const rarityStart = source.indexOf('    function captureRarityForSpecies(');
 const rarityEnd = source.indexOf('    function captureHuntChance(', rarityStart);
 assert.ok(wikiStart >= 0 && wikiEnd > wikiStart &&
     rarityStart >= 0 && rarityEnd > rarityStart);
+const forecastStart = source.indexOf('    function captureSpeciesForecast(');
+const forecastEnd = source.indexOf('    // HA MILESTONE E PURE END.', forecastStart);
+const planStart = source.indexOf('    function capturePlanForSpecies(');
+const planEnd = source.indexOf('    function farmTrackUse(', planStart);
+assert.ok(forecastStart >= 0 && forecastEnd > forecastStart &&
+    planStart >= 0 && planEnd > planStart);
 const chanceModel = source.slice(wikiStart, wikiEnd) +
-    source.slice(rarityStart, rarityEnd);
+    source.slice(rarityStart, rarityEnd) +
+    source.slice(forecastStart, forecastEnd) +
+    source.slice(planStart, planEnd);
 
 function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00:00Z')}) {
     const dom = {keys:null, textContent:''};
     const sent=[];
     const control={autoTravel:true, fastTimers:new Map(), nextTimer:1,
-        ballRates:{4:4,5:8}, usedBalls:[], catalogRequests:0, killsH:new Map()};
+        ballRates:{4:4,5:8}, usedBalls:[], catalogRequests:0, killsH:new Map(),
+        estimates:new Map(), observed:new Map()};
     const state = {
         pokedexAuto: {active:false, mode:'idle', caught:new Set(), receipts:new Set(),
             targetSlug:null, lastTravelAt:0, week:null, accountKey:'profile', serverSynced:false},
@@ -35,7 +44,7 @@ function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00
             {slug:'multi', nivel:8, especies:[{pokeId:2},{pokeId:3}]}
         ],
         currentHuntSlug:'bulbasaur', farmingLedger:{slots:new Map()}, pendingTravel:null,
-        filters:{captureBall:'ultra'}, captureStageCaps:new Map(),
+        filters:{captureBall:'ultra',shinyLurePreview:false}, captureStageCaps:new Map(),
         captureRarities:new Map(), combatCatalogStatus:'ready',
         huntScene:{noCentro:false,casaDentro:null,bossArena:null,mistico:false},
         huntSwitchGate:{combatUntil:0,entryUntil:0,serverOffset:0,
@@ -68,7 +77,11 @@ function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00
         },
         farmingReceiptIdentity:event=>event.receiptId || null,
         // A focused stand-in for Atlas's personalized/observed kills/hour.
-        huntXpEstimate:hunt=>({killsH:control.killsH.get(hunt.slug) ?? null}),
+        huntXpEstimate:hunt=>control.estimates.get(hunt.slug) ??
+            ({killsH:control.killsH.get(hunt.slug) ?? null, observed:false}),
+        captureObservedForHunt:hunt=>control.observed.get(hunt.slug) || null,
+        farmingChanceAtLeastOne:(probability,rolls)=>
+            1-Math.pow(1-probability,rolls),
         queueRender:()=>{},
         socketReady:()=>true,
         isUnlocked:()=>true,
@@ -84,6 +97,7 @@ function harness(storage = new Map(), clock = {now: Date.parse('2026-10-26T12:00
         'recordPokedexAutoCatch,startPokedexAuto,stopPokedexAuto,dexAutoSyncFromDom,'+
         'dexAutoObserveGate,dexAutoOnBattleEvent,dexAutoSwitchGate,'+
         'dexAutoCatchChance,dexAutoCaptureProjection,dexAutoNextHunt,'+
+        'dexAutoReplanMeasuredHunt,capturePlanForSpecies,'+
         'stepPokedexAuto})',context);
     return {api,state,storage,clock,dom,control,sent};
 }
@@ -192,6 +206,83 @@ test('Top Catch does not treat unknown kill speed as zero or prioritize immunity
         new Set([3,69]),()=>true).slug,'blocked');
 });
 
+test('Top Catch matches the existing Atlas sort by captures, including missed throws',()=>{
+    const h=harness();
+    h.state.hunts=[
+        {slug:'fast-but-missed',nivel:5,especies:[{pokeId:69}]},
+        {slug:'slower-but-caught',nivel:15,especies:[{pokeId:25}]}
+    ];
+    h.state.captureStageCaps.set(69,20);
+    h.state.captureStageCaps.set(25,20);
+    h.control.killsH.set('fast-but-missed',2000);
+    h.control.killsH.set('slower-but-caught',1000);
+    h.control.observed.set('fast-but-missed',{
+        kills:100,throws:20,bySpecies:{69:{kills:100,throws:20}}
+    });
+    // 2000/h with only 20% accepted attempts < 1000/h at full coverage.
+    const fast=h.api.capturePlanForSpecies(
+        {id:69,hunt:h.state.hunts[0]},4);
+    const slower=h.api.capturePlanForSpecies(
+        {id:25,hunt:h.state.hunts[1]},4);
+    assert.ok(fast.catchesH < slower.catchesH);
+    const chosen=h.api.dexAutoNextHunt(h.state.hunts,new Set(),()=>true);
+    assert.equal(chosen.slug,'slower-but-caught');
+    assert.equal(h.api.dexAutoCaptureProjection(h.state.hunts[0],
+        {efficiency:4}).catchesH,fast.catchesH,
+        'Top Catch and the visible captures/hour sort share their rate');
+});
+
+test('Top Catch abandons a forecast that drops sharply after robust measured kills',()=>{
+    const h=harness();
+    h.state.hunts=[
+        {slug:'optimistic',nivel:5,especies:[{pokeId:69}]},
+        {slug:'alternative',nivel:6,especies:[{pokeId:25}]}
+    ];
+    h.state.captureStageCaps.set(69,20);
+    h.state.captureStageCaps.set(25,20);
+    h.control.killsH.set('optimistic',2200);
+    h.control.killsH.set('alternative',1800);
+    h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{}}});
+    h.api.startPokedexAuto();
+    assert.equal(h.state.pokedexAuto.targetSlug,'optimistic');
+    h.control.estimates.set('optimistic',{
+        killsH:500,observed:true,samples:24,windowMs:300000
+    });
+    h.clock.now+=121000;
+    h.api.stepPokedexAuto();
+    assert.equal(h.state.pokedexAuto.targetSlug,'alternative');
+    assert.equal(h.state.currentHuntSlug,'alternative');
+    assert.equal(h.state.pokedexAuto.caught.size,0,
+        'changing a poor hunt must not fake a confirmed weekly catch');
+});
+
+test('Top Catch ignores immature measurements to avoid repeated hunt switching',()=>{
+    const h=harness();
+    h.state.hunts=[
+        {slug:'optimistic',nivel:5,especies:[{pokeId:69}]},
+        {slug:'alternative',nivel:6,especies:[{pokeId:25}]}
+    ];
+    h.state.captureStageCaps.set(69,20);
+    h.state.captureStageCaps.set(25,20);
+    h.control.killsH.set('optimistic',2200);
+    h.control.killsH.set('alternative',1800);
+    h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{}}});
+    h.api.startPokedexAuto();
+    h.control.estimates.set('optimistic',{
+        killsH:500,observed:true,samples:8,windowMs:300000
+    });
+    h.clock.now+=121000;
+    h.api.stepPokedexAuto();
+    assert.equal(h.state.pokedexAuto.targetSlug,'optimistic');
+    h.control.estimates.set('optimistic',{
+        killsH:500,observed:true,samples:24,windowMs:300000
+    });
+    h.clock.now+=15000;
+    h.api.stepPokedexAuto();
+    assert.equal(h.state.pokedexAuto.targetSlug,'optimistic',
+        'once-per-minute re-evaluation should not trigger after 15 seconds');
+});
+
 test('unknown catch rates go last; equal probabilities use level and slug',()=>{
     const h=harness();
     h.state.hunts=[
@@ -265,11 +356,13 @@ test('Top Catch always ranks with Ultra Ball even when Beast preview is selected
     h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{}}});
     h.state.filters.captureBall='beast';
     h.api.startPokedexAuto();
-    assert.deepEqual(h.control.usedBalls,[4]);
+    assert.ok(h.control.usedBalls.length>0);
+    assert.ok(h.control.usedBalls.every(id=>id===4),
+        'all candidate forecasts use Ultra only');
     h.state.filters.captureBall='ultra';
     h.state.pokedexAuto.targetSlug=null;
     h.api.stepPokedexAuto();
-    assert.deepEqual(h.control.usedBalls,[4,4]);
+    assert.ok(h.control.usedBalls.every(id=>id===4));
     assert.equal(h.state.pokedexAuto.targetSlug,'bulbasaur');
 });
 
@@ -287,7 +380,8 @@ test('Top Catch ranks with Ultra odds even if Beast efficiency is unavailable',(
     h.api.dexAutoReconcileTopCatch({topCatch:{s:'2026-10-25',e:{}}});
     h.api.startPokedexAuto();
     assert.equal(h.state.pokedexAuto.targetSlug,'late-first');
-    assert.deepEqual(h.control.usedBalls,[4]);
+    assert.ok(h.control.usedBalls.length>0);
+    assert.ok(h.control.usedBalls.every(id=>id===4));
 });
 
 test('Top Catch waits for capture catalog, then chooses by chance',()=>{
