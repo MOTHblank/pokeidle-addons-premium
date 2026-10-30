@@ -26,7 +26,7 @@ function harness() {
             baseSpAtk:100,baseSpDef:100,type1:'GRASS',attacks:[]}],
         [3,{baseSpeed:90,baseHp:500,baseAtk:100,baseDef:170,
             baseSpAtk:100,baseSpDef:170,type1:'WATER',attacks:[]}],
-        [4,{baseSpeed:90,baseHp:100,baseAtk:10000,baseDef:90,
+        [4,{baseSpeed:90,baseHp:100,baseAtk:5000000,baseDef:90,
             baseSpAtk:100,baseSpDef:100,type1:'NORMAL',attacks:[]}]
     ]);
     const state={filters:{nativeAoeForecast:false},
