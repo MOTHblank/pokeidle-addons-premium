@@ -212,6 +212,8 @@ test('game scans reuse a healthy tab across scans/reload and safely restart afte
         return { window, attributes, isClosed: () => closed };
     }
 
+    // Regression: game readiness must not reference a missing INVENTORY_ID.
+    // This harness exposes only .menu-topo, as on the supported game UI.
     load('pokeidle.io');
     await clock.advance(31000);
     assert.equal(opened.length, 1);
