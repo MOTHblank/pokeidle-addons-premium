@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Live Stream Scanner
 // @namespace    moth.pokeidle
-// @version      7.2.3
+// @version      7.2.4
 // @description  Maintains one persistent Twitch chat tab and syncs channels with IRC JOIN/PART without reloads; KICK stays in Rust.
 // @match        https://pokeidle.io/app*
 // @match        https://www.pokeidle.io/app*
@@ -147,7 +147,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-stream-auto-open', '7.2.2');
+        document.documentElement?.setAttribute('data-moth-addon-version-stream-auto-open', '7.2.4');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -461,8 +461,7 @@
                 const ready =
                     !!document.body &&
                     (
-                        document.getElementById(INVENTORY_ID) ||
-                        document.querySelector('.menu-topo')
+                        document.querySelector('.menu-topo, #p-auto, #tr-ativos, #tw-corpo, #app')
                     );
 
                 if (ready) {
@@ -679,19 +678,16 @@
             let bridgeData = readLiveChannelsFromBridge();
             let live;
 
-            if (bridgeData) {
-                // Fast path: game state already includes the current live
-                // channels, including KICK. No modal/UI scraping is needed.
-                live = bridgeData.live;
-            } else {
-                live = new Map();
+            // The bridge can be present before its Twitch live list is ready.
+            // Do not interpret an empty snapshot as evidence of no streams:
+            // recover directly from the visible game channels as needed.
+            live = bridgeData?.live ? new Map(bridgeData.live) : new Map();
+            const bridgeHasTwitch = [...live.values()].some(item => item.service === 'twitch');
+            if (!bridgeHasTwitch) {
                 for (let attempt = 0; attempt < 10; attempt += 1) {
-                    live = await collectOfficialLiveChannels();
-
-                    if (live.size) {
-                        break;
-                    }
-
+                    const fallback = await collectOfficialLiveChannels();
+                    for (const [key, item] of fallback) live.set(key, item);
+                    if ([...live.values()].some(item => item.service === 'twitch')) break;
                     await sleep(500);
                 }
             }
@@ -949,7 +945,7 @@
         }
     };
 
-    console.info('[Moth] live stream scanner v7.2.1 ready · persistent delta-synced Twitch IRC chat · KICK stays in Rust');
+    console.info('[Moth] live stream scanner v7.2.4 ready · persistent delta-synced Twitch IRC chat · KICK stays in Rust');
     }
 
     start();
