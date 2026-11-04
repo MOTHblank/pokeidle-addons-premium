@@ -6,7 +6,7 @@
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
 // @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
-// @version      1.9.37
+// @version      1.9.38
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -20,7 +20,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.35');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.38');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -1290,6 +1290,9 @@
         combatProfileCache: null,
         estimateCache: new Map(),
         estimateCacheKey: '',
+        // Only full campo.init layouts, keyed by the server-confirmed hunt.
+        // No field polling, background sampling, or speculative map geometry.
+        nativeGeometry: new Map(),
 
         serverTypeChart: null,
         huntAmplification: 1.5,
@@ -5398,6 +5401,10 @@
         }
         // Official Top Catch may arrive independently of regular state deltas.
         dexAutoReconcileTopCatch(message);
+        if (message?.t === 'campo.init') {
+            nativeRememberFieldGeometry(message);
+            return;
+        }
 
         if (
             message?.t === 'batalha' &&
@@ -5461,6 +5468,7 @@
             state.combatTargets.clear();
             state.lastLeadPokemon = null;
             state.activePokemonId = null;
+            state.nativeGeometry.clear(); // never carry prior-account maps
             if (
                 message.tabelaTipos &&
                 typeof message.tabelaTipos ===
@@ -8919,23 +8927,59 @@
         }
         return spent/hp.length;
     }
+    function nativeRememberFieldGeometry(packet) {
+        // Upstream campo.init supplies the complete initial layout. Individual
+        // high-level slot replacements are not full waves and must not be used.
+        const slug=typeof packet?.slug==='string'?packet.slug:null;
+        const hunt=slug&&state.hunts.find(row=>row.slug===slug);
+        if(!hunt||!Array.isArray(packet.mobs))return false;
+        const hero=packet.heroi;
+        const hc=Number(hero?.c),hr=Number(hero?.r);
+        if(!Number.isFinite(hc)||!Number.isFinite(hr)||
+            hero?.c==null||hero?.r==null)return false;
+        const distances=packet.mobs.filter(mob=>mob&&typeof mob==='object'&&
+            mob.ti==null&&
+            !['bn','cura','tm','depot','tr'].some(key=>
+                mob[key]!=null&&mob[key]!==false)&&
+            mob.x!==true).map(mob=>{
+                const c=Number(mob.c),r=Number(mob.r);
+                return mob.c!=null&&mob.r!=null&&
+                    Number.isFinite(c)&&Number.isFinite(r)
+                    ? Math.round(Math.hypot(c-hc,r-hr)*10)/10:null;
+            }).filter(d=>d!==null&&d>=0&&d<=300);
+        const count=Number(hunt.totalSpawns??hunt.total_spawns)||
+            (hunt.especies||[]).reduce((total,sp)=>
+                total+Math.max(0,Number(sp.pontos)||0),0);
+        const required=Math.max(6,Math.ceil(Math.min(16,count||15)*.8));
+        if(distances.length<required)return false;
+        distances.sort((a,b)=>a-b);
+        const old=state.nativeGeometry.get(slug);
+        if(old&&old.length===distances.length&&
+            old.every((value,i)=>value===distances[i]))return false;
+        state.nativeGeometry.delete(slug);
+        state.nativeGeometry.set(slug,distances);
+        while(state.nativeGeometry.size>64)
+            state.nativeGeometry.delete(state.nativeGeometry.keys().next().value);
+        state.modelRevision++; // invalidate only on a genuinely new layout
+        return true;
+    }
     function nativeSpawnDistances(hunt) {
         const weighted=(hunt.especies||[]).reduce((total,sp)=>
             total+Math.max(0,Number(sp.pontos)||0),0);
         const reported=Number(hunt.totalSpawns??hunt.total_spawns);
         const count=Math.max(1,Math.min(NATIVE_PACE.maxSpawns,
             Math.trunc(reported>0?reported:weighted>0?Math.round(weighted):15)));
-        // Native uses full-wave position quantiles if recorded; the browser
-        // Atlas currently has no validated distance telemetry.
-        return Array(count).fill(NATIVE_PACE.defaultDistance);
+        const sampled=state.nativeGeometry?.get(hunt.slug);
+        if(!sampled?.length)return Array(count).fill(NATIVE_PACE.defaultDistance);
+        // Same quantile resampling as Moth Controller's native_atlas_combat.
+        return Array.from({length:count},(_,i)=>sampled[Math.min(
+            sampled.length-1,Math.floor((i+.5)/count*sampled.length))]);
     }
     function nativeReplenishmentCap(hunt, count) {
         if(Number(hunt.nivel)<=150)return Infinity;
-        const region=String(hunt.regiao??hunt.region??hunt.area??'')
-            .toLowerCase();
-        const sinnoh=region==='sinnoh'||
-            String(hunt.slug||'').endsWith('_sinnoh');
-        return count*3600/(sinnoh?30:65);
+        // Upstream v1.377+: all regions use the grouped Unova-style layout.
+        // No obsolete 30-second Sinnoh exception.
+        return count*3600/65;
     }
     function nativeSingleTargetKills(distances,cycle,hunt) {
         const count=distances.length;
