@@ -15,33 +15,39 @@ const close=(got,expected)=>assert.ok(Math.abs(got-expected)<1e-10,
     String(got)+' != '+String(expected));
 
 test('the game fields detected by Moth Controller yield separate trainer and Pokémon factors',()=>{
+    const now=1750000000000;
     const game=model.nativeXpBonusDelta({},{
-        twitch:{pctAtual:15,assistindoEm:['one','two']},
+        twitch:{pct:15,bonus:{xp:now+3600000}},
         evento:{xpTreinadorPct:20,xpPokemonPct:30},
         guildBonusPct:10,guild:{boostAte:0},
         loja:{boosts:{},atrasados:null}
     },true);
-    const bonus=model.nativeXpBonusReading(game,250);
+    const bonus=model.nativeXpBonusReading(game,250,now);
     close(bonus.trainer,1.15*1.2*1.1);
     close(bonus.pokemon,1.15*1.3*1.1);
     assert.equal(bonus.sources.length,3);
     assert.equal(bonus.complete,true);
     assert.equal(bonus.unknown.length,0);
-    assert.ok(!JSON.stringify(game).includes('one'));
-    assert.ok(!JSON.stringify(game).includes('two'));
 });
 
-test('Twitch available is not credited unless the game reports watching',()=>{
-    const game=model.nativeXpBonusDelta({},{twitch:{
-        pctAtual:17.5,assistindoEm:[]}},true);
-    const bonus=model.nativeXpBonusReading(game,250);
-    assert.equal(bonus.trainer,1);
-    assert.equal(bonus.pokemon,1);
-    assert.equal(bonus.knownFactors,false);
-    assert.equal(bonus.unknown[0],'twitchAvailable');
-    const unknown=model.nativeXpBonusReading(
-        model.nativeXpBonusDelta({},{twitch:{pctAtual:17.5}},true),250);
-    assert.ok(unknown.unknown.includes('twitch'));
+test('Twitch configured percentage is inactive until an XP redemption is live',()=>{
+    const now=1750000000000;
+    const configured=model.nativeXpBonusDelta({},{twitch:{
+        pct:15,bonus:{xp:now-1,captura:now+3600000,shiny:now+3600000}}},true);
+    const inactive=model.nativeXpBonusReading(configured,250,now);
+    assert.equal(inactive.trainer,1);
+    assert.equal(inactive.pokemon,1);
+    assert.equal(inactive.knownFactors,false);
+    assert.equal(inactive.unknown.length,0);
+
+    const active=model.nativeXpBonusDelta(configured,{twitch:{
+        pct:15,bonus:{xp:now+3600000,captura:now+3600000,shiny:now+3600000}}},false);
+    const credited=model.nativeXpBonusReading(active,250,now);
+    close(credited.trainer,1.15);
+    close(credited.pokemon,1.15);
+    assert.ok(credited.sources.some(row=>row.kind==='twitch'));
+    assert.notEqual(model.nativeXpBonusScope(configured,now),
+        model.nativeXpBonusScope(active,now));
 });
 
 test('delta packets retain unrelated fields, explicit null clears a field',()=>{
@@ -76,7 +82,7 @@ test('shop and catch-up effects are detected but not incorrectly multiplied',()=
 
 test('invalid bonus fields cannot produce phantom multipliers',()=>{
     const state=model.nativeXpBonusDelta({},{
-        twitch:{pctAtual:'50',assistindoEm:['x']},
+        twitch:{pct:'50',bonus:{xp:Date.now()+600000}},
         evento:{xpTreinadorPct:-100,xpPokemonPct:Infinity},
         guildBonusPct:100000
     },true);
