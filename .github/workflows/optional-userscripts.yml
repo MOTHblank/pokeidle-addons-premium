@@ -18,5 +18,5 @@ jobs:
       - name: Syntax check migrated userscripts
         run: |
           for file in addons/*.user.js addons/hunt-atlas/hunt-atlas.user.js; do node --check "$file"; done
-      - name: Hunt Atlas and Twitch regression tests
+      - name: Hunt Atlas and browser regression tests
         run: node --test addons/hunt-atlas/tests/*.test.cjs tests/*.test.cjs
