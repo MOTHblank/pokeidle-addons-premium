@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Moth Controller Bridge
 // @namespace    moth.pokeidle
-// @version      1.3.15
+// @version      1.3.16
 // @description  Lightweight protocol bridge for the native Moth controller.
 // @match        https://pokeidle.io/app*
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/controller-bridge.user.js
@@ -16,7 +16,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-controller-bridge', '1.3.15');
+        document.documentElement?.setAttribute('data-moth-addon-version-controller-bridge', '1.3.16');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -27,10 +27,9 @@
     const existingBridge = page.__mothControllerBridgeV1;
     if (
         existingBridge &&
-        Number(existingBridge.version) >= 14 &&
+        Number(existingBridge.version) >= 15 &&
         typeof existingBridge.snapshot === 'function' &&
         typeof existingBridge.gameSnapshot === 'function'
-        && typeof existingBridge.streamStateSnapshot === 'function' &&
         typeof existingBridge.marketCatalogSnapshot === 'function' &&
         typeof existingBridge.socket === 'function'
     ) {
@@ -51,8 +50,6 @@
     let serverTypeChart = null;
     let huntAmplification = 1.5;
 
-    let lastStreamBonus = '';
-    let lastStreamBonusAt = 0;
     let lastMessageAt = 0;
 
     const copy = value => {
@@ -316,34 +313,6 @@
             : statePokemon.get(String(id)) || null;
     }
 
-    function bodyTextBonus() {
-        // Upstream renders the bonus in these explicit HUD nodes. Avoid a
-        // full document.body.innerText traversal on every controller poll.
-        const sources = [
-            document.querySelector('#tr-ativos')?.innerText || '',
-            document.querySelector('#evento-texto')?.innerText || '',
-            document.querySelector('#evento-faixa')?.innerText || ''
-        ];
-
-        const lines = sources
-            .join('\n')
-            .split(/\n+/)
-            .map(v => v.replace(/\s+/g, ' ').trim())
-            .filter(Boolean);
-
-        const current = lines.find(line =>
-            /\+\s*15\s*%/i.test(line) &&
-            /\b(?:XP|EXP|experi)/i.test(line)
-        ) || '';
-
-        if (current) {
-            lastStreamBonus = current;
-            lastStreamBonusAt = Date.now();
-        }
-
-        return current;
-    }
-
     function fallen() {
         return document.querySelectorAll('#caidos-lista .caido').length;
     }
@@ -364,25 +333,10 @@
 
     function snapshot() {
         const pokemon = activePokemon();
-        const scanner = document.querySelector('#moth-scan-live-streams');
-
         const text = selector => {
             const el = document.querySelector(selector);
             return el ? (el.textContent || '').replace(/\s+/g, ' ').trim() : '';
         };
-
-        const currentStreamBonus = bodyTextBonus();
-
-        const twitch = state?.twitch || {};
-        const twitchPct = Number(
-            twitch.pctAtual ??
-            twitch.pct ??
-            0
-        );
-
-        const twitchWatching = Array.isArray(twitch.assistindoEm)
-            ? twitch.assistindoEm.filter(Boolean)
-            : [];
 
         const kickScanner = (() => {
             try {
@@ -394,18 +348,6 @@
                 return null;
             }
         })();
-
-        if (
-            twitchWatching.length &&
-            twitchPct > 0
-        ) {
-            lastStreamBonus =
-                '+' +
-                twitchPct +
-                '% XP · watching ' +
-                twitchWatching.join(', ');
-            lastStreamBonusAt = Date.now();
-        }
 
         const playerXp = text('#tr-xp-txt');
 
@@ -449,9 +391,6 @@
                 activePokemonXpProximo: Number(pokemon?.xpProximo) || 0,
                 fallen: fallen(),
                 playerXp,
-                visibleStreamBonus: currentStreamBonus,
-                lastStreamBonus,
-                lastStreamBonusAt,
                 twitch: copy(state?.twitch),
                 kick: copy(state?.kick),
                 loja: copy(state?.loja),
@@ -471,12 +410,6 @@
                 autoCatchBallsUsed: numberFrom('#moth-ac-balls-used'),
                 autoCatchRate: text('#moth-ac-rate'),
                 autoCatchRestock: text('#moth-ac-restock-status'),
-                streamScanStatus: scanner?.dataset?.mothScanStatus || '',
-                streamScanLive: Number(scanner?.dataset?.mothScanLive || 0) || 0,
-                streamScanTwitchChannels: scanner?.dataset?.mothScanTwitchChannels !== undefined &&
-                    scanner.dataset.mothScanTwitchChannels !== ''
-                    ? Number(scanner.dataset.mothScanTwitchChannels) : null,
-                streamScanOpened: Number(scanner?.dataset?.mothScanOpened || 0) || 0
             },
             huntAtlas: (() => {
                 try {
@@ -488,9 +421,7 @@
             stream: {
                 twitch: copy(state?.twitch),
                 kick: copy(state?.kick),
-                kickScanner,
-                bonusCurrent: currentStreamBonus,
-                bonusLast: lastStreamBonus
+                kickScanner
             },
         };
     }
@@ -524,7 +455,7 @@
     }
 
     page.__mothControllerBridgeV1 = {
-        version: 14,
+        version: 15,
         sessionBootstrap() {
             // Only expose the server-confirmed game socket, not unrelated sockets.
             const ws = gameSocket;
@@ -542,14 +473,6 @@
                     balls: copy(state.balls),
                     items: copy(state.items)
                 } : null
-            };
-        },
-        streamStateSnapshot() {
-            // Used by the stream scanner to read live state without calling
-            // snapshot(), which itself queries the scanner diagnostics API.
-            return {
-                twitch: copy(state?.twitch),
-                kick: copy(state?.kick)
             };
         },
         snapshot,
