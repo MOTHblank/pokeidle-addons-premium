@@ -5469,6 +5469,8 @@
             state.lastLeadPokemon = null;
             state.activePokemonId = null;
             state.nativeGeometry.clear(); // never carry prior-account maps
+            state.modelRevision++;
+            state.estimateCache.clear();
             if (
                 message.tabelaTipos &&
                 typeof message.tabelaTipos ===
@@ -6832,6 +6834,10 @@
         const meta = {
             ...previous,
             id,
+            // Re-apply the authoritative v1398 sheet if a later asset merge
+            // replaces an already-hydrated moveset.
+            upstreamV1398MovesApplied: Array.isArray(creature?.attacks)
+                ? false : previous.upstreamV1398MovesApplied,
             // Later override arrays replace earlier raw-catalog arrays.
             // Never mutate the source arrays (other game components reuse them).
             attacks: Array.isArray(creature?.attacks)
