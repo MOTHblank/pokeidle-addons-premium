@@ -450,7 +450,7 @@ test('the public forecast has explicit, separate trainer and Pokemon formulas', 
   assert.ok(source.includes('value: xpSingleStreamRate(killsH, trainerXpPerKill)'));
   assert.ok(source.includes('pokemonValue: xpSingleStreamRate(killsH, pokemonXpPerKill)'));
   assert.ok(source.includes('trainerXpPerKill: xp?.trainerXpPerKill ?? null'));
-  assert.ok(source.includes('// @version      1.9.29'));
+  assert.ok(source.includes('// @version      1.9.38'));
 });
 
 test('only the folder installer remains and carries auto-updating metadata', () => {
@@ -458,5 +458,5 @@ test('only the folder installer remains and carries auto-updating metadata', () 
   for(const tag of ['@downloadURL','@updateURL'])
     assert.ok(source.includes(tag+'  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js') ||
       source.includes(tag+'    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js'));
-  assert.ok(source.includes('// @version      1.9.29'));
+  assert.ok(source.includes('// @version      1.9.38'));
 });

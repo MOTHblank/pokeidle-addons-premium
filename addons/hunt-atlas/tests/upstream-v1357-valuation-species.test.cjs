@@ -43,7 +43,7 @@ function harness(){
 }
 
 test('the single canonical Premium entry point self-updates at v1.9.29',()=>{
-    assert.match(src,/@version\s+1\.9\.29/);
+    assert.match(src,/@version\s+1\.9\.38/);
     const canonical='addons/hunt-atlas/hunt-atlas.user.js';
     assert.ok(src.includes('@downloadURL  https://raw.githubusercontent.com/'+
         'MOTHblank/pokeidle-addons-premium/main/'+canonical));
@@ -53,10 +53,10 @@ test('the single canonical Premium entry point self-updates at v1.9.29',()=>{
 
 test('upstream v1.357.3 species data adds all Megas and the nine new forms',()=>{
     const {h,state,mergeCombatCreature}=harness();
-    assert.equal(h.UPSTREAM_V1357_MEGAS.length,93);
-    assert.equal(new Set(h.UPSTREAM_V1357_MEGAS.map(row=>row[0])).size,93);
+    assert.equal(h.UPSTREAM_V1357_MEGAS.length,94);
+    assert.equal(new Set(h.UPSTREAM_V1357_MEGAS.map(row=>row[0])).size,94);
     assert.equal(h.UPSTREAM_V1357_NEW_FORMS.length,9);
-    for(const id of [6,26,306,373,445,500,531,952]){
+    for(const id of [6,26,306,373,445,500,531,952,970,9718]){
         mergeCombatCreature({pokeId:id,name:'Base',type1:'NORMAL',
             baseHp:100,baseAtk:100,baseDef:100,baseSpAtk:100,
             baseSpDef:100,baseSpeed:100,sellValue:3000,
@@ -71,6 +71,7 @@ test('upstream v1.357.3 species data adds all Megas and the nine new forms',()=>
         [9026,'ELECTRIC',null,135,110],
         [9445,'DRAGON',null,130,151],
         [3306,'STEEL',null,140,50],
+        [3970,'ROCK','POISON',90,101],
     ];
     for(const [id,t1,t2,atk,speed] of expected){
         const meta=state.speciesCombat.get(id);

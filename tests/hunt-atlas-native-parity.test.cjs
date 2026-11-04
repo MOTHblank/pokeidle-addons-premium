@@ -30,7 +30,8 @@ function harness() {
             baseSpAtk:100,baseSpDef:100,type1:'NORMAL',attacks:[]}]
     ]);
     const state={filters:{nativeAoeForecast:false},
-        typesBySpecies:new Map()};
+        typesBySpecies:new Map(),nativeGeometry:new Map(),
+        hunts:[],modelRevision:0};
     const ctx={
         state,leadPokemon:()=>lead,
         speciesCombatMeta:id=>meta.get(Number(id))||null,
@@ -52,7 +53,8 @@ function harness() {
         }
     };
     const api=vm.runInNewContext(code+'\n({nativeIvCooldown,nativeMoveCooldown,'+
-        'nativeWildStat,nativeMeanTtk,nativeReplenishmentCap,'+
+        'nativeWildStat,nativeMeanTtk,nativeRememberFieldGeometry,'+
+        'nativeSpawnDistances,nativeReplenishmentCap,'+
         'nativeSingleTargetKills,nativeAoeKills,nativeCombatForecast})',ctx);
     const hunt=(id=2,level=150)=>({
         slug:'hunt-'+id,nivel:level,area:'kanto',
@@ -89,9 +91,33 @@ test('controller high-level per-slot replenishment caps apply',()=>{
     const sinnoh={...kanto,area:'sinnoh'};
     const d=Array(16).fill(20.6);
     assert.equal(h.api.nativeReplenishmentCap(kanto,16),16*3600/65);
-    assert.equal(h.api.nativeReplenishmentCap(sinnoh,16),16*3600/30);
+    assert.equal(h.api.nativeReplenishmentCap(sinnoh,16),16*3600/65);
     assert.ok(h.api.nativeSingleTargetKills(d,1.8,kanto)<=16*3600/65);
-    assert.ok(h.api.nativeAoeKills(d,.01,sinnoh)<=16*3600/30);
+    assert.ok(h.api.nativeAoeKills(d,.01,sinnoh)<=16*3600/65);
+});
+test('premium uses complete campo.init positions for high-level hunt geometry',()=>{
+    const h=harness();
+    const hunt={...h.hunt(2,20000),totalSpawns:8};
+    h.state.hunts=[hunt];
+    const initial=h.api.nativeSpawnDistances(hunt);
+    assert.equal(initial.length,8);
+    assert.ok(initial.every(d=>d===20.6));
+    const packet={t:'campo.init',slug:hunt.slug,heroi:{c:10,r:10},
+        mobs:Array.from({length:8},(_,i)=>({
+            s:i+1,c:10+i,r:15,x:false
+        })).concat([{s:100,c:150,r:150,tr:true}])};
+    assert.equal(h.api.nativeRememberFieldGeometry(packet),true);
+    assert.equal(h.state.modelRevision,1);
+    const distances=h.api.nativeSpawnDistances(hunt);
+    assert.equal(distances.length,8);
+    assert.ok(distances.every(d=>d>=5&&d<10));
+    assert.equal(h.api.nativeRememberFieldGeometry(packet),false,
+        'identical layout must not recalculate all forecasts');
+    assert.equal(h.state.modelRevision,1);
+    assert.equal(h.api.nativeRememberFieldGeometry({
+        ...packet,mobs:packet.mobs.slice(0,3)}),false,
+        'incomplete reinits cannot replace reliable full-map geometry');
+    assert.deepEqual(Array.from(h.api.nativeSpawnDistances(hunt)),Array.from(distances));
 });
 test('native forecast reduces kills/hour for tougher enemies',()=>{
     const h=harness();
