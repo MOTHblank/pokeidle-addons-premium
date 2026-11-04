@@ -6,7 +6,7 @@
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
 // @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
-// @version      1.9.38
+// @version      1.9.39
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -20,7 +20,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.38');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.39');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -614,8 +614,7 @@
             'xp.native.shopPokemon': 'Shop Pokémon XP ×{mult}',
             'xp.native.shopUnknown': 'Shop XP boost detected without a published multiplier',
             'xp.native.catchup': 'Catch-up boost reported (threshold affects exact XP)',
-            'xp.native.unknownTwitch': 'Twitch percentage reported; credited channels not confirmed',
-            'xp.native.twitchAvailable': 'Twitch XP bonus is available but no credited chat is detected',
+            'xp.native.unknownTwitch': 'Twitch XP redemption is active but its percentage is unavailable',
             'xp.native.model': 'Model uses the detected percentages: trainer ×{trainer} · Pokémon ×{pokemon}. Other boosts may still be missing.',
             'xp.native.measured': 'Measured XP/h already includes active bonuses; nothing is multiplied again.',
             'xp.native.note': 'Reads game state like Moth Controller, with upstream XP multipliers. Unknown shop values and XP threshold crossings are not guessed. Capture/shiny/drop bonuses are separate.',
@@ -994,8 +993,7 @@
             'xp.native.shopPokemon': 'XP do Pokémon da Loja ×{mult}',
             'xp.native.shopUnknown': 'Boost de XP da Loja detectado sem multiplicador informado',
             'xp.native.catchup': 'Boost de recuperação informado (o nível-alvo afeta o XP real)',
-            'xp.native.unknownTwitch': 'Percentual Twitch informado; canais creditados não confirmados',
-            'xp.native.twitchAvailable': 'Bônus de XP da Twitch disponível, mas nenhum chat creditado foi detectado',
+            'xp.native.unknownTwitch': 'O resgate de XP da Twitch está ativo, mas o percentual não está disponível',
             'xp.native.model': 'Modelo usa os percentuais detectados: treinador ×{trainer} · Pokémon ×{pokemon}. Outros bônus ainda podem faltar.',
             'xp.native.measured': 'XP/h medido já inclui os bônus ativos; nenhum multiplicador é aplicado novamente.',
             'xp.native.note': 'Lê o estado do jogo como o Moth Controller, com os multiplicadores de XP do upstream. Boosts sem valor informado e limites de nível não são inventados. Bônus de captura/shiny/drops são separados.',
@@ -4214,9 +4212,8 @@
         if (Object.hasOwn(delta,'twitch')) {
             const t=delta.twitch;
             next.twitch=t&&typeof t==='object'?{
-                pct:pct(t.pctAtual??t.pct),
-                watching:Array.isArray(t.assistindoEm)
-                    ?Math.min(100,t.assistindoEm.filter(Boolean).length):null
+                pct:pct(t.pct),
+                xpUntil:until(t.bonus?.xp)
             }:null;
         }
         if (Object.hasOwn(delta,'evento')) {
@@ -4272,15 +4269,13 @@
         let trainer=1,pokemon=1;
         const sources=[],unknown=[];
         const pct=(v)=>typeof v==='number'&&Number.isFinite(v)&&v>0&&v<=1000?v:0;
-        if(pct(values.twitch?.pct)) {
-            if(values.twitch.watching>0) {
-                const p=values.twitch.pct;
+        if(Number(values.twitch?.xpUntil)>now) {
+            const p=pct(values.twitch?.pct);
+            if(p) {
                 trainer*=1+p/100;pokemon*=1+p/100;
                 sources.push({kind:'twitch',pct:p});
-            } else if(values.twitch.watching===null) {
-                unknown.push('twitch');
             } else {
-                unknown.push('twitchAvailable');
+                unknown.push('twitch');
             }
         }
         if(pct(values.evento?.trainer)||pct(values.evento?.pokemon)) {
@@ -4336,7 +4331,7 @@
         // even without another websocket packet.
         const active=end=>typeof end==='number'&&end>now;
         return JSON.stringify([
-            values?.twitch?.pct??null,values?.twitch?.watching??null,
+            values?.twitch?.pct??null,active(values?.twitch?.xpUntil),
             values?.evento?.trainer??null,values?.evento?.pokemon??null,
             values?.guildBonusPct??null,
             active(values?.guild?.boostUntil),
@@ -13919,7 +13914,6 @@
                 kind==='shopTrainer'||kind==='shopPokemon'
                     ?'xp.native.shopUnknown':
                 kind==='catchup'?'xp.native.catchup':
-                kind==='twitchAvailable'?'xp.native.twitchAvailable':
                 'xp.native.unknownTwitch';
             bonusDescriptions.push(tr(key));
         }
