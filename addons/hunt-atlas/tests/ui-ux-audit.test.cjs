@@ -96,7 +96,7 @@ test('compact/mobile filter panel is reversible and labelled for accessibility',
     assert.match(source,/document.activeElement\?\.isContentEditable/);
     assert.match(source,/\.mha-filters\[hidden\] \{ display: none !important; \}/);
     assert.match(source,/grid\.hidden=!state\.filtersExpanded/);
-    assert.match(source,/max-height: min\(50dvh, 440px\)/);
+    assert.match(source,/\.mha-filters,\s*\.mha-xp-summary \{\s*max-height: none;\s*overflow: visible;/);
 });
 
 test('empty results recovery and typeahead do not reset scenario choices',()=>{
