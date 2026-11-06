@@ -115,6 +115,12 @@ test('obsolete NPC loot is not a selectable rank or second gold income stream',(
     assert.match(code,/function refreshCaptureRarities\(\)/);
     assert.doesNotMatch(code,/function rebuildNpcLootCatalog\(\)/);
 });
+test('Raid farm bonus is passed to the hunt gold model when live',()=>{
+    assert.match(code,/const raidFarmPct=nativeRaidFarmPct\(state\.nativeXpContext\)/);
+    assert.match(code,/farmGoldPrediction\(hunt,killsH,raidFarmPct\)/);
+    const hunt={nivel:100,especies:[{pokeId:1,pontos:1}]};
+    assert.ok(h.farmGoldPrediction(hunt,100,5)>h.farmGoldPrediction(hunt,100,0));
+});
 test('kill Coins sort remains independent of XP, while net income stays read-only',()=>{
     assert.match(code,/sort === 'coins'/);
     assert.match(code,/const av = economyFor\(a.hunt\)\?\.killCoinsH/);
