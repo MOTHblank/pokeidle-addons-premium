@@ -65,9 +65,9 @@ test('new first-stage, two-stage and Komala sheets override obsolete moves',()=>
     api.hydrate(bulbasaur,1);
     assert.equal(bulbasaur.attacks.length,7);
     assert.equal(bulbasaur.attacks[0].name,'Magical Leaf');
-    const charmeleon={attacks:[]};
-    api.hydrate(charmeleon,5);
-    assert.equal(charmeleon.attacks.length,9);
+    const rattata={attacks:[]};
+    api.hydrate(rattata,19);
+    assert.equal(rattata.attacks.length,9);
     const komala={attacks:[]};
     api.hydrate(komala,775);
     assert.equal(komala.attacks.length,12);
