@@ -8,7 +8,8 @@ const start=src.indexOf('    // HA MILESTONE B PURE BEGIN:');
 const end=src.indexOf('    // HA MILESTONE B PURE END.',start);
 assert.ok(start>=0&&end>start,'native XP test needs embedded production helpers');
 const model=vm.runInNewContext(src.slice(start,end)+'\n({'+[
-    'nativeXpBonusDelta','nativeXpBonusReading','nativeXpBonusScope'
+    'nativeXpBonusDelta','nativeXpBonusReading','nativeXpBonusScope',
+    'nativeLiveCaptureBonuses','nativeRaidFarmPct'
 ].join(',')+'})');
 
 const close=(got,expected)=>assert.ok(Math.abs(got-expected)<1e-10,
@@ -31,17 +32,51 @@ test('the game fields detected by Moth Controller yield separate trainer and Pok
     assert.ok(!JSON.stringify(game).includes('two'));
 });
 
-test('Twitch available is not credited unless the game reports watching',()=>{
+test('Twitch availability is not credited without an active XP redemption',()=>{
     const game=model.nativeXpBonusDelta({},{twitch:{
-        pctAtual:17.5,assistindoEm:[]}},true);
+        pctAtual:17.5,assistindoEm:[],bonus:{xp:0}}},true);
     const bonus=model.nativeXpBonusReading(game,250);
     assert.equal(bonus.trainer,1);
     assert.equal(bonus.pokemon,1);
     assert.equal(bonus.knownFactors,false);
-    assert.equal(bonus.unknown[0],'twitchAvailable');
-    const unknown=model.nativeXpBonusReading(
-        model.nativeXpBonusDelta({},{twitch:{pctAtual:17.5}},true),250);
-    assert.ok(unknown.unknown.includes('twitch'));
+});
+
+test('server bonusXp is authoritative, expiry-aware and carries Raid farm separately',()=>{
+    const now=1750000000000;
+    const game=model.nativeXpBonusDelta({},{
+        bonusXp:{tr:1.65,pk:1.32,partes:[
+            {id:'vip',tr:1.5,pk:1.5,ate:now+5000},
+            {id:'raid',tr:1.1,pk:1.1,ate:now+3000,farmPct:2}
+        ]},
+        twitch:{pct:15,bonus:{captura:now+5000,shiny:now+5000}},
+        kick:{pct:15,bonus:{captura:now+5000}}
+    },true);
+    const before=model.nativeXpBonusReading(game,200,now);
+    close(before.trainer,1.65);
+    close(before.pokemon,1.32);
+    assert.equal(before.authoritative,true);
+    const live=model.nativeLiveCaptureBonuses(game,now);
+    close(live.capture,1.15*1.15);
+    close(live.shiny,1.15);
+    close(model.nativeRaidFarmPct(game,now),2);
+    const after=model.nativeXpBonusReading(game,200,now+6000);
+    // The total remainder is preserved while expired timed parts fall out.
+    close(after.trainer,1.65/(1.5*1.1));
+    close(after.pokemon,1.32/(1.5*1.1));
+    assert.equal(model.nativeRaidFarmPct(game,now+6000),0);
+    assert.notEqual(model.nativeXpBonusScope(game,now),
+        model.nativeXpBonusScope(game,now+6000));
+});
+
+test('Seasonal and Gym podium snapshots are sanitized and scoped',()=>{
+    const game=model.nativeXpBonusDelta({},{
+        tipoSazonal:'fire',
+        ginasiosPodio:{FIRE:2,FLYING:3,INVALID:1}
+    },true);
+    assert.equal(game.seasonalType,'FIRE');
+    assert.deepEqual(JSON.parse(JSON.stringify(game.gymPodium)),{FIRE:2,FLYING:3});
+    const changed=model.nativeXpBonusDelta(game,{tipoSazonal:'water'},false);
+    assert.notEqual(model.nativeXpBonusScope(game),model.nativeXpBonusScope(changed));
 });
 
 test('delta packets retain unrelated fields, explicit null clears a field',()=>{
