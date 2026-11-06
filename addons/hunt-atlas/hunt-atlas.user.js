@@ -3836,29 +3836,36 @@
             Number.isFinite(fraction)&&fraction>=0&&fraction<=1;
         const acceptedH=Number.isFinite(killsH)&&killsH>=0 ?
             killsH*(observed?fraction:1):null;
-        const catchesH=base.chance===null||acceptedH===null?
-            null:acceptedH*base.chance;
+        const liveCatch=Number(options.liveCaptureMultiplier??1);
+        const liveShiny=Number(options.liveShinyMultiplier??1);
+        const catchMultiplier=Number.isFinite(liveCatch)&&liveCatch>=1?liveCatch:1;
+        const shinyMultiplier=Number.isFinite(liveShiny)&&liveShiny>=1?liveShiny:1;
+        const chance=base.chance===null?null:Math.min(1,base.chance*catchMultiplier);
+        const catchesH=chance===null||acceptedH===null?
+            null:acceptedH*chance;
         const shinyEligible=String(hunt?.area||'').toLowerCase()==='outland'
             ? null : true; // Outland eligibility is not inferred from wiki.
         const lure=options.hypotheticalLure===true;
-        const shinyP=lure?1/12000:1/24000;
-        return {...base,acceptedH,catchesH,
+        const shinyP=Math.min(1,(lure?1/12000:1/24000)*shinyMultiplier);
+        return {...base,chance,acceptedH,catchesH,
             acceptedSource:observed?'observed-corpse-attempt-fraction':
                 'upper-bound-if-every-corpse-targeted',
-            ballsPerCapture:base.chance>0?1/base.chance:null,
-            coinsPerCapture:base.chance>0&&
-                Number.isFinite(options.coinPrice)?options.coinPrice/base.chance:null,
-            diamondsPerCapture:base.chance>0&&
+            ballsPerCapture:chance>0?1/chance:null,
+            coinsPerCapture:chance>0&&
+                Number.isFinite(options.coinPrice)?options.coinPrice/chance:null,
+            diamondsPerCapture:chance>0&&
                 Number.isFinite(options.diamondPrice)?
-                    options.diamondPrice/base.chance:null,
+                    options.diamondPrice/chance:null,
             shinyEligible,shinyP,
             shinySeenH:shinyEligible&&acceptedH!==null?
                 acceptedH*shinyP:null,
             shinyCaughtH:shinyEligible&&catchesH!==null?
                 catchesH*shinyP:null,
             shinyCaught24hChance:shinyEligible&&acceptedH!==null&&
-                base.chance!==null?farmingChanceAtLeastOne(
-                    shinyP*base.chance,24*acceptedH):null,
+                chance!==null?farmingChanceAtLeastOne(
+                    shinyP*chance,24*acceptedH):null,
+            liveCaptureMultiplier:catchMultiplier,
+            liveShinyMultiplier:shinyMultiplier,
             hypotheticalLure:lure};
     }
     function captureSpeciesForecast(hunt,speciesId,rarity,efficiency,
@@ -3878,9 +3885,14 @@
             if(Number(outlandNormalizeSpeciesId(row.pokeId))===target)
                 matches+=weight;
         }
-        const chance=captureWikiChance(options.stageOnly===true?null:rarity,
+        const baseChance=captureWikiChance(options.stageOnly===true?null:rarity,
             efficiency,0,target);
-        if(!total||!matches||chance===null)return null;
+        if(!total||!matches||baseChance===null)return null;
+        const liveCatch=Number(options.liveCaptureMultiplier??1);
+        const liveShiny=Number(options.liveShinyMultiplier??1);
+        const catchMultiplier=Number.isFinite(liveCatch)&&liveCatch>=1?liveCatch:1;
+        const shinyMultiplier=Number.isFinite(liveShiny)&&liveShiny>=1?liveShiny:1;
+        const chance=Math.min(1,baseChance*catchMultiplier);
         const hasMeasuredFraction=typeof options.acceptedFraction==='number' &&
             Number.isFinite(options.acceptedFraction) &&
             options.acceptedFraction>=0&&options.acceptedFraction<=1;
@@ -3891,7 +3903,8 @@
         const catchesH=acceptedH*chance;
         const eligible=String(hunt.area||'').toLowerCase()==='outland'
             ?null:true;
-        const shinyP=options.hypotheticalLure?1/12000:1/24000;
+        const shinyP=Math.min(1,(options.hypotheticalLure?1/12000:1/24000)*
+            shinyMultiplier);
         return {chance,targetFraction:matches/total,acceptedH,catchesH,
             acceptedSource:hasMeasuredFraction?'observed':'ceiling',
             shinySeenH:eligible?acceptedH*shinyP:null,
@@ -3899,8 +3912,10 @@
             meanHoursShiny:eligible&&catchesH>0?1/(catchesH*shinyP):null,
             shiny24h:eligible?
                 farmingChanceAtLeastOne(chance*shinyP,24*acceptedH):null,
-            source:measured?'measured-species-mix+wiki':
-                'spawn-weighted-wiki-conditional'};
+            liveCaptureMultiplier:catchMultiplier,
+            liveShinyMultiplier:shinyMultiplier,
+            source:measured?'measured-species-mix+wiki+live-bonuses':
+                'spawn-weighted-wiki-conditional+live-bonuses'};
     }
     // HA MILESTONE E PURE END.
 
@@ -7304,13 +7319,16 @@
             mixThrows>=30 ? observed.bySpecies:null;
         const fraction=observed&&observed.kills>=6 ?
             Math.min(1,Math.max(0,observed.throws/observed.kills)):null;
+        const live=nativeLiveCaptureBonuses(state.nativeXpContext);
         const predicted=captureForecast(hunt,state.captureRarities,
             xp?.killsH??null,ball.efficiency,{
                 stageOnly:true,mix:measuredMix,mixMode:'throws',
                 acceptedFraction:fraction,
                 coinPrice:ball.coins,
                 diamondPrice:ball.diamondPrice,
-                hypotheticalLure:state.filters.shinyLurePreview
+                hypotheticalLure:state.filters.shinyLurePreview,
+                liveCaptureMultiplier:live.capture,
+                liveShinyMultiplier:live.shiny
             });
         const selectedBallUses=observed?.byBall?.[ball.id]??0;
         const observedBallH=selectedBallUses>0&&observed?.windowMs>0
@@ -7338,11 +7356,14 @@
         const acceptance=target?.kills>=6?
             Math.min(1,target.throws/target.kills):
             observed?Math.min(1,observed.throws/Math.max(1,observed.kills)):null;
+        const live=nativeLiveCaptureBonuses(state.nativeXpContext);
         return captureSpeciesForecast(hunt,species.id,
             captureRarityForSpecies(state.captureRarities,species.id),
             ball.efficiency,estimate?.killsH??null,{
                 stageOnly:true,mix,acceptedFraction:acceptance,
-                hypotheticalLure:state.filters.shinyLurePreview
+                hypotheticalLure:state.filters.shinyLurePreview,
+                liveCaptureMultiplier:live.capture,
+                liveShinyMultiplier:live.shiny
             });
     }
 
