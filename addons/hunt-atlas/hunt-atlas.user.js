@@ -6,7 +6,7 @@
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
 // @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
-// @version      1.9.39
+// @version      1.9.40
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -20,7 +20,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.39');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.40');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -499,7 +499,7 @@
             'rank.learning': 'Learning',
             'rank.unverified': 'Unverified',
             'reference.title': 'Simulate bonuses (optional)',
-            'reference.note': 'This separate calculator uses manual capture, shiny and drop assumptions from PokeIdle Tools. Those bonuses are NOT detected here. The game-reported XP bonuses appear above. Nothing changes in the game or measured rates.',
+            'reference.note': 'Live Twitch/Kick capture and shiny timers are already included in the main Atlas ranking. This separate calculator adds optional manual what-if assumptions from PokeIdle Tools; nothing here changes the game or measured rates.',
             'reference.enable': 'Compare hypothetical bonuses',
             'reference.shinyBoost': 'Shiny chance ×1.5',
             'reference.catchBoost': 'Capture chance ×1.5',
@@ -520,7 +520,7 @@
             'reference.rareGroup': 'Rare-drop bonuses',
             'reference.rareHelp': 'Only changes the selected rare item\'s estimated drop odds. Does not affect XP or Coins.',
             'reference.extra': 'Additional assumptions (Kick)',
-            'reference.extraHelp': 'Kick factors are just examples in the external calculator. They are not detected in-game and do not connect Kick.',
+            'reference.extraHelp': 'These Kick switches are extra what-if factors. An active in-game Kick capture/shiny redemption is detected automatically and is not counted twice.',
             'reference.unitsHelp': 'Example: +50% = 1.5×. A drop multiplier of 1× makes no change; 2× doubles the modeled chance.',
             'reference.catchCompare': 'Chance to capture per accepted ball: {before} → {after}',
             'reference.rareCompare': 'Chance of this item per kill: {before} → {after}',
@@ -879,7 +879,7 @@
             'rank.learning': 'Aprendendo',
             'rank.unverified': 'Não verificado',
             'reference.title': 'Simular bônus (opcional)',
-            'reference.note': 'Esta calculadora separada usa hipóteses manuais de captura, shiny e drops do PokeIdle Tools. Esses bônus NÃO são detectados aqui. Os bônus reais de XP informados pelo jogo aparecem acima. Nada muda no jogo nem nas taxas medidas.',
+            'reference.note': 'Os bônus ativos de captura e shiny da Twitch/Kick já entram no ranking principal do Atlas. Esta calculadora separada acrescenta apenas hipóteses manuais opcionais do PokeIdle Tools; nada aqui muda o jogo nem as taxas medidas.',
             'reference.enable': 'Comparar bônus hipotéticos',
             'reference.shinyBoost': 'Chance de shiny ×1,5',
             'reference.catchBoost': 'Chance de captura ×1,5',
@@ -900,7 +900,7 @@
             'reference.rareGroup': 'Bônus de drops raros',
             'reference.rareHelp': 'Muda apenas a chance estimada do item raro escolhido. Não altera XP nem moedas.',
             'reference.extra': 'Outras hipóteses (Kick)',
-            'reference.extraHelp': 'Os fatores do Kick são apenas exemplos da calculadora externa. Não são detectados no jogo e não conectam o Kick.',
+            'reference.extraHelp': 'Estes controles do Kick são fatores extras de simulação. Um bônus ativo de captura/shiny do Kick no jogo é detectado automaticamente e não é contado duas vezes.',
             'reference.unitsHelp': 'Exemplo: +50% = 1,5×. Um multiplicador de 1× não muda a chance; 2× dobra a chance simulada.',
             'reference.catchCompare': 'Chance de capturar por bola aceita: {before} → {after}',
             'reference.rareCompare': 'Chance deste item por abate: {before} → {after}',
@@ -3836,29 +3836,36 @@
             Number.isFinite(fraction)&&fraction>=0&&fraction<=1;
         const acceptedH=Number.isFinite(killsH)&&killsH>=0 ?
             killsH*(observed?fraction:1):null;
-        const catchesH=base.chance===null||acceptedH===null?
-            null:acceptedH*base.chance;
+        const liveCatch=Number(options.liveCaptureMultiplier??1);
+        const liveShiny=Number(options.liveShinyMultiplier??1);
+        const catchMultiplier=Number.isFinite(liveCatch)&&liveCatch>=1?liveCatch:1;
+        const shinyMultiplier=Number.isFinite(liveShiny)&&liveShiny>=1?liveShiny:1;
+        const chance=base.chance===null?null:Math.min(1,base.chance*catchMultiplier);
+        const catchesH=chance===null||acceptedH===null?
+            null:acceptedH*chance;
         const shinyEligible=String(hunt?.area||'').toLowerCase()==='outland'
             ? null : true; // Outland eligibility is not inferred from wiki.
         const lure=options.hypotheticalLure===true;
-        const shinyP=lure?1/12000:1/24000;
-        return {...base,acceptedH,catchesH,
+        const shinyP=Math.min(1,(lure?1/12000:1/24000)*shinyMultiplier);
+        return {...base,chance,acceptedH,catchesH,
             acceptedSource:observed?'observed-corpse-attempt-fraction':
                 'upper-bound-if-every-corpse-targeted',
-            ballsPerCapture:base.chance>0?1/base.chance:null,
-            coinsPerCapture:base.chance>0&&
-                Number.isFinite(options.coinPrice)?options.coinPrice/base.chance:null,
-            diamondsPerCapture:base.chance>0&&
+            ballsPerCapture:chance>0?1/chance:null,
+            coinsPerCapture:chance>0&&
+                Number.isFinite(options.coinPrice)?options.coinPrice/chance:null,
+            diamondsPerCapture:chance>0&&
                 Number.isFinite(options.diamondPrice)?
-                    options.diamondPrice/base.chance:null,
+                    options.diamondPrice/chance:null,
             shinyEligible,shinyP,
             shinySeenH:shinyEligible&&acceptedH!==null?
                 acceptedH*shinyP:null,
             shinyCaughtH:shinyEligible&&catchesH!==null?
                 catchesH*shinyP:null,
             shinyCaught24hChance:shinyEligible&&acceptedH!==null&&
-                base.chance!==null?farmingChanceAtLeastOne(
-                    shinyP*base.chance,24*acceptedH):null,
+                chance!==null?farmingChanceAtLeastOne(
+                    shinyP*chance,24*acceptedH):null,
+            liveCaptureMultiplier:catchMultiplier,
+            liveShinyMultiplier:shinyMultiplier,
             hypotheticalLure:lure};
     }
     function captureSpeciesForecast(hunt,speciesId,rarity,efficiency,
@@ -3878,9 +3885,14 @@
             if(Number(outlandNormalizeSpeciesId(row.pokeId))===target)
                 matches+=weight;
         }
-        const chance=captureWikiChance(options.stageOnly===true?null:rarity,
+        const baseChance=captureWikiChance(options.stageOnly===true?null:rarity,
             efficiency,0,target);
-        if(!total||!matches||chance===null)return null;
+        if(!total||!matches||baseChance===null)return null;
+        const liveCatch=Number(options.liveCaptureMultiplier??1);
+        const liveShiny=Number(options.liveShinyMultiplier??1);
+        const catchMultiplier=Number.isFinite(liveCatch)&&liveCatch>=1?liveCatch:1;
+        const shinyMultiplier=Number.isFinite(liveShiny)&&liveShiny>=1?liveShiny:1;
+        const chance=Math.min(1,baseChance*catchMultiplier);
         const hasMeasuredFraction=typeof options.acceptedFraction==='number' &&
             Number.isFinite(options.acceptedFraction) &&
             options.acceptedFraction>=0&&options.acceptedFraction<=1;
@@ -3891,7 +3903,8 @@
         const catchesH=acceptedH*chance;
         const eligible=String(hunt.area||'').toLowerCase()==='outland'
             ?null:true;
-        const shinyP=options.hypotheticalLure?1/12000:1/24000;
+        const shinyP=Math.min(1,(options.hypotheticalLure?1/12000:1/24000)*
+            shinyMultiplier);
         return {chance,targetFraction:matches/total,acceptedH,catchesH,
             acceptedSource:hasMeasuredFraction?'observed':'ceiling',
             shinySeenH:eligible?acceptedH*shinyP:null,
@@ -3899,8 +3912,10 @@
             meanHoursShiny:eligible&&catchesH>0?1/(catchesH*shinyP):null,
             shiny24h:eligible?
                 farmingChanceAtLeastOne(chance*shinyP,24*acceptedH):null,
-            source:measured?'measured-species-mix+wiki':
-                'spawn-weighted-wiki-conditional'};
+            liveCaptureMultiplier:catchMultiplier,
+            liveShinyMultiplier:shinyMultiplier,
+            source:measured?'measured-species-mix+wiki+live-bonuses':
+                'spawn-weighted-wiki-conditional+live-bonuses'};
     }
     // HA MILESTONE E PURE END.
 
@@ -4204,26 +4219,122 @@
     // The native game-state keys used by Controller Bridge and Moth Controller.
     // Keep only aggregate bonus evidence, never channel names or account data.
     // Partial estado packets replace only supplied top-level fields.
+    const NATIVE_TYPES=new Set([
+        'NORMAL','FIRE','WATER','GRASS','ELECTRIC','ICE','FIGHTING','POISON',
+        'GROUND','FLYING','PSYCHIC','BUG','ROCK','GHOST','DRAGON','DARK','STEEL','FAIRY'
+    ]);
+    function nativeType(value) {
+        const type=typeof value==='string'?value.trim().toUpperCase():'';
+        return NATIVE_TYPES.has(type)?type:null;
+    }
+    function nativeSeasonalType(delta) {
+        if(!delta||typeof delta!=='object')return {seen:false,value:null};
+        for(const key of ['tipoSazonal','sazonalTipo','tipoDoDia','diaTipo']) {
+            if(Object.hasOwn(delta,key))
+                return {seen:true,value:nativeType(delta[key])};
+        }
+        for(const key of ['diaSazonal','sazonal']) {
+            if(!Object.hasOwn(delta,key))continue;
+            const raw=delta[key];
+            return {seen:true,value:nativeType(raw)||
+                nativeType(raw&&typeof raw==='object'?raw.tipo:null)};
+        }
+        return {seen:false,value:null};
+    }
+    function nativePodium(delta) {
+        if(!delta||typeof delta!=='object')return {seen:false,value:null};
+        const raw=Object.hasOwn(delta,'ginasiosPodio')?delta.ginasiosPodio:
+            Object.hasOwn(delta,'ginasiosPodium')?delta.ginasiosPodium:undefined;
+        if(raw!==undefined) {
+            const podium={};
+            if(raw&&typeof raw==='object'&&!Array.isArray(raw)) {
+                for(const [kind,place] of Object.entries(raw)) {
+                    const type=nativeType(kind), p=Number(place);
+                    if(type&&Number.isInteger(p)&&p>=1&&p<=3)podium[type]=p;
+                }
+            } else if(Array.isArray(raw)) {
+                for(const row of raw) {
+                    const type=nativeType(row?.tipo),p=Number(row?.lugar??row?.posicao);
+                    if(type&&Number.isInteger(p)&&p>=1&&p<=3)podium[type]=p;
+                }
+            }
+            return {seen:true,value:podium};
+        }
+        if(Object.hasOwn(delta,'ginasios')) {
+            const podium={};
+            for(const kind of Array.isArray(delta.ginasios)?delta.ginasios:[]) {
+                const type=nativeType(kind); if(type)podium[type]=1;
+            }
+            return {seen:true,value:podium};
+        }
+        return {seen:false,value:null};
+    }
     function nativeXpBonusDelta(previous, delta, full=false) {
         const next=full ? {} : {...(previous||{})};
         if (!delta || typeof delta!=='object') return next;
         const pct=value=>typeof value==='number'&&Number.isFinite(value)&&
             value>=0&&value<=1000?value:null;
+        const factor=value=>typeof value==='number'&&Number.isFinite(value)&&
+            value>0&&value<=1000?value:null;
         const until=value=>typeof value==='number'&&Number.isFinite(value)&&
             value>=1400000000000&&value<=4100000000000?value:null;
+        const season=nativeSeasonalType(delta);
+        if(season.seen)next.seasonalType=season.value;
+        const podium=nativePodium(delta);
+        if(podium.seen)next.gymPodium=podium.value;
+        const directRaidFarm=delta.raidFarmPct??delta.bonusRaidFarmPct??
+            (delta.raid&&typeof delta.raid==='object'?
+                (delta.raid.farmPct??delta.raid.farm):undefined);
+        if(directRaidFarm!==undefined) {
+            next.raidFarm={
+                pct:pct(directRaidFarm),
+                until:until(delta.raidFarmAte??delta.bonusRaidFarmAte??
+                    (delta.raid&&typeof delta.raid==='object'?
+                        (delta.raid.ate??delta.raid.until):undefined))
+            };
+        }
+        if(Object.hasOwn(delta,'bonusXp')) {
+            const raw=delta.bonusXp;
+            if(raw&&typeof raw==='object'&&Array.isArray(raw.partes)) {
+                next.bonusXp={
+                    tr:factor(raw.tr),pk:factor(raw.pk),
+                    parts:raw.partes.slice(0,40).map(part=>({
+                        id:typeof part?.id==='string'&&part.id.length<=40?part.id:null,
+                        tr:factor(part?.tr)??1,pk:factor(part?.pk)??1,
+                        until:until(part?.ate),
+                        farmPct:pct(part?.farmPct??part?.farm),
+                        total:pct(part?.total)
+                    }))
+                };
+            } else next.bonusXp=null;
+        }
         if (Object.hasOwn(delta,'twitch')) {
             const t=delta.twitch;
+            const bonus=t?.bonus;
             next.twitch=t&&typeof t==='object'?{
                 pct:pct(t.pctAtual??t.pct),
                 watching:Array.isArray(t.assistindoEm)
-                    ?Math.min(100,t.assistindoEm.filter(Boolean).length):null
+                    ?Math.min(100,t.assistindoEm.filter(Boolean).length):null,
+                xpUntil:until(bonus?.xp),
+                captureUntil:until(bonus?.captura),
+                shinyUntil:until(bonus?.shiny)
+            }:null;
+        }
+        if (Object.hasOwn(delta,'kick')) {
+            const k=delta.kick, bonus=k?.bonus;
+            next.kick=k&&typeof k==='object'?{
+                pct:pct(k.pctAtual??k.pct),
+                xpUntil:until(bonus?.xp),
+                captureUntil:until(bonus?.captura),
+                shinyUntil:until(bonus?.shiny)
             }:null;
         }
         if (Object.hasOwn(delta,'evento')) {
             const e=delta.evento;
             next.evento=e&&typeof e==='object'?{
                 trainer:pct(e.xpTreinadorPct),
-                pokemon:pct(e.xpPokemonPct)
+                pokemon:pct(e.xpPokemonPct),
+                farm:pct(e.farmPct??e.lootPct)
             }:null;
         }
         if (Object.hasOwn(delta,'guildBonusPct'))
@@ -4267,21 +4378,81 @@
         return next;
     }
 
+    function nativeAuthoritativeXp(values,now=Date.now()) {
+        const b=values?.bonusXp;
+        if(!b||!Array.isArray(b.parts)||!(b.tr>0)||!(b.pk>0))return null;
+        const product=(rows,key)=>rows.reduce((m,row)=>m*(Number(row?.[key])||1),1);
+        const allTr=product(b.parts,'tr'),allPk=product(b.parts,'pk');
+        let trainer=(allTr>0?b.tr/allTr:1),pokemon=(allPk>0?b.pk/allPk:1);
+        const active=b.parts.filter(row=>!(Number(row.until)>0)||row.until>now);
+        trainer*=product(active,'tr');pokemon*=product(active,'pk');
+        if(!(trainer>0&&pokemon>0&&Number.isFinite(trainer)&&Number.isFinite(pokemon)))
+            return null;
+        return {trainer,pokemon,parts:active};
+    }
+    function nativeLiveCaptureBonuses(values,now=Date.now()) {
+        let capture=1,shiny=1;
+        const sources=[];
+        for(const [kind,row] of [['twitch',values?.twitch],['kick',values?.kick]]) {
+            const pct=Number(row?.pct);
+            if(!(pct>0&&Number.isFinite(pct)))continue;
+            const mult=1+pct/100;
+            const captureActive=Number(row.captureUntil)>now;
+            const shinyActive=Number(row.shinyUntil)>now;
+            if(captureActive){capture*=mult;sources.push(kind+'-capture');}
+            if(shinyActive){shiny*=mult;sources.push(kind+'-shiny');}
+        }
+        return {capture,shiny,sources,
+            kickCapture:Number(values?.kick?.captureUntil)>now,
+            kickShiny:Number(values?.kick?.shinyUntil)>now};
+    }
+    function nativeRaidFarmPct(values,now=Date.now()) {
+        const parts=values?.bonusXp?.parts;
+        if(Array.isArray(parts)) {
+            const raid=parts.find(row=>row?.id==='raid'&&
+                (!(Number(row.until)>0)||row.until>now));
+            if(raid) {
+                if(Number.isFinite(Number(raid.farmPct)))
+                    return Math.max(0,Math.min(5,Number(raid.farmPct)));
+                if(Number.isFinite(Number(raid.total)))
+                    return Math.round(Math.max(0,Math.min(25,Number(raid.total)))*5/25);
+            }
+        }
+        const direct=values?.raidFarm;
+        if(Number.isFinite(Number(direct?.pct))&&
+            (!(Number(direct?.until)>0)||Number(direct.until)>now))
+            return Math.max(0,Math.min(5,Number(direct.pct)));
+        return 0;
+    }
+
     function nativeXpBonusReading(state,level,now=Date.now()) {
         const values=state||{};
+        const authoritative=nativeAuthoritativeXp(values,now);
+        if(authoritative) {
+            return {trainer:authoritative.trainer,pokemon:authoritative.pokemon,
+                sources:authoritative.parts.map(row=>({kind:row.id||'server'})),
+                unknown:[],reported:true,
+                knownFactors:Math.abs(authoritative.trainer-1)>1e-9||
+                    Math.abs(authoritative.pokemon-1)>1e-9,
+                complete:true,authoritative:true};
+        }
         let trainer=1,pokemon=1;
         const sources=[],unknown=[];
         const pct=(v)=>typeof v==='number'&&Number.isFinite(v)&&v>0&&v<=1000?v:0;
         if(pct(values.twitch?.pct)) {
-            if(values.twitch.watching>0) {
+            const active=Number(values.twitch.xpUntil)>now;
+            if(active || (values.twitch.xpUntil==null&&values.twitch.watching>0)) {
                 const p=values.twitch.pct;
                 trainer*=1+p/100;pokemon*=1+p/100;
                 sources.push({kind:'twitch',pct:p});
-            } else if(values.twitch.watching===null) {
+            } else if(values.twitch.xpUntil==null&&values.twitch.watching===null) {
                 unknown.push('twitch');
-            } else {
-                unknown.push('twitchAvailable');
             }
+        }
+        if(pct(values.kick?.pct)&&Number(values.kick.xpUntil)>now) {
+            const p=values.kick.pct;
+            trainer*=1+p/100;pokemon*=1+p/100;
+            sources.push({kind:'kick',pct:p});
         }
         if(pct(values.evento?.trainer)||pct(values.evento?.pokemon)) {
             const t=pct(values.evento?.trainer),p=pct(values.evento?.pokemon);
@@ -4293,8 +4464,6 @@
             trainer*=1+p/100;pokemon*=1+p/100;
             sources.push({kind:'guild',pct:p});
         }
-        // These are upstream-defined, timestamp-gated multiplicative XP
-        // sources, not arbitrary interpretations of a generic 'boost' flag.
         if(Number(values.loja?.vipUntil)>now) {
             trainer*=1.5;pokemon*=1.5;
             sources.push({kind:'vip'});
@@ -4315,37 +4484,39 @@
         }
         const catchup=values.loja?.catchup;
         if(catchup) {
-            // The upstream x10 catch-up ends at a trainer-XP threshold and
-            // splits the crossing reward. Presence alone cannot model it.
             const target=catchup.target;
             if(target!==null&&Number.isFinite(Number(level))&&level<target)
                 unknown.push('catchup');
             else if(target===null) unknown.push('catchup');
         }
-        const reported=['twitch','evento','guildBonusPct','guild','loja']
+        const reported=['twitch','kick','evento','guildBonusPct','guild','loja']
             .some(key=>Object.hasOwn(values,key));
         return {trainer, pokemon,sources,unknown,
             reported,knownFactors:sources.length>0,
-            complete:reported&&unknown.length===0 &&
-                ['twitch','evento','guildBonusPct','guild','loja']
-                    .every(key=>Object.hasOwn(values,key))};
+            complete:reported&&unknown.length===0};
     }
 
     function nativeXpBonusScope(values,now=Date.now()) {
-        // Invalidate a cached forecast when an upstream timed boost expires,
-        // even without another websocket packet.
         const active=end=>typeof end==='number'&&end>now;
+        const auth=nativeAuthoritativeXp(values,now);
         return JSON.stringify([
-            values?.twitch?.pct??null,values?.twitch?.watching??null,
+            auth?.trainer??null,auth?.pokemon??null,
+            values?.twitch?.pct??null,active(values?.twitch?.xpUntil),
+            active(values?.twitch?.captureUntil),active(values?.twitch?.shinyUntil),
+            values?.kick?.pct??null,active(values?.kick?.xpUntil),
+            active(values?.kick?.captureUntil),active(values?.kick?.shinyUntil),
             values?.evento?.trainer??null,values?.evento?.pokemon??null,
-            values?.guildBonusPct??null,
+            values?.evento?.farm??null,values?.guildBonusPct??null,
             active(values?.guild?.boostUntil),
             active(values?.loja?.vipUntil),
             active(values?.loja?.boosts?.xp),
             active(values?.loja?.boosts?.pokexp),
             values?.tiposBoost?.xp??null,values?.tiposBoost?.pokexp??null,
             values?.loja?.catchup?.target??null,
-            values?.loja?.catchup?.multiplier??null
+            values?.loja?.catchup?.multiplier??null,
+            values?.seasonalType??null,
+            Object.entries(values?.gymPodium||{}).sort(),
+            nativeRaidFarmPct(values,now)
         ]);
     }
 
@@ -7164,13 +7335,16 @@
             mixThrows>=30 ? observed.bySpecies:null;
         const fraction=observed&&observed.kills>=6 ?
             Math.min(1,Math.max(0,observed.throws/observed.kills)):null;
+        const live=nativeLiveCaptureBonuses(state.nativeXpContext);
         const predicted=captureForecast(hunt,state.captureRarities,
             xp?.killsH??null,ball.efficiency,{
                 stageOnly:true,mix:measuredMix,mixMode:'throws',
                 acceptedFraction:fraction,
                 coinPrice:ball.coins,
                 diamondPrice:ball.diamondPrice,
-                hypotheticalLure:state.filters.shinyLurePreview
+                hypotheticalLure:state.filters.shinyLurePreview,
+                liveCaptureMultiplier:live.capture,
+                liveShinyMultiplier:live.shiny
             });
         const selectedBallUses=observed?.byBall?.[ball.id]??0;
         const observedBallH=selectedBallUses>0&&observed?.windowMs>0
@@ -7198,11 +7372,14 @@
         const acceptance=target?.kills>=6?
             Math.min(1,target.throws/target.kills):
             observed?Math.min(1,observed.throws/Math.max(1,observed.kills)):null;
+        const live=nativeLiveCaptureBonuses(state.nativeXpContext);
         return captureSpeciesForecast(hunt,species.id,
             captureRarityForSpecies(state.captureRarities,species.id),
             ball.efficiency,estimate?.killsH??null,{
                 stageOnly:true,mix,acceptedFraction:acceptance,
-                hypotheticalLure:state.filters.shinyLurePreview
+                hypotheticalLure:state.filters.shinyLurePreview,
+                liveCaptureMultiplier:live.capture,
+                liveShinyMultiplier:live.shiny
             });
     }
 
@@ -7277,8 +7454,9 @@
         const killsH = Number.isFinite(xp?.killsH) ? xp.killsH : null;
         // An uncalibrated time-to-kill simulation can exaggerate Coins/hour
         // by orders of magnitude. Do not publish it as a modeled gold rate.
+        const raidFarmPct=nativeRaidFarmPct(state.nativeXpContext);
         const modelKillGoldH = xp?.observed && Number.isFinite(killsH)
-            ? farmGoldPrediction(hunt,killsH) : null;
+            ? farmGoldPrediction(hunt,killsH,raidFarmPct) : null;
         const current = isHuntHere(hunt?.slug);
         const record = current ? performanceRecord(hunt?.slug,false) : null;
         const rates = current ? observedRates(record) : null;
@@ -8863,9 +9041,28 @@
     }
     // Same attack formula and ordinary-hunt type amplification as Rust's
     // native_atlas::damage/effect. Missing stats must remain unknown.
-    function nativeDamage(level, power, atk, def, type, attackers, defenders) {
-        return battleDamage(level,Math.max(15,power),atk,def,
+    function nativeSeasonalMultiplier(attackers,defenders) {
+        const seasonal=state.nativeXpContext?.seasonalType;
+        if(!seasonal)return 1;
+        const outgoing=(attackers||[]).includes(seasonal)?2:1;
+        const incoming=(defenders||[]).includes(seasonal)?4:1;
+        return outgoing/incoming;
+    }
+    function nativeGymMultiplier(types) {
+        const podium=state.nativeXpContext?.gymPodium||{};
+        let best=4;
+        for(const type of types||[]) {
+            const place=Number(podium[type]);
+            if(Number.isInteger(place)&&place>=1&&place<=3)
+                best=Math.min(best,place);
+        }
+        return best===1?1.25:best===2?1.10:best===3?1.05:1;
+    }
+    function nativeDamage(level, power, atk, def, type, attackers, defenders,
+                          extra=1) {
+        const base=battleDamage(level,Math.max(15,power),atk,def,
             type,attackers,defenders);
+        return base===null?null:base*extra;
     }
     function nativeTackleType(types, foes) {
         const first=types[0]||'NORMAL';
@@ -8885,7 +9082,7 @@
             if(!(base>0)||!def)return null;
             const damage=nativeDamage(level,Number(move.power),
                 nativeWildStat(base,level),def,move.type,
-                foeTypes,leadTypes);
+                foeTypes,leadTypes,nativeSeasonalMultiplier(foeTypes,leadTypes));
             if(damage===null)return null;
             blows.push(damage);
         }
@@ -8894,7 +9091,7 @@
         if(!(baseAtk>0)||!playerDef)return null;
         const tackle=nativeDamage(level,30,nativeWildStat(baseAtk,level),
             playerDef,nativeTackleType(foeTypes,leadTypes),
-            foeTypes,leadTypes);
+            foeTypes,leadTypes,nativeSeasonalMultiplier(foeTypes,leadTypes));
         if(tackle===null)return null;
         const mean=blows.length
             ? blows.reduce((a,b)=>a+b,0)/blows.length*0.92+tackle*0.08
@@ -9037,6 +9234,7 @@
         const downtime=NATIVE_PACE.waveJitter/count+NATIVE_PACE.retarget;
         const gap=nativeIvCooldown(900,lead)/1000;
         const moves=battleMovesForLead(lead);
+        const gymMultiplier=nativeGymMultiplier(leadTypes);
         let weight=0,ttk=0,hitMean=0,hitMax=0,incomingDps=0;
         for(const row of hunt.especies||[]) {
             const w=Math.max(0,Number(row.pontos) || 0);
@@ -9067,7 +9265,8 @@
                 const def=nativeWildStat(Number(special?meta.baseSpDef:
                     meta.baseDef),level);
                 const damage=nativeDamage(leadLevel,Number(move.power),
-                    atk,def,move.type,leadTypes,foeTypes);
+                    atk,def,move.type,leadTypes,foeTypes,
+                    nativeSeasonalMultiplier(leadTypes,foeTypes)*gymMultiplier);
                 if(damage===null)return null;
                 attacks.push({damage,cooldown:cooldown/1000});
             }
@@ -9077,7 +9276,8 @@
                     const damage=nativeDamage(leadLevel,2800,
                         battleStat(player.spAtk),
                         nativeWildStat(Number(meta.baseSpDef),level),
-                        element,leadTypes,foeTypes);
+                        element,leadTypes,foeTypes,
+                        nativeSeasonalMultiplier(leadTypes,foeTypes)*gymMultiplier);
                     if(damage===null)return null;
                     attacks.push({damage,cooldown:nativeMoveCooldown(60000,
                         Number(leadMeta.baseSpeed),lead)/1000});
@@ -9087,7 +9287,8 @@
             const tackleDamage=nativeDamage(leadLevel,30,
                 battleStat(player.atk),
                 nativeWildStat(Number(meta.baseDef),level),
-                tackleType,leadTypes,foeTypes);
+                tackleType,leadTypes,foeTypes,
+                nativeSeasonalMultiplier(leadTypes,foeTypes)*gymMultiplier);
             if(tackleDamage===null)return null;
             const tackle={damage:tackleDamage,
                 cooldown:nativeIvCooldown(2000,lead)/1000};
@@ -14529,13 +14730,14 @@
             ((!state.filters.referenceEnabled&&key!=='referenceEnabled')?
                 ' disabled':'')+' /></label>';
         const refActive=state.filters.referenceEnabled;
+        const liveCaptureBonuses=nativeLiveCaptureBonuses(state.nativeXpContext);
         const refCatch=refActive && chosen ? referenceCapturePreview(
             chosen.chance,chosen.acceptedH,
             chosen.shinyEligible===null?null:chosen.shinyP,{
                 shinyBoost:state.filters.referenceShinyBoost,
                 catchBoost:state.filters.referenceCatchBoost,
-                kickShiny:state.filters.referenceKickShiny,
-                kickCatch:state.filters.referenceKickCatch,
+                kickShiny:state.filters.referenceKickShiny&&!liveCaptureBonuses.kickShiny,
+                kickCatch:state.filters.referenceKickCatch&&!liveCaptureBonuses.kickCapture,
                 shinyEvent:state.filters.referenceShinyEvent,
                 catchEvent:state.filters.referenceCatchEvent
             }):null;

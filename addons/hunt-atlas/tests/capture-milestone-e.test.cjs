@@ -56,6 +56,22 @@ test('ordinary capture cards never substitute old rarity when evolution stage is
     near(allKnown.chance,.0075*4/2.8669*1.4);
 });
 
+test('live Twitch/Kick factors change the primary capture and shiny forecasts',()=>{
+    const hunt={area:'kanto',nivel:100,especies:[{pokeId:1,pontos:1}]};
+    const base=h.captureSpeciesForecast(hunt,1,100,4,1000,{});
+    const live=h.captureSpeciesForecast(hunt,1,100,4,1000,{
+        liveCaptureMultiplier:1.15*1.15,liveShinyMultiplier:1.15
+    });
+    near(live.chance,base.chance*1.15*1.15);
+    near(live.shinySeenH,base.shinySeenH*1.15);
+    near(live.shinyCaughtH,base.shinyCaughtH*1.15*1.15*1.15);
+    const huntBase=h.captureForecast(hunt,new Map([[1,100]]),1000,4,{});
+    const huntLive=h.captureForecast(hunt,new Map([[1,100]]),1000,4,{
+        liveCaptureMultiplier:1.15,liveShinyMultiplier:1.15
+    });
+    near(huntLive.chance,huntBase.chance*1.15);
+    near(huntLive.shinyP,huntBase.shinyP*1.15);
+});
 test('upstream evolution stages replace NPC-value odds on ordinary hunts',()=>{
     const staged=vm.runInNewContext(blocks+
         '\n({captureWikiChance,captureHuntChance,captureSpeciesForecast})',
