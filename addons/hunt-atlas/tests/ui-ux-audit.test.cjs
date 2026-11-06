@@ -96,7 +96,7 @@ test('compact/mobile filter panel is reversible and labelled for accessibility',
     assert.match(source,/document.activeElement\?\.isContentEditable/);
     assert.match(source,/\.mha-filters\[hidden\] \{ display: none !important; \}/);
     assert.match(source,/grid\.hidden=!state\.filtersExpanded/);
-    assert.match(source,/max-height: min\(50dvh, 440px\)/);
+    assert.match(source,/\.mha-filters,\s*\.mha-xp-summary \{\s*max-height: none;\s*overflow: visible;/);
 });
 
 test('empty results recovery and typeahead do not reset scenario choices',()=>{
@@ -124,4 +124,15 @@ test('quick Outland switch reports true state and timeout without claiming succe
     assert.match(source,/status:'timeout'/);
     assert.match(source,/state\.farmingSnapshot\.outlandTier === state\.pendingOutlandTier\.tier/);
     assert.match(source,/data-mha-quick-outland/);
+});
+
+
+test('Atlas owns vertical scrolling instead of flex-squashing its sections',()=>{
+    assert.match(source,/overflow-y: auto !important;/);
+    assert.match(source,/One vertical scroll owner prevents flex children from being crushed/);
+    assert.match(source,/#\$\{DRAWER_ID\} > \.mha-body \{\s*flex: 0 0 auto !important;/);
+    assert.match(source,/\.mha-body \{\s*flex: 0 0 auto;\s*min-height: 0;\s*overflow: visible;/);
+    assert.match(source,/\.mha-xp-summary \{\s*min-height: 0;\s*max-height: none;\s*overflow: visible;/);
+    assert.match(source,/\.mha-xp-summary \[data-mha-more\]\[open\] \{\s*max-height: none;\s*overflow: visible;/);
+    assert.doesNotMatch(source,/\.mha-body \{\s*flex: 1;\s*min-height: 0;\s*overflow: auto;/);
 });
