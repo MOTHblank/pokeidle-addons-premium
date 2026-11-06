@@ -45,7 +45,7 @@ test('server bonusXp is authoritative, expiry-aware and carries Raid farm separa
     const now=1750000000000;
     const game=model.nativeXpBonusDelta({},{
         bonusXp:{tr:1.65,pk:1.32,partes:[
-            {id:'vip',tr:1.5,pk:1.5,ate:now+5000},
+            {id:'event',tr:1.5,pk:1.2,ate:now+5000},
             {id:'raid',tr:1.1,pk:1.1,ate:now+3000,farmPct:2}
         ]},
         twitch:{pct:15,bonus:{captura:now+5000,shiny:now+5000}},
@@ -62,7 +62,7 @@ test('server bonusXp is authoritative, expiry-aware and carries Raid farm separa
     const after=model.nativeXpBonusReading(game,200,now+6000);
     // The total remainder is preserved while expired timed parts fall out.
     close(after.trainer,1.65/(1.5*1.1));
-    close(after.pokemon,1.32/(1.5*1.1));
+    close(after.pokemon,1.32/(1.2*1.1));
     assert.equal(model.nativeRaidFarmPct(game,now+6000),0);
     assert.notEqual(model.nativeXpBonusScope(game,now),
         model.nativeXpBonusScope(game,now+6000));
