@@ -31,7 +31,8 @@ function harness() {
     ]);
     const state={filters:{nativeAoeForecast:false},
         typesBySpecies:new Map(),nativeGeometry:new Map(),
-        hunts:[],modelRevision:0};
+        hunts:[],modelRevision:0,
+        nativeXpContext:{seasonalType:null,gymPodium:{}}};
     const ctx={
         state,leadPokemon:()=>lead,
         speciesCombatMeta:id=>meta.get(Number(id))||null,
@@ -55,7 +56,8 @@ function harness() {
     const api=vm.runInNewContext(code+'\n({nativeIvCooldown,nativeMoveCooldown,'+
         'nativeWildStat,nativeMeanTtk,nativeRememberFieldGeometry,'+
         'nativeSpawnDistances,nativeReplenishmentCap,'+
-        'nativeSingleTargetKills,nativeAoeKills,nativeCombatForecast})',ctx);
+        'nativeSingleTargetKills,nativeAoeKills,nativeCombatForecast,'+
+        'nativeSeasonalMultiplier,nativeGymMultiplier})',ctx);
     const hunt=(id=2,level=150)=>({
         slug:'hunt-'+id,nivel:level,area:'kanto',
         especies:[{pokeId:id,pontos:16}]
@@ -63,6 +65,17 @@ function harness() {
     return {api,lead,meta,state,hunt};
 }
 
+test('Seasonal Day and Gym podium multipliers match Controller/upstream rules',()=>{
+    const h=harness();
+    h.state.nativeXpContext.seasonalType='FIRE';
+    assert.equal(h.api.nativeSeasonalMultiplier(['FIRE'],['GRASS']),2);
+    assert.equal(h.api.nativeSeasonalMultiplier(['FIRE'],['FIRE']),.5);
+    h.state.nativeXpContext.seasonalType='GRASS';
+    assert.equal(h.api.nativeSeasonalMultiplier(['FIRE'],['GRASS']),.25);
+    h.state.nativeXpContext.gymPodium={FIRE:2,FLYING:3};
+    assert.equal(h.api.nativeGymMultiplier(['FIRE','FLYING']),1.1);
+    assert.equal(h.api.nativeGymMultiplier(['WATER']),1);
+});
 test('controller Speed IV and base Speed cooldown formulas are identical',()=>{
     const h=harness();
     assert.equal(h.api.nativeIvCooldown(900,h.lead),580);
