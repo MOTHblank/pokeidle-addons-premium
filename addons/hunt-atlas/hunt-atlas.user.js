@@ -4282,6 +4282,17 @@
         if(season.seen)next.seasonalType=season.value;
         const podium=nativePodium(delta);
         if(podium.seen)next.gymPodium=podium.value;
+        const directRaidFarm=delta.raidFarmPct??delta.bonusRaidFarmPct??
+            (delta.raid&&typeof delta.raid==='object'?
+                (delta.raid.farmPct??delta.raid.farm):undefined);
+        if(directRaidFarm!==undefined) {
+            next.raidFarm={
+                pct:pct(directRaidFarm),
+                until:until(delta.raidFarmAte??delta.bonusRaidFarmAte??
+                    (delta.raid&&typeof delta.raid==='object'?
+                        (delta.raid.ate??delta.raid.until):undefined))
+            };
+        }
         if(Object.hasOwn(delta,'bonusXp')) {
             const raw=delta.bonusXp;
             if(raw&&typeof raw==='object'&&Array.isArray(raw.partes)) {
@@ -4397,14 +4408,20 @@
     }
     function nativeRaidFarmPct(values,now=Date.now()) {
         const parts=values?.bonusXp?.parts;
-        if(!Array.isArray(parts))return 0;
-        const raid=parts.find(row=>row?.id==='raid'&&
-            (!(Number(row.until)>0)||row.until>now));
-        if(!raid)return 0;
-        if(Number.isFinite(Number(raid.farmPct)))
-            return Math.max(0,Math.min(5,Number(raid.farmPct)));
-        if(Number.isFinite(Number(raid.total)))
-            return Math.round(Math.max(0,Math.min(25,Number(raid.total)))*5/25);
+        if(Array.isArray(parts)) {
+            const raid=parts.find(row=>row?.id==='raid'&&
+                (!(Number(row.until)>0)||row.until>now));
+            if(raid) {
+                if(Number.isFinite(Number(raid.farmPct)))
+                    return Math.max(0,Math.min(5,Number(raid.farmPct)));
+                if(Number.isFinite(Number(raid.total)))
+                    return Math.round(Math.max(0,Math.min(25,Number(raid.total)))*5/25);
+            }
+        }
+        const direct=values?.raidFarm;
+        if(Number.isFinite(Number(direct?.pct))&&
+            (!(Number(direct?.until)>0)||Number(direct.until)>now))
+            return Math.max(0,Math.min(5,Number(direct.pct)));
         return 0;
     }
 
