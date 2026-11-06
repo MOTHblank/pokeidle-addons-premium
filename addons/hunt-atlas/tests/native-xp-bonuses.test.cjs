@@ -124,7 +124,8 @@ test('invalid bonus fields cannot produce phantom multipliers',()=>{
 test('model projections include native known XP factors but measured values do not',()=>{
     assert.match(src,/const trainerXpPerKill = baseXp \* nativeBonus\.trainer/);
     assert.match(src,/const pokemonXpPerKill = baseXp \* nativeBonus\.pokemon/);
-    assert.match(src,/if \(observed && observed\.trainerXpH !== null\)/);
+    assert.match(src,/chosenObserved\.trainerXpH/);
+    assert.match(src,/bonusSource: 'observed-server\/event'/);
     assert.match(src,/bonusSource: nativeBonus\.knownFactors/);
     assert.match(src,/state\.nativeXpContext = nativeXpBonusDelta/);
     assert.match(src,/nativeXpBonusScope\(state\.nativeXpContext\)/);
