@@ -91,7 +91,7 @@ test('reference panel cannot alter core forecast or sort functions',()=>{
     assert.match(src,/data-mha-reference-setting/);
     assert.match(src,/referenceCapturePreview\(/);
     assert.match(src,/referenceRarePreview\(/);
-    assert.match(src,/Nothing changes in the game or measured rates/);
+    assert.match(src,/nothing here changes the game or measured rates/i);
     assert.match(src,/referenceEnabled: false/);
     assert.match(src,/const refActive=state\.filters\.referenceEnabled/);
     assert.doesNotMatch(src,/referenceCapturePreview\([\s\S]{0,200}haMetricValue/);
@@ -105,8 +105,8 @@ test('the optional boost calculator communicates what its controls do in both la
         'Chance to capture per accepted ball','Chance de capturar por bola aceita',
         'Additional assumptions (Kick)','Outras hipóteses (Kick)'
     ]) assert.ok(src.includes(label),label);
-    assert.match(src,/Those bonuses are NOT detected here/);
-    assert.match(src,/Esses bônus NÃO são detectados aqui/);
+    assert.match(src,/Live Twitch\/Kick capture and shiny timers are already included/);
+    assert.match(src,/bônus ativos de captura e shiny da Twitch\/Kick já entram/);
     assert.match(src,/reference\.catchCompare/);
     assert.match(src,/reference\.rareCompare/);
     assert.match(src,/reference\.unchanged/);
