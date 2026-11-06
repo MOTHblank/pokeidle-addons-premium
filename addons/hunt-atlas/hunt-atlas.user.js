@@ -4415,7 +4415,8 @@
             return {trainer:authoritative.trainer,pokemon:authoritative.pokemon,
                 sources:authoritative.parts.map(row=>({kind:row.id||'server'})),
                 unknown:[],reported:true,
-                knownFactors:authoritative.trainer!==1||authoritative.pokemon!==1,
+                knownFactors:Math.abs(authoritative.trainer-1)>1e-9||
+                    Math.abs(authoritative.pokemon-1)>1e-9,
                 complete:true,authoritative:true};
         }
         let trainer=1,pokemon=1;
