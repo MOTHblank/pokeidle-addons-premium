@@ -9003,9 +9003,28 @@
     }
     // Same attack formula and ordinary-hunt type amplification as Rust's
     // native_atlas::damage/effect. Missing stats must remain unknown.
-    function nativeDamage(level, power, atk, def, type, attackers, defenders) {
-        return battleDamage(level,Math.max(15,power),atk,def,
+    function nativeSeasonalMultiplier(attackers,defenders) {
+        const seasonal=state.nativeXpContext?.seasonalType;
+        if(!seasonal)return 1;
+        const outgoing=(attackers||[]).includes(seasonal)?2:1;
+        const incoming=(defenders||[]).includes(seasonal)?4:1;
+        return outgoing/incoming;
+    }
+    function nativeGymMultiplier(types) {
+        const podium=state.nativeXpContext?.gymPodium||{};
+        let best=4;
+        for(const type of types||[]) {
+            const place=Number(podium[type]);
+            if(Number.isInteger(place)&&place>=1&&place<=3)
+                best=Math.min(best,place);
+        }
+        return best===1?1.25:best===2?1.10:best===3?1.05:1;
+    }
+    function nativeDamage(level, power, atk, def, type, attackers, defenders,
+                          extra=1) {
+        const base=battleDamage(level,Math.max(15,power),atk,def,
             type,attackers,defenders);
+        return base===null?null:base*extra;
     }
     function nativeTackleType(types, foes) {
         const first=types[0]||'NORMAL';
@@ -9025,7 +9044,7 @@
             if(!(base>0)||!def)return null;
             const damage=nativeDamage(level,Number(move.power),
                 nativeWildStat(base,level),def,move.type,
-                foeTypes,leadTypes);
+                foeTypes,leadTypes,nativeSeasonalMultiplier(foeTypes,leadTypes));
             if(damage===null)return null;
             blows.push(damage);
         }
@@ -9034,7 +9053,7 @@
         if(!(baseAtk>0)||!playerDef)return null;
         const tackle=nativeDamage(level,30,nativeWildStat(baseAtk,level),
             playerDef,nativeTackleType(foeTypes,leadTypes),
-            foeTypes,leadTypes);
+            foeTypes,leadTypes,nativeSeasonalMultiplier(foeTypes,leadTypes));
         if(tackle===null)return null;
         const mean=blows.length
             ? blows.reduce((a,b)=>a+b,0)/blows.length*0.92+tackle*0.08
@@ -9177,6 +9196,7 @@
         const downtime=NATIVE_PACE.waveJitter/count+NATIVE_PACE.retarget;
         const gap=nativeIvCooldown(900,lead)/1000;
         const moves=battleMovesForLead(lead);
+        const gymMultiplier=nativeGymMultiplier(leadTypes);
         let weight=0,ttk=0,hitMean=0,hitMax=0,incomingDps=0;
         for(const row of hunt.especies||[]) {
             const w=Math.max(0,Number(row.pontos) || 0);
@@ -9207,7 +9227,8 @@
                 const def=nativeWildStat(Number(special?meta.baseSpDef:
                     meta.baseDef),level);
                 const damage=nativeDamage(leadLevel,Number(move.power),
-                    atk,def,move.type,leadTypes,foeTypes);
+                    atk,def,move.type,leadTypes,foeTypes,
+                    nativeSeasonalMultiplier(leadTypes,foeTypes)*gymMultiplier);
                 if(damage===null)return null;
                 attacks.push({damage,cooldown:cooldown/1000});
             }
@@ -9217,7 +9238,8 @@
                     const damage=nativeDamage(leadLevel,2800,
                         battleStat(player.spAtk),
                         nativeWildStat(Number(meta.baseSpDef),level),
-                        element,leadTypes,foeTypes);
+                        element,leadTypes,foeTypes,
+                        nativeSeasonalMultiplier(leadTypes,foeTypes)*gymMultiplier);
                     if(damage===null)return null;
                     attacks.push({damage,cooldown:nativeMoveCooldown(60000,
                         Number(leadMeta.baseSpeed),lead)/1000});
@@ -9227,7 +9249,8 @@
             const tackleDamage=nativeDamage(leadLevel,30,
                 battleStat(player.atk),
                 nativeWildStat(Number(meta.baseDef),level),
-                tackleType,leadTypes,foeTypes);
+                tackleType,leadTypes,foeTypes,
+                nativeSeasonalMultiplier(leadTypes,foeTypes)*gymMultiplier);
             if(tackleDamage===null)return null;
             const tackle={damage:tackleDamage,
                 cooldown:nativeIvCooldown(2000,lead)/1000};
