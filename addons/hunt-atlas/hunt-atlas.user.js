@@ -6,7 +6,7 @@
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
 // @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
-// @version      1.9.39
+// @version      1.9.40
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -20,7 +20,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.39');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.40');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -4204,26 +4204,111 @@
     // The native game-state keys used by Controller Bridge and Moth Controller.
     // Keep only aggregate bonus evidence, never channel names or account data.
     // Partial estado packets replace only supplied top-level fields.
+    const NATIVE_TYPES=new Set([
+        'NORMAL','FIRE','WATER','GRASS','ELECTRIC','ICE','FIGHTING','POISON',
+        'GROUND','FLYING','PSYCHIC','BUG','ROCK','GHOST','DRAGON','DARK','STEEL','FAIRY'
+    ]);
+    function nativeType(value) {
+        const type=typeof value==='string'?value.trim().toUpperCase():'';
+        return NATIVE_TYPES.has(type)?type:null;
+    }
+    function nativeSeasonalType(delta) {
+        if(!delta||typeof delta!=='object')return {seen:false,value:null};
+        for(const key of ['tipoSazonal','sazonalTipo','tipoDoDia','diaTipo']) {
+            if(Object.hasOwn(delta,key))
+                return {seen:true,value:nativeType(delta[key])};
+        }
+        for(const key of ['diaSazonal','sazonal']) {
+            if(!Object.hasOwn(delta,key))continue;
+            const raw=delta[key];
+            return {seen:true,value:nativeType(raw)||
+                nativeType(raw&&typeof raw==='object'?raw.tipo:null)};
+        }
+        return {seen:false,value:null};
+    }
+    function nativePodium(delta) {
+        if(!delta||typeof delta!=='object')return {seen:false,value:null};
+        const raw=Object.hasOwn(delta,'ginasiosPodio')?delta.ginasiosPodio:
+            Object.hasOwn(delta,'ginasiosPodium')?delta.ginasiosPodium:undefined;
+        if(raw!==undefined) {
+            const podium={};
+            if(raw&&typeof raw==='object'&&!Array.isArray(raw)) {
+                for(const [kind,place] of Object.entries(raw)) {
+                    const type=nativeType(kind), p=Number(place);
+                    if(type&&Number.isInteger(p)&&p>=1&&p<=3)podium[type]=p;
+                }
+            } else if(Array.isArray(raw)) {
+                for(const row of raw) {
+                    const type=nativeType(row?.tipo),p=Number(row?.lugar??row?.posicao);
+                    if(type&&Number.isInteger(p)&&p>=1&&p<=3)podium[type]=p;
+                }
+            }
+            return {seen:true,value:podium};
+        }
+        if(Object.hasOwn(delta,'ginasios')) {
+            const podium={};
+            for(const kind of Array.isArray(delta.ginasios)?delta.ginasios:[]) {
+                const type=nativeType(kind); if(type)podium[type]=1;
+            }
+            return {seen:true,value:podium};
+        }
+        return {seen:false,value:null};
+    }
     function nativeXpBonusDelta(previous, delta, full=false) {
         const next=full ? {} : {...(previous||{})};
         if (!delta || typeof delta!=='object') return next;
         const pct=value=>typeof value==='number'&&Number.isFinite(value)&&
             value>=0&&value<=1000?value:null;
+        const factor=value=>typeof value==='number'&&Number.isFinite(value)&&
+            value>0&&value<=1000?value:null;
         const until=value=>typeof value==='number'&&Number.isFinite(value)&&
             value>=1400000000000&&value<=4100000000000?value:null;
+        const season=nativeSeasonalType(delta);
+        if(season.seen)next.seasonalType=season.value;
+        const podium=nativePodium(delta);
+        if(podium.seen)next.gymPodium=podium.value;
+        if(Object.hasOwn(delta,'bonusXp')) {
+            const raw=delta.bonusXp;
+            if(raw&&typeof raw==='object'&&Array.isArray(raw.partes)) {
+                next.bonusXp={
+                    tr:factor(raw.tr),pk:factor(raw.pk),
+                    parts:raw.partes.slice(0,40).map(part=>({
+                        id:typeof part?.id==='string'&&part.id.length<=40?part.id:null,
+                        tr:factor(part?.tr)??1,pk:factor(part?.pk)??1,
+                        until:until(part?.ate),
+                        farmPct:pct(part?.farmPct??part?.farm),
+                        total:pct(part?.total)
+                    }))
+                };
+            } else next.bonusXp=null;
+        }
         if (Object.hasOwn(delta,'twitch')) {
             const t=delta.twitch;
+            const bonus=t?.bonus;
             next.twitch=t&&typeof t==='object'?{
                 pct:pct(t.pctAtual??t.pct),
                 watching:Array.isArray(t.assistindoEm)
-                    ?Math.min(100,t.assistindoEm.filter(Boolean).length):null
+                    ?Math.min(100,t.assistindoEm.filter(Boolean).length):null,
+                xpUntil:until(bonus?.xp),
+                captureUntil:until(bonus?.captura),
+                shinyUntil:until(bonus?.shiny)
+            }:null;
+        }
+        if (Object.hasOwn(delta,'kick')) {
+            const k=delta.kick, bonus=k?.bonus;
+            next.kick=k&&typeof k==='object'?{
+                pct:pct(k.pctAtual??k.pct),
+                xpUntil:until(bonus?.xp),
+                captureUntil:until(bonus?.captura),
+                shinyUntil:until(bonus?.shiny)
             }:null;
         }
         if (Object.hasOwn(delta,'evento')) {
             const e=delta.evento;
             next.evento=e&&typeof e==='object'?{
                 trainer:pct(e.xpTreinadorPct),
-                pokemon:pct(e.xpPokemonPct)
+                pokemon:pct(e.xpPokemonPct),
+                farm:pct(e.farmPct??e.lootPct)
             }:null;
         }
         if (Object.hasOwn(delta,'guildBonusPct'))
@@ -4267,21 +4352,74 @@
         return next;
     }
 
+    function nativeAuthoritativeXp(values,now=Date.now()) {
+        const b=values?.bonusXp;
+        if(!b||!Array.isArray(b.parts)||!(b.tr>0)||!(b.pk>0))return null;
+        const product=(rows,key)=>rows.reduce((m,row)=>m*(Number(row?.[key])||1),1);
+        const allTr=product(b.parts,'tr'),allPk=product(b.parts,'pk');
+        let trainer=(allTr>0?b.tr/allTr:1),pokemon=(allPk>0?b.pk/allPk:1);
+        const active=b.parts.filter(row=>!(Number(row.until)>0)||row.until>now);
+        trainer*=product(active,'tr');pokemon*=product(active,'pk');
+        if(!(trainer>0&&pokemon>0&&Number.isFinite(trainer)&&Number.isFinite(pokemon)))
+            return null;
+        return {trainer,pokemon,parts:active};
+    }
+    function nativeLiveCaptureBonuses(values,now=Date.now()) {
+        let capture=1,shiny=1;
+        const sources=[];
+        for(const [kind,row] of [['twitch',values?.twitch],['kick',values?.kick]]) {
+            const pct=Number(row?.pct);
+            if(!(pct>0&&Number.isFinite(pct)))continue;
+            const mult=1+pct/100;
+            const captureActive=Number(row.captureUntil)>now;
+            const shinyActive=Number(row.shinyUntil)>now;
+            if(captureActive){capture*=mult;sources.push(kind+'-capture');}
+            if(shinyActive){shiny*=mult;sources.push(kind+'-shiny');}
+        }
+        return {capture,shiny,sources,
+            kickCapture:Number(values?.kick?.captureUntil)>now,
+            kickShiny:Number(values?.kick?.shinyUntil)>now};
+    }
+    function nativeRaidFarmPct(values,now=Date.now()) {
+        const parts=values?.bonusXp?.parts;
+        if(!Array.isArray(parts))return 0;
+        const raid=parts.find(row=>row?.id==='raid'&&
+            (!(Number(row.until)>0)||row.until>now));
+        if(!raid)return 0;
+        if(Number.isFinite(Number(raid.farmPct)))
+            return Math.max(0,Math.min(5,Number(raid.farmPct)));
+        if(Number.isFinite(Number(raid.total)))
+            return Math.round(Math.max(0,Math.min(25,Number(raid.total)))*5/25);
+        return 0;
+    }
+
     function nativeXpBonusReading(state,level,now=Date.now()) {
         const values=state||{};
+        const authoritative=nativeAuthoritativeXp(values,now);
+        if(authoritative) {
+            return {trainer:authoritative.trainer,pokemon:authoritative.pokemon,
+                sources:authoritative.parts.map(row=>({kind:row.id||'server'})),
+                unknown:[],reported:true,
+                knownFactors:authoritative.trainer!==1||authoritative.pokemon!==1,
+                complete:true,authoritative:true};
+        }
         let trainer=1,pokemon=1;
         const sources=[],unknown=[];
         const pct=(v)=>typeof v==='number'&&Number.isFinite(v)&&v>0&&v<=1000?v:0;
         if(pct(values.twitch?.pct)) {
-            if(values.twitch.watching>0) {
+            const active=Number(values.twitch.xpUntil)>now;
+            if(active || (values.twitch.xpUntil==null&&values.twitch.watching>0)) {
                 const p=values.twitch.pct;
                 trainer*=1+p/100;pokemon*=1+p/100;
                 sources.push({kind:'twitch',pct:p});
-            } else if(values.twitch.watching===null) {
+            } else if(values.twitch.xpUntil==null&&values.twitch.watching===null) {
                 unknown.push('twitch');
-            } else {
-                unknown.push('twitchAvailable');
             }
+        }
+        if(pct(values.kick?.pct)&&Number(values.kick.xpUntil)>now) {
+            const p=values.kick.pct;
+            trainer*=1+p/100;pokemon*=1+p/100;
+            sources.push({kind:'kick',pct:p});
         }
         if(pct(values.evento?.trainer)||pct(values.evento?.pokemon)) {
             const t=pct(values.evento?.trainer),p=pct(values.evento?.pokemon);
@@ -4293,8 +4431,6 @@
             trainer*=1+p/100;pokemon*=1+p/100;
             sources.push({kind:'guild',pct:p});
         }
-        // These are upstream-defined, timestamp-gated multiplicative XP
-        // sources, not arbitrary interpretations of a generic 'boost' flag.
         if(Number(values.loja?.vipUntil)>now) {
             trainer*=1.5;pokemon*=1.5;
             sources.push({kind:'vip'});
@@ -4315,37 +4451,39 @@
         }
         const catchup=values.loja?.catchup;
         if(catchup) {
-            // The upstream x10 catch-up ends at a trainer-XP threshold and
-            // splits the crossing reward. Presence alone cannot model it.
             const target=catchup.target;
             if(target!==null&&Number.isFinite(Number(level))&&level<target)
                 unknown.push('catchup');
             else if(target===null) unknown.push('catchup');
         }
-        const reported=['twitch','evento','guildBonusPct','guild','loja']
+        const reported=['twitch','kick','evento','guildBonusPct','guild','loja']
             .some(key=>Object.hasOwn(values,key));
         return {trainer, pokemon,sources,unknown,
             reported,knownFactors:sources.length>0,
-            complete:reported&&unknown.length===0 &&
-                ['twitch','evento','guildBonusPct','guild','loja']
-                    .every(key=>Object.hasOwn(values,key))};
+            complete:reported&&unknown.length===0};
     }
 
     function nativeXpBonusScope(values,now=Date.now()) {
-        // Invalidate a cached forecast when an upstream timed boost expires,
-        // even without another websocket packet.
         const active=end=>typeof end==='number'&&end>now;
+        const auth=nativeAuthoritativeXp(values,now);
         return JSON.stringify([
-            values?.twitch?.pct??null,values?.twitch?.watching??null,
+            auth?.trainer??null,auth?.pokemon??null,
+            values?.twitch?.pct??null,active(values?.twitch?.xpUntil),
+            active(values?.twitch?.captureUntil),active(values?.twitch?.shinyUntil),
+            values?.kick?.pct??null,active(values?.kick?.xpUntil),
+            active(values?.kick?.captureUntil),active(values?.kick?.shinyUntil),
             values?.evento?.trainer??null,values?.evento?.pokemon??null,
-            values?.guildBonusPct??null,
+            values?.evento?.farm??null,values?.guildBonusPct??null,
             active(values?.guild?.boostUntil),
             active(values?.loja?.vipUntil),
             active(values?.loja?.boosts?.xp),
             active(values?.loja?.boosts?.pokexp),
             values?.tiposBoost?.xp??null,values?.tiposBoost?.pokexp??null,
             values?.loja?.catchup?.target??null,
-            values?.loja?.catchup?.multiplier??null
+            values?.loja?.catchup?.multiplier??null,
+            values?.seasonalType??null,
+            Object.entries(values?.gymPodium||{}).sort(),
+            nativeRaidFarmPct(values,now)
         ]);
     }
 
