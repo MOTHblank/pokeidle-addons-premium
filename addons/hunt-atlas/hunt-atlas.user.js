@@ -499,7 +499,7 @@
             'rank.learning': 'Learning',
             'rank.unverified': 'Unverified',
             'reference.title': 'Simulate bonuses (optional)',
-            'reference.note': 'This separate calculator uses manual capture, shiny and drop assumptions from PokeIdle Tools. Those bonuses are NOT detected here. The game-reported XP bonuses appear above. Nothing changes in the game or measured rates.',
+            'reference.note': 'Live Twitch/Kick capture and shiny timers are already included in the main Atlas ranking. This separate calculator adds optional manual what-if assumptions from PokeIdle Tools; nothing here changes the game or measured rates.',
             'reference.enable': 'Compare hypothetical bonuses',
             'reference.shinyBoost': 'Shiny chance ×1.5',
             'reference.catchBoost': 'Capture chance ×1.5',
@@ -879,7 +879,7 @@
             'rank.learning': 'Aprendendo',
             'rank.unverified': 'Não verificado',
             'reference.title': 'Simular bônus (opcional)',
-            'reference.note': 'Esta calculadora separada usa hipóteses manuais de captura, shiny e drops do PokeIdle Tools. Esses bônus NÃO são detectados aqui. Os bônus reais de XP informados pelo jogo aparecem acima. Nada muda no jogo nem nas taxas medidas.',
+            'reference.note': 'Os bônus ativos de captura e shiny da Twitch/Kick já entram no ranking principal do Atlas. Esta calculadora separada acrescenta apenas hipóteses manuais opcionais do PokeIdle Tools; nada aqui muda o jogo nem as taxas medidas.',
             'reference.enable': 'Comparar bônus hipotéticos',
             'reference.shinyBoost': 'Chance de shiny ×1,5',
             'reference.catchBoost': 'Chance de captura ×1,5',
@@ -7438,8 +7438,9 @@
         const killsH = Number.isFinite(xp?.killsH) ? xp.killsH : null;
         // An uncalibrated time-to-kill simulation can exaggerate Coins/hour
         // by orders of magnitude. Do not publish it as a modeled gold rate.
+        const raidFarmPct=nativeRaidFarmPct(state.nativeXpContext);
         const modelKillGoldH = xp?.observed && Number.isFinite(killsH)
-            ? farmGoldPrediction(hunt,killsH) : null;
+            ? farmGoldPrediction(hunt,killsH,raidFarmPct) : null;
         const current = isHuntHere(hunt?.slug);
         const record = current ? performanceRecord(hunt?.slug,false) : null;
         const rates = current ? observedRates(record) : null;
