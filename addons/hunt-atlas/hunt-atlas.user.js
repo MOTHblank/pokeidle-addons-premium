@@ -520,7 +520,7 @@
             'reference.rareGroup': 'Rare-drop bonuses',
             'reference.rareHelp': 'Only changes the selected rare item\'s estimated drop odds. Does not affect XP or Coins.',
             'reference.extra': 'Additional assumptions (Kick)',
-            'reference.extraHelp': 'Kick factors are just examples in the external calculator. They are not detected in-game and do not connect Kick.',
+            'reference.extraHelp': 'These Kick switches are extra what-if factors. An active in-game Kick capture/shiny redemption is detected automatically and is not counted twice.',
             'reference.unitsHelp': 'Example: +50% = 1.5×. A drop multiplier of 1× makes no change; 2× doubles the modeled chance.',
             'reference.catchCompare': 'Chance to capture per accepted ball: {before} → {after}',
             'reference.rareCompare': 'Chance of this item per kill: {before} → {after}',
@@ -900,7 +900,7 @@
             'reference.rareGroup': 'Bônus de drops raros',
             'reference.rareHelp': 'Muda apenas a chance estimada do item raro escolhido. Não altera XP nem moedas.',
             'reference.extra': 'Outras hipóteses (Kick)',
-            'reference.extraHelp': 'Os fatores do Kick são apenas exemplos da calculadora externa. Não são detectados no jogo e não conectam o Kick.',
+            'reference.extraHelp': 'Estes controles do Kick são fatores extras de simulação. Um bônus ativo de captura/shiny do Kick no jogo é detectado automaticamente e não é contado duas vezes.',
             'reference.unitsHelp': 'Exemplo: +50% = 1,5×. Um multiplicador de 1× não muda a chance; 2× dobra a chance simulada.',
             'reference.catchCompare': 'Chance de capturar por bola aceita: {before} → {after}',
             'reference.rareCompare': 'Chance deste item por abate: {before} → {after}',
@@ -14732,13 +14732,14 @@
             ((!state.filters.referenceEnabled&&key!=='referenceEnabled')?
                 ' disabled':'')+' /></label>';
         const refActive=state.filters.referenceEnabled;
+        const liveCaptureBonuses=nativeLiveCaptureBonuses(state.nativeXpContext);
         const refCatch=refActive && chosen ? referenceCapturePreview(
             chosen.chance,chosen.acceptedH,
             chosen.shinyEligible===null?null:chosen.shinyP,{
                 shinyBoost:state.filters.referenceShinyBoost,
                 catchBoost:state.filters.referenceCatchBoost,
-                kickShiny:state.filters.referenceKickShiny,
-                kickCatch:state.filters.referenceKickCatch,
+                kickShiny:state.filters.referenceKickShiny&&!liveCaptureBonuses.kickShiny,
+                kickCatch:state.filters.referenceKickCatch&&!liveCaptureBonuses.kickCapture,
                 shinyEvent:state.filters.referenceShinyEvent,
                 catchEvent:state.filters.referenceCatchEvent
             }):null;
