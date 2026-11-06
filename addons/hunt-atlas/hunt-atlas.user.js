@@ -11677,10 +11677,24 @@
                 flex: 1 1 auto !important;
                 display: flex !important;
                 flex-direction: column !important;
-                overflow: hidden !important;
+                overflow-x: hidden !important;
+                overflow-y: auto !important;
+                overscroll-behavior: contain;
+                scrollbar-gutter: stable;
                 background: #171316 !important;
                 color: #eee7ea !important;
                 font: 11px/1.35 system-ui,sans-serif !important;
+            }
+
+            /* One vertical scroll owner prevents flex children from being crushed
+               when filters and forecast panels grow taller than the modal. */
+            #${DRAWER_ID} > .mha-filter-toolbar,
+            #${DRAWER_ID} > .mha-filters,
+            #${DRAWER_ID} > .mha-dex-auto,
+            #${DRAWER_ID} > .mha-xp-summary,
+            #${DRAWER_ID} > .mha-meta,
+            #${DRAWER_ID} > .mha-body {
+                flex: 0 0 auto !important;
             }
 
             #${DRAWER_ID}[hidden] {
@@ -12042,9 +12056,9 @@
             }
 
             .mha-body {
-                flex: 1;
+                flex: 0 0 auto;
                 min-height: 0;
-                overflow: auto;
+                overflow: visible;
                 padding: 10px 12px;
                 display: grid;
                 grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -12326,10 +12340,8 @@
             }
             .mha-xp-summary {
                 min-height: 0;
-                max-height: min(55dvh, 550px);
-                overflow-y: auto;
-                overflow-x: hidden;
-                scrollbar-gutter: stable;
+                max-height: none;
+                overflow: visible;
             }
             .mha-best-name, .mha-xp-value { font-size: 10px; }
             /* Keep the Top 5 action visible even with long source strings. */
@@ -12449,9 +12461,8 @@
                 .mha-best-row .mha-go { grid-column: 3; grid-row: 1 / 3; }
             }
             .mha-xp-summary [data-mha-more][open] {
-                max-height: min(44dvh, 480px);
-                overflow-y: auto;
-                overflow-x: hidden;
+                max-height: none;
+                overflow: visible;
             }
             .mha-xp-summary button,
             .mha-xp-summary select { min-height: 30px; }
@@ -12513,13 +12524,10 @@
             }
             @media (max-width: 620px) {
                 .mha-filter-toolbar { padding: 6px 8px; }
-                .mha-filters {
-                    max-height: min(50dvh, 440px);
-                    overflow-y: auto;
-                    scrollbar-gutter: stable;
-                }
+                .mha-filters,
                 .mha-xp-summary {
-                    max-height: min(50dvh, 460px);
+                    max-height: none;
+                    overflow: visible;
                 }
                 .mha-outland-quick { align-items: stretch; }
                 .mha-outland-quick button { flex: 1 1 140px; }
