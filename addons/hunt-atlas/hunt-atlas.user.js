@@ -6,7 +6,7 @@
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
 // @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
-// @version      1.9.40
+// @version      1.9.41
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -20,7 +20,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.40');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.41');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -58,6 +58,14 @@
 
     const MARKET_CACHE_MAX_AGE_MS =
         7 * 24 * 60 * 60 * 1000;
+
+    // Hot-path writes and live redraws are deliberately coalesced. PokéIdle can
+    // emit several combat/state packets per second on fast hunts; localStorage
+    // is synchronous and a full Atlas rebuild is main-thread work.
+    const PERF_WRITE_INTERVAL_MS = 10 * 1000;
+    const CACHE_WRITE_INTERVAL_MS = 30 * 1000;
+    const LIVE_RENDER_INTERVAL_MS = 5 * 1000;
+    const CONTROLLER_SNAPSHOT_CACHE_MS = 3 * 1000;
 
     const MARKET_HISTORY_MAX_PAGES =
         12;
@@ -1314,6 +1322,7 @@
         openHuntDetails:new Set(),
         lastDrawerRenderAt: 0,
         drawerRenderTimer: null,
+        liveRenderTimer: null,
         renderStats: {attempts:0,skipped:0},
         mapObserver: null,
         mapSyncQueued: false,
@@ -1724,7 +1733,15 @@
         }
     }
 
-    function savePerformance() {
+    let performanceSaveTimer = null;
+    let performanceLastWriteAt = 0;
+    let performanceLastSerialized = '';
+
+    function flushPerformance() {
+        if (performanceSaveTimer !== null) {
+            clearTimeout(performanceSaveTimer);
+            performanceSaveTimer = null;
+        }
         try {
             const entries =
                 [...state.huntPerf.entries()]
@@ -1762,15 +1779,42 @@
                 }
             }
 
-            localStorage.setItem(
-                PERF_KEY,
+            const serialized =
                 JSON.stringify(
                     Object.fromEntries(
                         state.huntPerf
                     )
-                )
+                );
+            performanceLastWriteAt = Date.now();
+            if (serialized === performanceLastSerialized) {
+                return;
+            }
+            localStorage.setItem(
+                PERF_KEY,
+                serialized
             );
+            performanceLastSerialized = serialized;
         } catch {}
+    }
+
+    function savePerformance() {
+        if (performanceSaveTimer !== null) {
+            return;
+        }
+        const delay =
+            Math.max(
+                0,
+                PERF_WRITE_INTERVAL_MS -
+                    (
+                        Date.now() -
+                        performanceLastWriteAt
+                    )
+            );
+        performanceSaveTimer =
+            setTimeout(
+                flushPerformance,
+                delay
+            );
     }
 
     function pokemonPower(
@@ -4851,7 +4895,7 @@
         if (
             state.drawerOpen
         ) {
-            queueRender();
+            queueLiveRender();
         }
     }
 
@@ -4989,10 +5033,17 @@
         } catch {}
     }
 
-    function saveCache() {
+    let cacheSaveTimer = null;
+    let cacheLastWriteAt = 0;
+    let cacheLastSerialized = '';
+
+    function flushCache() {
+        if (cacheSaveTimer !== null) {
+            clearTimeout(cacheSaveTimer);
+            cacheSaveTimer = null;
+        }
         try {
-            localStorage.setItem(
-                CACHE_KEY,
+            const serialized =
                 JSON.stringify({
                     hunts:
                         state.hunts,
@@ -5006,12 +5057,47 @@
                         ),
                     ownedSpecies:
                         [...state.ownedSpecies]
-                })
+                });
+            cacheLastWriteAt = Date.now();
+            if (serialized === cacheLastSerialized) {
+                return;
+            }
+            localStorage.setItem(
+                CACHE_KEY,
+                serialized
             );
+            cacheLastSerialized = serialized;
         } catch {}
     }
 
+    function saveCache() {
+        if (cacheSaveTimer !== null) {
+            return;
+        }
+        const delay =
+            Math.max(
+                0,
+                CACHE_WRITE_INTERVAL_MS -
+                    (
+                        Date.now() -
+                        cacheLastWriteAt
+                    )
+            );
+        cacheSaveTimer =
+            setTimeout(
+                flushCache,
+                delay
+            );
+    }
+
     loadCache();
+
+    // Flush the coalesced persistence buffers on a real page exit. Normal
+    // combat packets never need to block the main thread on synchronous I/O.
+    page.addEventListener?.('pagehide', () => {
+        flushPerformance();
+        flushCache();
+    }, {capture:true});
 
     // ------------------------------------------------------------------
     // PokéIdle protocol
@@ -5726,7 +5812,7 @@
             );
 
             saveCache();
-            queueRender();
+            queueLiveRender();
             if (state.pokedexAuto.active) stepPokedexAuto();
         }
     }
@@ -9929,7 +10015,13 @@
         );
     }
 
+    let speciesIndexSource = null;
+    let speciesIndexCache = null;
+
     function buildSpeciesIndex() {
+        if (speciesIndexSource === state.hunts && speciesIndexCache) {
+            return speciesIndexCache;
+        }
         const index =
             new Map();
 
@@ -10005,6 +10097,8 @@
             }
         }
 
+        speciesIndexSource = state.hunts;
+        speciesIndexCache = index;
         return index;
     }
 
@@ -15093,6 +15187,10 @@
     }
 
     function renderDrawer() {
+        if (state.liveRenderTimer !== null) {
+            clearTimeout(state.liveRenderTimer);
+            state.liveRenderTimer = null;
+        }
         const locale =
             currentLocale();
 
@@ -15357,6 +15455,18 @@
         }
     }
 
+    function queueLiveRender() {
+        if(!state.drawerOpen || !state.atlasEnabled ||
+            !isMapModalOpen()) return;
+        if(state.liveRenderTimer !== null) return;
+        const delay=Math.max(0,LIVE_RENDER_INTERVAL_MS-
+            (Date.now()-state.lastDrawerRenderAt));
+        state.liveRenderTimer=setTimeout(()=>{
+            state.liveRenderTimer=null;
+            queueRender();
+        },delay);
+    }
+
     function queueRender() {
         // No expensive list/rate work in headless/background mode or when
         // the user has switched back to the native map.
@@ -15379,10 +15489,37 @@
         },delay);
     }
 
-    function controllerSnapshot() {
-        syncFromControllerBridge();
+    let controllerSnapshotCache = null;
 
+    function controllerSnapshot() {
+        // The userscript already receives authoritative WebSocket deltas. Only
+        // fall back to the Controller bridge when that state is incomplete.
+        if (!state.hunts.length || !state.huntSceneKnown || !state.activeSocket)
+            syncFromControllerBridge();
+
+        const now = Date.now();
         const lead = leadPokemon();
+        const snapshotKey = [
+            state.playerLevel,
+            state.currentHuntSlug || '',
+            state.activePokemonId ?? '',
+            leadSignature(lead) || '',
+            state.modelRevision,
+            state.typeStatus,
+            state.combatCatalogStatus,
+            state.moveIndexStatus,
+            state.marketCacheSavedAt || 0,
+            state.pokedex.size,
+            state.ownedSpecies.size,
+            state.filters.nativeAoeForecast,
+            farmingSnapshotScope()
+        ].join('|');
+        if (controllerSnapshotCache &&
+            controllerSnapshotCache.hunts === state.hunts &&
+            controllerSnapshotCache.key === snapshotKey &&
+            now - controllerSnapshotCache.at < CONTROLLER_SNAPSHOT_CACHE_MS) {
+            return controllerSnapshotCache.value;
+        }
 
         const leadTypes = lead
             ? normalizedTypes(
@@ -15479,11 +15616,10 @@
                             )
                         }
                         : null,
-                    matchupScore: Number.isFinite(
-                        bestMatchupScore(view)
-                    )
-                        ? bestMatchupScore(view)
-                        : null
+                    matchupScore: (() => {
+                        const score = bestMatchupScore(view);
+                        return Number.isFinite(score) ? score : null;
+                    })()
                 };
             });
 
@@ -15560,7 +15696,7 @@
             };
         });
 
-        return {
+        const snapshot = {
             version: 1,
             playerLevel: Number(
                 state.playerLevel || 0
@@ -15594,6 +15730,13 @@
             hunts,
             defaultFilters: defaultFilters()
         };
+        controllerSnapshotCache = {
+            at: now,
+            key: snapshotKey,
+            hunts: state.hunts,
+            value: snapshot
+        };
+        return snapshot;
     }
 
     function controllerMetrics() {
@@ -15860,7 +16003,11 @@
             }
             ensureMapToggle();
             if(!state.atlasEnabled)return;
-            if(Date.now()-state.lastDrawerRenderAt>=12000){
+            const socketHealthy=state.activeSocket && page.WebSocket &&
+                state.activeSocket.readyState===page.WebSocket.OPEN;
+            if(!socketHealthy && Date.now()-state.lastDrawerRenderAt>=12000){
+                // Bridge polling is only a recovery path. A healthy native
+                // WebSocket already supplies authoritative live deltas.
                 syncFromControllerBridge();
                 state.drawerOpen=true;
                 queueRender();
@@ -15868,7 +16015,7 @@
         },3000);
 
         console.info(
-            '[PokéIdle Hunt Atlas] v1.9.35 experimental loaded'
+            '[PokéIdle Hunt Atlas] v1.9.41 experimental loaded'
         );
     }
 

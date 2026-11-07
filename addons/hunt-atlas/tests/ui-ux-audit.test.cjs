@@ -136,3 +136,37 @@ test('Atlas owns vertical scrolling instead of flex-squashing its sections',()=>
     assert.match(source,/\.mha-xp-summary \[data-mha-more\]\[open\] \{\s*max-height: none;\s*overflow: visible;/);
     assert.doesNotMatch(source,/\.mha-body \{\s*flex: 1;\s*min-height: 0;\s*overflow: auto;/);
 });
+
+
+test('combat and state hot paths coalesce synchronous persistence and redraw work',()=>{
+    assert.match(source,/const PERF_WRITE_INTERVAL_MS = 10 \* 1000;/);
+    assert.match(source,/const CACHE_WRITE_INTERVAL_MS = 30 \* 1000;/);
+    assert.match(source,/const LIVE_RENDER_INTERVAL_MS = 5 \* 1000;/);
+    assert.match(source,/function flushPerformance\(\)/);
+    assert.match(source,/function flushCache\(\)/);
+    assert.match(source,/function queueLiveRender\(\)/);
+    assert.match(source,/savePerformance\(\);[\s\S]{0,220}queueLiveRender\(\);/);
+    assert.match(source,/message\?\.t ===[\s\S]{0,120}'estado'[\s\S]{0,600}queueLiveRender\(\);/);
+    assert.doesNotMatch(
+        section('    function recordKill(', '    function processCombatEvents('),
+        /localStorage\.setItem/
+    );
+});
+
+test('unchanged Atlas structures and controller exports reuse bounded caches',()=>{
+    assert.match(source,/speciesIndexSource === state\.hunts && speciesIndexCache/);
+    assert.match(source,/speciesIndexSource = state\.hunts;/);
+    assert.match(source,/const CONTROLLER_SNAPSHOT_CACHE_MS = 3 \* 1000;/);
+    assert.match(source,/controllerSnapshotCache\.hunts === state\.hunts/);
+    assert.match(source,/return controllerSnapshotCache\.value;/);
+    assert.doesNotMatch(
+        section('    function controllerSnapshot() {', '    function controllerMetrics() {'),
+        /function controllerSnapshot\(\) \{\s*syncFromControllerBridge\(\);/
+    );
+});
+
+test('healthy WebSocket avoids periodic bridge synchronization and redraw fallback',()=>{
+    assert.match(source,/const socketHealthy=state\.activeSocket && page\.WebSocket/);
+    assert.match(source,/if\(!socketHealthy && Date\.now\(\)-state\.lastDrawerRenderAt>=12000\)/);
+    assert.match(source,/Bridge polling is only a recovery path/);
+});
