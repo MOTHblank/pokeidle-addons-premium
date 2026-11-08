@@ -7,8 +7,8 @@ The scraper now supports both **source-file inspection** and **image discovery/d
 ## Collecting assets
 
 1. Open the game and choose **Scrape** in the top menu.
-2. Choose **Scan source** to archive public JavaScript, JSON, CSS and other client files. This step also exposes unused image paths referenced in public client files.
-3. Choose **Download images**. The scraper inspects loaded images, network resource timing, static CSS/JS image paths and the publicly accessible `/assets/items.json` catalog. Explicit catalog item IDs are associated with their real icon URLs.
+2. Choose **Scan source** to archive public JavaScript, JSON, CSS and other client files. The scan starts with high-value gameplay catalogs such as `/assets/items.json`, creature data, moves and map markers so they cannot be crowded out by optional asset packs. Player-outfit manifests are deliberately ignored.
+3. Choose **Download images**. The scraper inspects loaded images, network resource timing, static CSS/JS image paths and the publicly accessible `/assets/items.json` catalog. Explicit catalog item IDs are associated with their real icon URLs; player-outfit artwork is deliberately ignored.
 4. Let the scan finish or press **Cancel**. **Export TAR** downloads the source files plus actual image bytes. **Manifest** downloads the inspection report alone.
 
 You can run **Download images** again after visiting other maps, encountering different Pokémon or opening more game panels. Already downloaded assets are reused in memory; new URLs add to the archive.
@@ -32,7 +32,7 @@ The controller's current synchronizer embeds **PNG only**; GIF/WebP/AVIF are col
 
 ## Security and scope
 
-The image scanner uses unauthenticated requests (`credentials: omit`) to the current PokéIdle origin and anonymous userscript requests to the explicitly approved public art host `pokexguides.com`. It never downloads arbitrary external domains, arbitrary endpoints, private account URLs or resource URLs with unapproved query parameters. Unapproved image hosts are reported by hostname only. Unsupported formats and failed requests are listed in the manifest.
+The image scanner uses unauthenticated requests (`credentials: omit`) to the current PokéIdle origin and anonymous userscript requests to the explicitly approved public art host `pokexguides.com`. It never downloads arbitrary external domains, arbitrary endpoints, private account URLs or resource URLs with unapproved query parameters. Player-outfit manifests and artwork are excluded before they consume crawl/download limits. Unapproved image hosts are reported by hostname only. Unsupported formats and failed requests are listed in the manifest.
 
 A download is capped at 2 MiB per image, 96 MiB across images, 1,200 image files and 3,000 discovered image URLs. The original text scan has its own separate limits. The browser may still hold a large TAR in memory during export; prefer working in a clean dedicated browser tab.
 
