@@ -30,8 +30,7 @@ function harness() {
             baseSpAtk:100,baseSpDef:100,type1:'NORMAL',attacks:[]}]
     ]);
     const state={filters:{nativeAoeForecast:false},
-        typesBySpecies:new Map(),nativeGeometry:new Map(),
-        hunts:[],modelRevision:0,
+        typesBySpecies:new Map(),modelRevision:0,
         nativeXpContext:{seasonalType:null,gymPodium:{}}};
     const ctx={
         state,leadPokemon:()=>lead,
@@ -54,8 +53,8 @@ function harness() {
         }
     };
     const api=vm.runInNewContext(code+'\n({nativeIvCooldown,nativeMoveCooldown,'+
-        'nativeWildStat,nativeMeanTtk,nativeRememberFieldGeometry,'+
-        'nativeSpawnDistances,nativeSingleTargetKills,nativeAoeKills,'+
+        'nativeWildStat,nativeMeanTtk,nativeWalkTransitionSeconds,'+
+        'nativeSpawnCount,nativeSingleTargetKills,nativeAoeKills,'+
         'nativeCombatForecast,'+
         'nativeSeasonalMultiplier,nativeGymMultiplier})',ctx);
     const hunt=(id=2,level=150)=>({
@@ -100,35 +99,23 @@ test('controller move readiness persists through consecutive kills',()=>{
 });
 test('controller grouped-wave throughput has no synthetic 65-second cap',()=>{
     const h=harness();
-    const d=Array(16).fill(20.6);
     const obsoleteCap=16*3600/65;
-    assert.ok(h.api.nativeSingleTargetKills(d,1.8)>obsoleteCap);
-    assert.ok(h.api.nativeAoeKills(d,.01)>obsoleteCap);
-    assert.ok(h.api.nativeAoeKills(d,10000)<20);
+    assert.ok(h.api.nativeSingleTargetKills(16,1.8)>obsoleteCap);
+    assert.ok(h.api.nativeAoeKills(16,.01)>obsoleteCap);
+    assert.ok(h.api.nativeAoeKills(16,10000)<20);
 });
-test('premium uses complete campo.init positions for high-level hunt geometry',()=>{
+test('premium native pacing has no entry-radius geometry inputs',()=>{
+    assert.equal(code.includes('nativeGeometry'),false);
+    assert.equal(code.includes('nativeRememberFieldGeometry'),false);
+    assert.equal(code.includes('nativeSpawnDistances'),false);
+    assert.equal(code.includes('Math.hypot'),false);
     const h=harness();
-    const hunt={...h.hunt(2,20000),totalSpawns:8};
-    h.state.hunts=[hunt];
-    const initial=h.api.nativeSpawnDistances(hunt);
-    assert.equal(initial.length,8);
-    assert.ok(initial.every(d=>d===20.6));
-    const packet={t:'campo.init',slug:hunt.slug,heroi:{c:10,r:10},
-        mobs:Array.from({length:8},(_,i)=>({
-            s:i+1,c:10+i,r:15,x:false
-        })).concat([{s:100,c:150,r:150,tr:true}])};
-    assert.equal(h.api.nativeRememberFieldGeometry(packet),true);
-    assert.equal(h.state.modelRevision,1);
-    const distances=h.api.nativeSpawnDistances(hunt);
-    assert.equal(distances.length,8);
-    assert.ok(distances.every(d=>d>=5&&d<10));
-    assert.equal(h.api.nativeRememberFieldGeometry(packet),false,
-        'identical layout must not recalculate all forecasts');
-    assert.equal(h.state.modelRevision,1);
-    assert.equal(h.api.nativeRememberFieldGeometry({
-        ...packet,mobs:packet.mobs.slice(0,3)}),false,
-        'incomplete reinits cannot replace reliable full-map geometry');
-    assert.deepEqual(Array.from(h.api.nativeSpawnDistances(hunt)),Array.from(distances));
+    const a={...h.hunt(2,20000),slug:'map-a',totalSpawns:8};
+    const b={...a,slug:'map-b'};
+    assert.equal(h.api.nativeSpawnCount(a),8);
+    assert.equal(h.api.nativeCombatForecast(a).killsH,
+        h.api.nativeCombatForecast(b).killsH,
+        'hunt slug/map identity must not secretly imply fake geometry');
 });
 test('native forecast reduces kills/hour for tougher enemies',()=>{
     const h=harness();

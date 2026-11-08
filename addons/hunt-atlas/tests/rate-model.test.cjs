@@ -317,7 +317,7 @@ test('lead must be confirmed active; strongest owned is NOT a hunting lead', () 
     'hunt/session transitions clear previous confirmed lead');
 });
 
-test('equipped bicycle divides player walking time without multiplying combat', () => {
+test('equipped bicycle divides generic walking transition without multiplying combat', () => {
   const ctx = {
     BICYCLE_SPEED_BY_RARITY: {
       comum:.15,incomum:.25,rara:.5,mitica:.75,lendaria:1
@@ -331,9 +331,8 @@ test('equipped bicycle divides player walking time without multiplying combat', 
       ])
     },
     NATIVE_PACE: {
-      playerTile:.26,wildTile:1.9,search:.31,waveGap:2.8
-    },
-    nativeReplenishmentCap:()=>Infinity
+      defaultWalkTransition:1.66036,minCycle:1.8,waveGap:2.8
+    }
   };
   vm.createContext(ctx);
   vm.runInContext([
@@ -341,7 +340,7 @@ test('equipped bicycle divides player walking time without multiplying combat', 
     functionBody('nativeBicycleFactorFromRarity'),
     functionBody('nativeEquippedBicycle'),
     functionBody('nativeMergeBicycleState'),
-    functionBody('nativePlayerTileSeconds'),
+    functionBody('nativeWalkTransitionSeconds'),
     functionBody('nativeSingleTargetKills')
   ].join('\n'),ctx);
 
@@ -349,7 +348,7 @@ test('equipped bicycle divides player walking time without multiplying combat', 
   assert.equal(legendary.factor,2);
   ctx.state.bicycleRarity=legendary.rarity;
   ctx.state.bicycleFactor=legendary.factor;
-  assert.equal(ctx.nativePlayerTileSeconds(),.13);
+  assert.equal(ctx.nativeWalkTransitionSeconds(),.83018);
 
   const oldShape=ctx.nativeEquippedBicycle({
     equipada:7,lista:[{id:7,rar:'mitica'}]
@@ -366,10 +365,11 @@ test('equipped bicycle divides player walking time without multiplying combat', 
   assert.equal(ctx.state.bicycleRarity,'lendaria');
   assert.equal(ctx.state.bicycleFactor,2);
 
-  const distances=Array(16).fill(40);
-  const hunt={nivel:150};
-  const foot=ctx.nativeSingleTargetKills(distances,2,hunt,.26);
-  const bike=ctx.nativeSingleTargetKills(distances,2,hunt,.13);
+  const bikeTransition=ctx.nativeWalkTransitionSeconds();
+  ctx.state.bicycleFactor=1;
+  const footTransition=ctx.nativeWalkTransitionSeconds();
+  const foot=ctx.nativeSingleTargetKills(16,2,footTransition);
+  const bike=ctx.nativeSingleTargetKills(16,2,bikeTransition);
   assert.ok(bike>foot,'faster player walking must raise movement-limited KPH');
   assert.ok(source.includes('bicycleScope()].join'),
     'bike identity must be part of saved measurement scope');
