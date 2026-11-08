@@ -77,19 +77,74 @@
         '/shared/spawns-filtro.mjs'
     ]);
 
-    // /hunt 1.0.17's 1.409.0 simulator export contains 500 distinct map
-    // profiles. Treat that as the minimum complete world corpus until a newer
-    // authoritative export tells us the game has a different count.
-    const MIN_PACING_MAP_FILES = 500;
-
-    // Generated maps use these stable Portuguese type names. Probe a generous
-    // range in addition to every public marker slug; 1.409.0 tops out at 32.
-    const GENERATED_MAP_TYPES = Object.freeze([
-        'normal', 'fogo', 'agua', 'planta', 'eletrico', 'gelo',
-        'lutador', 'veneno', 'terra', 'voador', 'psiquico', 'inseto',
-        'pedra', 'fantasma', 'dragao', 'sombrio', 'aco', 'fada'
+    // Exact map identities from /hunt 1.0.17's PokéIdle 1.409.0 pacing
+    // export. Maps are assumed immutable; this list is the completeness contract.
+    const PACE_MAP_IDS = Object.freeze([
+        "aipom", "ampharos", "ancient_dragonair", "ancient_granbull", "ancient_hypno", "ancient_marowak", "ancient_meganium", "ancient_pinsir",
+        "ancient_pupitar", "ancient_xatu", "arcanine", "ariados", "azumarill", "baltoy", "banette", "banshee_misdreavus",
+        "bayleef", "beedrill", "beldum", "bellossom", "bellsprout", "brave_alakazam", "brave_arcanine", "brave_blastoise",
+        "brave_charizard", "brave_clefable", "brave_mantine", "brave_nidoking", "brave_nidoqueen", "brave_noctowl", "brave_steelix", "brave_venusaur",
+        "brute_rhydon", "butterfree", "cacturne", "caterpie", "chansey", "charged_raichu", "charmander", "charmeleon",
+        "chikorita", "chinchou", "cleffa", "cloyster", "corphish", "corsola", "cubone", "cyndaquil",
+        "dark_crobat", "dewgong", "diglett", "dodrio", "donphan", "dragonair", "drowzee", "dunsparce",
+        "dusclops", "electrike", "elekid", "enigmatic_girafarig", "enraged_typhlosion", "evil_cloyster", "exeggutor", "feraligatr",
+        "forretress", "freezing_dewgong", "furious_ampharos", "furious_gyarados", "furious_magmar", "furious_pidgeot", "furious_sandslash", "furious_scyther",
+        "furious_skarmory", "furious_wigglytuff", "furret", "gengar", "geodude", "gerado_aco_01", "gerado_aco_02", "gerado_aco_03",
+        "gerado_aco_04", "gerado_aco_05", "gerado_aco_06", "gerado_aco_07", "gerado_aco_08", "gerado_aco_09", "gerado_aco_10", "gerado_aco_11",
+        "gerado_aco_12", "gerado_aco_13", "gerado_aco_14", "gerado_aco_15", "gerado_agua_01", "gerado_agua_02", "gerado_agua_03", "gerado_agua_04",
+        "gerado_agua_05", "gerado_agua_06", "gerado_agua_07", "gerado_agua_08", "gerado_agua_09", "gerado_agua_10", "gerado_agua_11", "gerado_agua_12",
+        "gerado_agua_13", "gerado_agua_14", "gerado_agua_15", "gerado_agua_16", "gerado_agua_17", "gerado_agua_18", "gerado_agua_19", "gerado_agua_20",
+        "gerado_agua_21", "gerado_agua_22", "gerado_agua_23", "gerado_agua_24", "gerado_agua_25", "gerado_agua_26", "gerado_agua_27", "gerado_agua_28",
+        "gerado_agua_29", "gerado_agua_30", "gerado_agua_31", "gerado_agua_32", "gerado_dragao_01", "gerado_dragao_02", "gerado_dragao_03", "gerado_dragao_04",
+        "gerado_dragao_05", "gerado_dragao_06", "gerado_dragao_07", "gerado_dragao_08", "gerado_dragao_09", "gerado_dragao_10", "gerado_dragao_11", "gerado_dragao_12",
+        "gerado_dragao_13", "gerado_dragao_14", "gerado_eletrico_01", "gerado_eletrico_02", "gerado_eletrico_03", "gerado_eletrico_04", "gerado_eletrico_05", "gerado_eletrico_06",
+        "gerado_eletrico_07", "gerado_eletrico_08", "gerado_eletrico_09", "gerado_eletrico_10", "gerado_eletrico_11", "gerado_eletrico_12", "gerado_eletrico_13", "gerado_eletrico_14",
+        "gerado_eletrico_15", "gerado_eletrico_16", "gerado_eletrico_17", "gerado_eletrico_18", "gerado_fada_01", "gerado_fada_02", "gerado_fada_03", "gerado_fada_04",
+        "gerado_fada_05", "gerado_fada_06", "gerado_fada_07", "gerado_fada_08", "gerado_fada_09", "gerado_fada_10", "gerado_fada_11", "gerado_fada_12",
+        "gerado_fada_13", "gerado_fada_14", "gerado_fantasma_01", "gerado_fantasma_02", "gerado_fantasma_03", "gerado_fantasma_04", "gerado_fantasma_05", "gerado_fantasma_06",
+        "gerado_fantasma_07", "gerado_fantasma_08", "gerado_fantasma_09", "gerado_fantasma_10", "gerado_fantasma_11", "gerado_fantasma_12", "gerado_fantasma_13", "gerado_fantasma_14",
+        "gerado_fantasma_15", "gerado_fantasma_16", "gerado_fantasma_17", "gerado_fantasma_18", "gerado_fantasma_19", "gerado_fogo_01", "gerado_fogo_02", "gerado_fogo_03",
+        "gerado_fogo_04", "gerado_fogo_05", "gerado_fogo_06", "gerado_fogo_07", "gerado_fogo_08", "gerado_fogo_09", "gerado_fogo_10", "gerado_fogo_11",
+        "gerado_fogo_12", "gerado_fogo_13", "gerado_fogo_14", "gerado_fogo_15", "gerado_fogo_16", "gerado_fogo_17", "gerado_fogo_18", "gerado_fogo_19",
+        "gerado_fogo_20", "gerado_gelo_01", "gerado_gelo_02", "gerado_gelo_03", "gerado_gelo_04", "gerado_gelo_05", "gerado_gelo_06", "gerado_gelo_07",
+        "gerado_gelo_08", "gerado_gelo_09", "gerado_gelo_10", "gerado_inseto_01", "gerado_inseto_02", "gerado_inseto_03", "gerado_inseto_04", "gerado_inseto_05",
+        "gerado_inseto_06", "gerado_inseto_07", "gerado_inseto_08", "gerado_inseto_09", "gerado_inseto_10", "gerado_inseto_11", "gerado_inseto_12", "gerado_inseto_13",
+        "gerado_inseto_14", "gerado_inseto_15", "gerado_inseto_16", "gerado_inseto_17", "gerado_inseto_18", "gerado_inseto_19", "gerado_lutador_01", "gerado_lutador_02",
+        "gerado_lutador_03", "gerado_lutador_04", "gerado_lutador_05", "gerado_lutador_06", "gerado_lutador_07", "gerado_lutador_08", "gerado_lutador_09", "gerado_lutador_10",
+        "gerado_lutador_11", "gerado_lutador_12", "gerado_lutador_13", "gerado_lutador_14", "gerado_lutador_15", "gerado_lutador_16", "gerado_lutador_17", "gerado_normal_01",
+        "gerado_normal_02", "gerado_normal_03", "gerado_normal_04", "gerado_normal_05", "gerado_normal_06", "gerado_normal_07", "gerado_normal_08", "gerado_normal_09",
+        "gerado_normal_10", "gerado_normal_11", "gerado_normal_12", "gerado_normal_13", "gerado_normal_14", "gerado_normal_15", "gerado_normal_16", "gerado_normal_17",
+        "gerado_normal_18", "gerado_normal_19", "gerado_normal_20", "gerado_normal_21", "gerado_normal_22", "gerado_normal_23", "gerado_normal_24", "gerado_normal_25",
+        "gerado_normal_26", "gerado_normal_27", "gerado_normal_28", "gerado_normal_29", "gerado_normal_30", "gerado_pedra_01", "gerado_pedra_02", "gerado_pedra_03",
+        "gerado_pedra_04", "gerado_pedra_05", "gerado_pedra_06", "gerado_pedra_07", "gerado_pedra_08", "gerado_pedra_09", "gerado_pedra_10", "gerado_pedra_11",
+        "gerado_pedra_12", "gerado_pedra_13", "gerado_pedra_14", "gerado_pedra_15", "gerado_pedra_16", "gerado_planta_01", "gerado_planta_02", "gerado_planta_03",
+        "gerado_planta_04", "gerado_planta_05", "gerado_planta_06", "gerado_planta_07", "gerado_planta_08", "gerado_planta_09", "gerado_planta_10", "gerado_planta_11",
+        "gerado_planta_12", "gerado_planta_13", "gerado_planta_14", "gerado_planta_15", "gerado_planta_16", "gerado_planta_17", "gerado_planta_18", "gerado_planta_19",
+        "gerado_planta_20", "gerado_planta_21", "gerado_planta_22", "gerado_planta_23", "gerado_planta_24", "gerado_planta_25", "gerado_planta_26", "gerado_planta_27",
+        "gerado_planta_28", "gerado_planta_29", "gerado_planta_30", "gerado_planta_31", "gerado_psiquico_01", "gerado_psiquico_02", "gerado_psiquico_03", "gerado_psiquico_04",
+        "gerado_psiquico_05", "gerado_psiquico_06", "gerado_psiquico_07", "gerado_psiquico_08", "gerado_psiquico_09", "gerado_psiquico_10", "gerado_psiquico_11", "gerado_psiquico_12",
+        "gerado_psiquico_13", "gerado_psiquico_14", "gerado_psiquico_15", "gerado_psiquico_16", "gerado_psiquico_17", "gerado_psiquico_18", "gerado_sombrio_01", "gerado_sombrio_02",
+        "gerado_sombrio_03", "gerado_sombrio_04", "gerado_sombrio_05", "gerado_sombrio_06", "gerado_sombrio_07", "gerado_sombrio_08", "gerado_sombrio_09", "gerado_sombrio_10",
+        "gerado_sombrio_11", "gerado_sombrio_12", "gerado_sombrio_13", "gerado_sombrio_14", "gerado_sombrio_15", "gerado_sombrio_16", "gerado_sombrio_17", "gerado_sombrio_18",
+        "gerado_terra_01", "gerado_terra_02", "gerado_terra_03", "gerado_terra_04", "gerado_terra_05", "gerado_terra_06", "gerado_terra_07", "gerado_terra_08",
+        "gerado_terra_09", "gerado_terra_10", "gerado_terra_11", "gerado_terra_12", "gerado_terra_13", "gerado_veneno_01", "gerado_veneno_02", "gerado_veneno_03",
+        "gerado_veneno_04", "gerado_veneno_05", "gerado_veneno_06", "gerado_veneno_07", "gerado_veneno_08", "gerado_veneno_09", "gerado_veneno_10", "gerado_veneno_11",
+        "gerado_veneno_12", "gerado_voador_01", "gerado_voador_02", "gerado_voador_03", "gerado_voador_04", "gerado_voador_05", "gerado_voador_06", "gerado_voador_07",
+        "gerado_voador_08", "gerado_voador_09", "gerado_voador_10", "gerado_voador_11", "gerado_voador_12", "gerado_voador_13", "gerado_voador_14", "gerado_voador_15",
+        "gerado_voador_16", "girafarig", "golduck", "golem", "granbull", "graveler", "grimer", "growlithe",
+        "gyarados", "hard_golem", "haunter", "heavy_piloswine", "heracross", "houndoom", "igglybuff", "jynx",
+        "kabuto", "kadabra", "kakuna", "kangaskhan", "kingdra", "kingler", "koffing", "lickitung",
+        "machoke", "machop", "magby", "magmar", "magnetic_electabuzz", "makuhita", "mareep", "marowak",
+        "milch_miltank", "miltank", "misdreavus", "muk", "natu", "nidoking", "nidoranfe", "noctowl",
+        "oddish", "onix", "pichu", "pidgeotto", "pikachu", "piloswine", "pinsir", "poliwag",
+        "poliwrath", "psy_jynx", "psyduck", "quagsire", "raichu", "rapidash", "roll_donphan", "scizor",
+        "scyther", "seedot", "shellder", "shuckle", "skarmory", "sneasel", "snorlax", "spoink",
+        "squirtle", "stantler", "starmie", "steelix", "sunflora", "taekwondo_hitmonchan", "taekwondo_hitmonlee", "taekwondo_hitmontop",
+        "tangela", "tauros", "teddiursa", "totodile", "treecko", "tribal_feraligatr", "trickmaster_gengar", "venonat",
+        "vileplume", "vulpix", "war_heracross", "wartortle", "weedle", "weepinbell", "whismur", "wigglytuff",
+        "wobbuffet", "wooper", "zangoose", "zubat"
     ]);
-    const GENERATED_MAP_PROBE_MAX = 64;
+    const PACE_MAP_ID_SET = new Set(PACE_MAP_IDS);
     const REGION_SUFFIX = /_(?:hoenn|sinnoh|unova|kalos|alola|galar|paldea)$/i;
     const UPSTREAM_MAP_TREE_URL =
         'https://api.github.com/repos/MOTHblank/pokeidle-upstream/git/trees/master?recursive=1';
@@ -611,11 +666,10 @@
             return [];
         }
 
-        for (const type of GENERATED_MAP_TYPES) {
-            for (let i = 1; i <= GENERATED_MAP_PROBE_MAX; i++) {
-                addMap('gerado_' + type + '_' + String(i).padStart(2, '0'));
-            }
-        }
+        // Pacing map identities are authoritative and independent of current
+        // hunt marker slugs. This is what finds generated/source maps such as
+        // gerado_agua_17 that the world map UI never names directly.
+        for (const id of PACE_MAP_IDS) addMap(id);
         return [...discovered];
     }
 
@@ -629,25 +683,36 @@
                 if (/^\/assets\/world\/maps\/[^/]+\.json$/i.test(pathname)) mapFiles++;
             } catch {}
         }
-        const reusedMapFiles = state.upstreamMapIds.size;
-        const availableMapFiles = new Set([
-            ...state.upstreamMapIds,
-            ...[...state.files.values()]
+        const capturedMapIds = new Set(
+            [...state.files.values()]
                 .map(file => {
                     try { return mapIdentity(new URL(file.url).pathname); }
                     catch { return null; }
                 })
                 .filter(Boolean)
-        ]).size;
+        );
+        const availablePacingMapIds = new Set([
+            ...[...state.upstreamMapIds].filter(id => PACE_MAP_ID_SET.has(id)),
+            ...[...capturedMapIds].filter(id => PACE_MAP_ID_SET.has(id))
+        ]);
+        const missingPacingMapIds =
+            PACE_MAP_IDS.filter(id => !availablePacingMapIds.has(id));
+        const reusedPacingMapFiles =
+            [...state.upstreamMapIds].filter(id => PACE_MAP_ID_SET.has(id)).length;
+        const capturedPacingMapFiles =
+            [...capturedMapIds].filter(id => PACE_MAP_ID_SET.has(id)).length;
         const missingRequiredPaths = PACE_REQUIRED_PATHS.filter(path => !captured.has(path));
         return {
             ready: missingRequiredPaths.length === 0 &&
-                availableMapFiles >= MIN_PACING_MAP_FILES,
+                missingPacingMapIds.length === 0,
             mapFiles,
             capturedMapFiles: mapFiles,
-            reusedMapFiles,
-            availableMapFiles,
-            minimumMapFiles: MIN_PACING_MAP_FILES,
+            upstreamWorldMapFiles: state.upstreamMapIds.size,
+            reusedPacingMapFiles,
+            capturedPacingMapFiles,
+            availablePacingMapFiles: availablePacingMapIds.size,
+            requiredPacingMapFiles: PACE_MAP_IDS.length,
+            missingPacingMapIds,
             missingRequiredPaths,
             probeMisses: state.pacingProbeMisses,
             upstreamInventoryChecked: state.upstreamMapInventoryChecked,
@@ -1380,11 +1445,10 @@
                 (state.unresolvedDynamicPaths.size
                     ? ' · ' + state.unresolvedDynamicPaths.size + ' unresolved dynamic paths' : '') +
                 (pace.ready
-                    ? ' · pacing ready (' + pace.availableMapFiles + ' maps: ' +
-                      pace.capturedMapFiles + ' new, ' +
-                      pace.reusedMapFiles + ' upstream)'
-                    : ' · pacing NOT ready (' + pace.availableMapFiles + '/' +
-                      pace.minimumMapFiles + ' maps available, ' +
+                    ? ' · pacing ready (' + pace.availablePacingMapFiles + '/' +
+                      pace.requiredPacingMapFiles + ' pacing maps)'
+                    : ' · pacing NOT ready (' + pace.availablePacingMapFiles + '/' +
+                      pace.requiredPacingMapFiles + ' pacing maps, ' +
                       pace.missingRequiredPaths.length + ' core missing)');
             updateUI();
         }
