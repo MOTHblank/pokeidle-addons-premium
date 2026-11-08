@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         PokéIdle Upstream Scraper & Exporter
 // @namespace    moth.pokeidle
-// @version      1.4.0
+// @version      1.4.1
 // @description  Investigates and downloads PokéIdle client files, item icons and observed sprites with verified manifests.
 // @match        https://pokeidle.io/*
 // @match        https://www.pokeidle.io/*
 // @grant        GM_xmlhttpRequest
 // @connect      pokexguides.com
 // @connect      www.pokexguides.com
+// @connect      api.github.com
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/upstream-scraper/scraper-exporter.user.js
 // @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/upstream-scraper/scraper-exporter.user.js
 // @noframes
@@ -90,6 +91,9 @@
     ]);
     const GENERATED_MAP_PROBE_MAX = 64;
     const REGION_SUFFIX = /_(?:hoenn|sinnoh|unova|kalos|alola|galar|paldea)$/i;
+    const UPSTREAM_MAP_TREE_URL =
+        'https://api.github.com/repos/MOTHblank/pokeidle-upstream/git/trees/master?recursive=1';
+    const UPSTREAM_MAP_PREFIX = 'assets/world/maps/';
     // Outfit atlases are player cosmetics. They are numerous, consume the text
     // and image budgets quickly, and are not useful to controller/upstream analysis.
     const PLAYER_OUTFIT_PATH =
@@ -117,6 +121,11 @@
         unresolvedDynamicPaths: new Set(),
         pacingProbeUrls: new Set(),
         pacingProbeMisses: 0,
+        upstreamMapIds: new Set(),
+        upstreamMapPaths: new Set(),
+        upstreamMapInventoryChecked: false,
+        upstreamMapInventoryError: null,
+        reusedUpstreamMaps: new Set(),
         status: 'Not scanned yet',
         attempted: 0,
         discovered: 0,
@@ -475,6 +484,101 @@
     }
 
 
+    function mapIdentity(pathValue) {
+        const path = String(pathValue || '').replace(/\\/g, '/');
+        const match = path.match(/(?:^|\/)assets\/world\/maps\/([^/]+)\.json$/i);
+        if (!match) return null;
+        // Some generated map files carry a content hash in the filename.
+        // Maps are immutable for our scraper purposes, so the stable map ID is
+        // the filename with only that trailing hash removed.
+        return match[1].replace(/-[0-9a-f]{8,64}$/i, '');
+    }
+
+    function mapIdentityFromUrl(urlValue) {
+        try { return mapIdentity(new URL(urlValue).pathname); }
+        catch { return null; }
+    }
+
+    function shouldReuseUpstreamMap(urlValue) {
+        const id = mapIdentityFromUrl(urlValue);
+        return Boolean(id && state.upstreamMapIds.has(id));
+    }
+
+    async function loadUpstreamMapInventory() {
+        state.upstreamMapIds.clear();
+        state.upstreamMapPaths.clear();
+        state.reusedUpstreamMaps.clear();
+        state.upstreamMapInventoryChecked = false;
+        state.upstreamMapInventoryError = null;
+
+        if (typeof GM_xmlhttpRequest !== 'function') {
+            state.upstreamMapInventoryError =
+                'GM_xmlhttpRequest unavailable; scraping all maps';
+            return;
+        }
+
+        try {
+            const tree = await new Promise((resolve, reject) => {
+                const request = GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: UPSTREAM_MAP_TREE_URL,
+                    responseType: 'json',
+                    timeout: FETCH_TIMEOUT_MS,
+                    anonymous: true,
+                    headers: {
+                        Accept: 'application/vnd.github+json',
+                        'X-GitHub-Api-Version': '2022-11-28'
+                    },
+                    onload: response => {
+                        if (response.status !== 200) {
+                            reject(new Error('GitHub HTTP ' + response.status));
+                            return;
+                        }
+                        let body = response.response;
+                        if (!body || typeof body !== 'object') {
+                            try { body = JSON.parse(response.responseText || '{}'); }
+                            catch { body = null; }
+                        }
+                        if (!body || !Array.isArray(body.tree)) {
+                            reject(new Error('Invalid GitHub tree response'));
+                            return;
+                        }
+                        if (body.truncated) {
+                            reject(new Error('GitHub tree response was truncated'));
+                            return;
+                        }
+                        resolve(body);
+                    },
+                    onerror: () => reject(new Error('GitHub map inventory request failed')),
+                    ontimeout: () => reject(new Error('GitHub map inventory request timed out')),
+                    onabort: () => reject(new Error('Cancelled'))
+                });
+                state.currentRequest = request;
+            });
+
+            for (const entry of tree.tree) {
+                if (entry?.type !== 'blob' ||
+                    !String(entry.path || '').startsWith(UPSTREAM_MAP_PREFIX) ||
+                    !/\.json$/i.test(String(entry.path || ''))) {
+                    continue;
+                }
+                const id = mapIdentity(entry.path);
+                if (!id) continue;
+                state.upstreamMapIds.add(id);
+                state.upstreamMapPaths.add('/' + String(entry.path).replace(/^\/+/, ''));
+            }
+            state.upstreamMapInventoryChecked = true;
+        } catch (error) {
+            if (state.cancelRequested) throw error;
+            state.upstreamMapInventoryError =
+                String(error?.message || error) + '; scraping all maps';
+            state.upstreamMapIds.clear();
+            state.upstreamMapPaths.clear();
+        } finally {
+            state.currentRequest = null;
+        }
+    }
+
     function discoverPacingMapCandidates(text, sourceUrl) {
         const discovered = new Set();
         let sourcePath = '';
@@ -525,13 +629,30 @@
                 if (/^\/assets\/world\/maps\/[^/]+\.json$/i.test(pathname)) mapFiles++;
             } catch {}
         }
+        const reusedMapFiles = state.upstreamMapIds.size;
+        const availableMapFiles = new Set([
+            ...state.upstreamMapIds,
+            ...[...state.files.values()]
+                .map(file => {
+                    try { return mapIdentity(new URL(file.url).pathname); }
+                    catch { return null; }
+                })
+                .filter(Boolean)
+        ]).size;
         const missingRequiredPaths = PACE_REQUIRED_PATHS.filter(path => !captured.has(path));
         return {
-            ready: missingRequiredPaths.length === 0 && mapFiles >= MIN_PACING_MAP_FILES,
+            ready: missingRequiredPaths.length === 0 &&
+                availableMapFiles >= MIN_PACING_MAP_FILES,
             mapFiles,
+            capturedMapFiles: mapFiles,
+            reusedMapFiles,
+            availableMapFiles,
             minimumMapFiles: MIN_PACING_MAP_FILES,
             missingRequiredPaths,
-            probeMisses: state.pacingProbeMisses
+            probeMisses: state.pacingProbeMisses,
+            upstreamInventoryChecked: state.upstreamMapInventoryChecked,
+            upstreamInventoryError: state.upstreamMapInventoryError,
+            reusedMapIds: [...state.reusedUpstreamMaps].sort()
         };
     }
 
@@ -1085,13 +1206,43 @@
         state.unresolvedDynamicPaths.clear();
         state.pacingProbeUrls.clear();
         state.pacingProbeMisses = 0;
+        state.upstreamMapIds.clear();
+        state.upstreamMapPaths.clear();
+        state.upstreamMapInventoryChecked = false;
+        state.upstreamMapInventoryError = null;
+        state.reusedUpstreamMaps.clear();
         state.attempted = 0;
         state.startedAt = Date.now();
         state.finishedAt = 0;
-        state.status = 'Discovering resources…';
+        state.status = 'Checking existing upstream maps…';
         updateUI();
 
-        const queue = collectInitialUrls();
+        try {
+            await loadUpstreamMapInventory();
+        } catch (error) {
+            if (state.cancelRequested) {
+                state.running = false;
+                state.finishedAt = Date.now();
+                state.status = 'Cancelled';
+                updateUI();
+                return;
+            }
+            state.upstreamMapInventoryError =
+                String(error?.message || error) + '; scraping all maps';
+        }
+
+        state.status = state.upstreamMapInventoryChecked
+            ? 'Found ' + state.upstreamMapIds.size +
+              ' reusable upstream maps · discovering resources…'
+            : 'Upstream map inventory unavailable · discovering resources…';
+        updateUI();
+
+        const initial = collectInitialUrls();
+        const queue = initial.filter(url => {
+            if (!shouldReuseUpstreamMap(url)) return true;
+            state.reusedUpstreamMaps.add(mapIdentityFromUrl(url));
+            return false;
+        });
         const queued = new Set(queue);
         let cursor = 0;
         let capped = false;
@@ -1103,6 +1254,12 @@
         }
         const enqueue = url => {
             if (queued.has(url)) return;
+            if (shouldReuseUpstreamMap(url)) {
+                const id = mapIdentityFromUrl(url);
+                if (id) state.reusedUpstreamMaps.add(id);
+                queued.add(url);
+                return;
+            }
             if (queue.length >= MAX_DISCOVERED) {
                 capped = true;
                 return;
@@ -1223,9 +1380,11 @@
                 (state.unresolvedDynamicPaths.size
                     ? ' · ' + state.unresolvedDynamicPaths.size + ' unresolved dynamic paths' : '') +
                 (pace.ready
-                    ? ' · pacing ready (' + pace.mapFiles + ' maps)'
-                    : ' · pacing NOT ready (' + pace.mapFiles + '/' +
-                      pace.minimumMapFiles + ' maps, ' +
+                    ? ' · pacing ready (' + pace.availableMapFiles + ' maps: ' +
+                      pace.capturedMapFiles + ' new, ' +
+                      pace.reusedMapFiles + ' upstream)'
+                    : ' · pacing NOT ready (' + pace.availableMapFiles + '/' +
+                      pace.minimumMapFiles + ' maps available, ' +
                       pace.missingRequiredPaths.length + ' core missing)');
             updateUI();
         }
@@ -2034,7 +2193,7 @@
         );
 
         console.info(
-            '[PokéIdle Upstream Scraper] v1.4.0 loaded'
+            '[PokéIdle Upstream Scraper] v1.4.1 loaded'
         );
     }
 
