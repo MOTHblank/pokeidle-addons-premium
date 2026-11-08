@@ -1312,9 +1312,6 @@
         combatProfileCache: null,
         estimateCache: new Map(),
         estimateCacheKey: '',
-        // Only full campo.init layouts, keyed by the server-confirmed hunt.
-        // No field polling, background sampling, or speculative map geometry.
-        nativeGeometry: new Map(),
 
         serverTypeChart: null,
         huntAmplification: 1.5,
@@ -5741,11 +5738,6 @@
         }
         // Official Top Catch may arrive independently of regular state deltas.
         dexAutoReconcileTopCatch(message);
-        if (message?.t === 'campo.init') {
-            nativeRememberFieldGeometry(message);
-            return;
-        }
-
         if (
             message?.t === 'batalha' &&
             Array.isArray(message.ev)
@@ -5813,7 +5805,6 @@
             state.combatTargets.clear();
             state.lastLeadPokemon = null;
             state.activePokemonId = null;
-            state.nativeGeometry.clear(); // never carry prior-account maps
             state.modelRevision++;
             state.estimateCache.clear();
             if (
@@ -9192,14 +9183,13 @@
     // requires an explicit opt-in, now available in Atlas's detail panel.
     const NATIVE_PACE = Object.freeze({
         retarget:1, minCycle:1.8, waveGap:2.8, waveJitter:2.6,
-        wildTile:1.9, playerTile:0.26, search:.31,
-        defaultDistance:20.6, maxSpawns:16, maxEngaged:15,
+        defaultWalkTransition:1.66036, maxSpawns:16, maxEngaged:15,
         wildDamage:1.8, wildAttackGap:1.4, respawn:3
     });
 
-    function nativePlayerTileSeconds() {
+    function nativeWalkTransitionSeconds() {
         const factor=Number(state.bicycleFactor);
-        return NATIVE_PACE.playerTile/
+        return NATIVE_PACE.defaultWalkTransition/
             (Number.isFinite(factor)&&factor>1?factor:1);
     }
 
@@ -9326,71 +9316,23 @@
         }
         return spent/hp.length;
     }
-    function nativeRememberFieldGeometry(packet) {
-        // Upstream campo.init supplies the complete initial layout. Individual
-        // high-level slot replacements are not full waves and must not be used.
-        const slug=typeof packet?.slug==='string'?packet.slug:null;
-        const hunt=slug&&state.hunts.find(row=>row.slug===slug);
-        if(!hunt||!Array.isArray(packet.mobs))return false;
-        const hero=packet.heroi;
-        const hc=Number(hero?.c),hr=Number(hero?.r);
-        if(!Number.isFinite(hc)||!Number.isFinite(hr)||
-            hero?.c==null||hero?.r==null)return false;
-        const distances=packet.mobs.filter(mob=>mob&&typeof mob==='object'&&
-            mob.ti==null&&
-            !['bn','cura','tm','depot','tr'].some(key=>
-                mob[key]!=null&&mob[key]!==false)&&
-            mob.x!==true).map(mob=>{
-                const c=Number(mob.c),r=Number(mob.r);
-                return mob.c!=null&&mob.r!=null&&
-                    Number.isFinite(c)&&Number.isFinite(r)
-                    ? Math.round(Math.hypot(c-hc,r-hr)*10)/10:null;
-            }).filter(d=>d!==null&&d>=0&&d<=300);
-        const count=Number(hunt.totalSpawns??hunt.total_spawns)||
-            (hunt.especies||[]).reduce((total,sp)=>
-                total+Math.max(0,Number(sp.pontos)||0),0);
-        const required=Math.max(6,Math.ceil(Math.min(16,count||15)*.8));
-        if(distances.length<required)return false;
-        distances.sort((a,b)=>a-b);
-        const old=state.nativeGeometry.get(slug);
-        if(old&&old.length===distances.length&&
-            old.every((value,i)=>value===distances[i]))return false;
-        state.nativeGeometry.delete(slug);
-        state.nativeGeometry.set(slug,distances);
-        while(state.nativeGeometry.size>64)
-            state.nativeGeometry.delete(state.nativeGeometry.keys().next().value);
-        state.modelRevision++; // invalidate only on a genuinely new layout
-        return true;
-    }
-    function nativeSpawnDistances(hunt) {
+    function nativeSpawnCount(hunt) {
         const weighted=(hunt.especies||[]).reduce((total,sp)=>
             total+Math.max(0,Number(sp.pontos)||0),0);
         const reported=Number(hunt.totalSpawns??hunt.total_spawns);
-        const count=Math.max(1,Math.min(NATIVE_PACE.maxSpawns,
+        return Math.max(1,Math.min(NATIVE_PACE.maxSpawns,
             Math.trunc(reported>0?reported:weighted>0?Math.round(weighted):15)));
-        const sampled=state.nativeGeometry?.get(hunt.slug);
-        if(!sampled?.length)return Array(count).fill(NATIVE_PACE.defaultDistance);
-        // Same quantile resampling as Moth Controller's native_atlas_combat.
-        return Array.from({length:count},(_,i)=>sampled[Math.min(
-            sampled.length-1,Math.floor((i+.5)/count*sampled.length))]);
     }
-    function nativeSingleTargetKills(distances,cycle,playerTile=NATIVE_PACE.playerTile) {
-        const count=distances.length;
-        const avg=distances.reduce((a,b)=>a+b,0)/count;
-        const walk=avg*playerTile*NATIVE_PACE.search;
-        const meeting=NATIVE_PACE.wildTile*playerTile/
-            (NATIVE_PACE.wildTile+playerTile);
-        let time=0;
-        for(const distance of distances)
-            time=Math.max(time+cycle+walk,distance*meeting);
-        return Math.min(3600/cycle,
-            count*3600/(time+NATIVE_PACE.waveGap));
+    function nativeSingleTargetKills(count,cycle,transition=nativeWalkTransitionSeconds()) {
+        const perKill=Math.max(NATIVE_PACE.minCycle,cycle+transition);
+        const waveSeconds=count*perKill+NATIVE_PACE.waveGap;
+        return Math.min(3600/perKill,count*3600/waveSeconds);
     }
-    function nativeAoeKills(distances,ttk) {
-        const n=distances.length;
-        const rhythm=n>1?distances[n-2]:distances[0];
-        const arrival=Math.max(0,rhythm-5)*NATIVE_PACE.wildTile;
-        return Math.min(n*3600/(arrival+NATIVE_PACE.waveGap),
+    function nativeAoeKills(count,ttk) {
+        // No entry-radius/arrival estimate. Until map-paced calibration lands,
+        // use only a generic grouped-wave cadence plus engagement throughput.
+        const waveSeconds=count*NATIVE_PACE.minCycle+NATIVE_PACE.waveGap;
+        return Math.min(count*3600/waveSeconds,
             3600*NATIVE_PACE.maxEngaged/Math.max(ttk,NATIVE_PACE.minCycle));
     }
     function nativeCombatForecast(hunt) {
@@ -9403,9 +9345,8 @@
         if(!(level>0)||!(leadLevel>0)||!leadMeta||!typesReady||
             !(Number(leadMeta.baseSpeed)>0)||
             statKeys.some(k=>!(battleStat(player[k])>0)))return null;
-        const distances=nativeSpawnDistances(hunt);
-        const count=distances.length;
-        const playerTile=nativePlayerTileSeconds();
+        const count=nativeSpawnCount(hunt);
+        const transition=nativeWalkTransitionSeconds();
         const downtime=NATIVE_PACE.waveJitter/count+NATIVE_PACE.retarget;
         const gap=nativeIvCooldown(900,lead)/1000;
         const moves=battleMovesForLead(lead);
@@ -9488,13 +9429,13 @@
         hitMean/=weight;
         incomingDps/=weight;
         const cycle=Math.max(ttk+NATIVE_PACE.retarget,NATIVE_PACE.minCycle);
-        const soloKills=nativeSingleTargetKills(distances,cycle,playerTile);
+        const soloKills=nativeSingleTargetKills(count,cycle,transition);
         // Matches controller's explicit UI preference. Do not infer this
         // scenario from an owned Pokémon's partially populated TM flags.
         const aoe=state.filters?.nativeAoeForecast===true;
         let killsH=soloKills,engaged=1;
         if(aoe) {
-            killsH=Math.max(killsH,nativeAoeKills(distances,ttk));
+            killsH=Math.max(killsH,nativeAoeKills(count,ttk));
             engaged=Math.min(NATIVE_PACE.maxEngaged,
                 1+killsH*ttk/3600);
         }
@@ -9505,8 +9446,7 @@
         const oneHit=fatalHit>=ownHp;
         const incomingPerKill=incomingDps*engaged*ttk;
         const killsPerLife=oneHit?ownHp/Math.max(fatalHit,1e-6):999;
-        const recovery=NATIVE_PACE.respawn+
-            distances.reduce((a,b)=>a+b,0)/count*playerTile;
+        const recovery=NATIVE_PACE.respawn+transition;
         const aliveSeconds=killsPerLife*3600/Math.max(killsH,1e-6);
         const uptime=aliveSeconds/(aliveSeconds+recovery);
         const deathsH=killsPerLife>=999?0:3600/(aliveSeconds+recovery);
