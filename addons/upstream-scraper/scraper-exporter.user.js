@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Upstream Scraper & Exporter
 // @namespace    moth.pokeidle
-// @version      1.3.1
+// @version      1.3.2
 // @description  Investigates and downloads PokéIdle client files, item icons and observed sprites with verified manifests.
 // @match        https://pokeidle.io/*
 // @match        https://www.pokeidle.io/*
@@ -31,6 +31,19 @@
     const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
     const MAX_IMAGE_TOTAL_BYTES = 96 * 1024 * 1024;
     const IMAGE_EXTENSIONS = /\.(?:png|gif|webp|jpe?g|avif)(?:$|[?#])/i;
+    // Fetch gameplay catalogs first so crawl limits are spent on useful data,
+    // not whichever optional resource happened to appear first in the browser.
+    const CORE_TEXT_PATHS = Object.freeze([
+        '/assets/items.json',
+        '/assets/creatures.json',
+        '/assets/creatures-sprites-lab.json',
+        '/assets/index/moves-index.json',
+        '/assets/world/map-markers.json'
+    ]);
+    // Outfit atlases are player cosmetics. They are numerous, consume the text
+    // and image budgets quickly, and are not useful to controller/upstream analysis.
+    const PLAYER_OUTFIT_PATH =
+        /(?:^|\/)(?:assets-packs\/(?:categories\/)?outfits(?:[-._/]|$)|assets\/asset-packs\/(?:categories\/)?outfits(?:[-._/]|$)|(?:assets|img)\/outfits\/)/i;
 
     // In-memory list of actual public asset URLs (not response bodies).
     const observedAssets = new Set();
@@ -80,6 +93,10 @@
         try { decoded = decodeURIComponent(raw); } catch {}
         return /\$\{|\{[A-Za-z_$][^}]*\}|%24%7b|%7b/i.test(raw) ||
             /\$\{|\{[A-Za-z_$][^}]*\}/i.test(decoded);
+    }
+
+    function isPlayerOutfitPath(pathValue) {
+        return PLAYER_OUTFIT_PATH.test(String(pathValue || '').replace(/\\/g, '/'));
     }
 
     function normalizeUrl(value, base = location.href) {
@@ -141,6 +158,7 @@
         try {
             const url = new URL(urlValue);
             const path = url.pathname.toLowerCase();
+            if (isPlayerOutfitPath(path)) return false;
 
             if (
                 path === '/' ||
@@ -200,6 +218,7 @@
         };
 
         add(location.origin + '/app');
+        for (const path of CORE_TEXT_PATHS) add(location.origin + path);
 
         for (
             const el of
@@ -413,6 +432,7 @@
             if (!input || isDynamicTemplate(input)) return null;
             const url = new URL(String(input).trim(), base);
             if (url.protocol !== 'https:' || url.username || url.password ||
+                isPlayerOutfitPath(url.pathname) ||
                 url.href.length > 850 || !IMAGE_EXTENSIONS.test(url.pathname) ||
                 [...url.searchParams.keys()].some(key =>
                     !/^(?:v|ver|version|build|hash|t|_|cache)$/i.test(key)) ||
@@ -1883,7 +1903,7 @@
         );
 
         console.info(
-            '[PokéIdle Upstream Scraper] v1.3.1 loaded'
+            '[PokéIdle Upstream Scraper] v1.3.2 loaded'
         );
     }
 
