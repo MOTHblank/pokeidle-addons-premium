@@ -340,6 +340,7 @@ test('equipped bicycle divides player walking time without multiplying combat', 
     functionBody('nativeBicycleRarity'),
     functionBody('nativeBicycleFactorFromRarity'),
     functionBody('nativeEquippedBicycle'),
+    functionBody('nativeMergeBicycleState'),
     functionBody('nativePlayerTileSeconds'),
     functionBody('nativeSingleTargetKills')
   ].join('\n'),ctx);
@@ -355,6 +356,15 @@ test('equipped bicycle divides player walking time without multiplying combat', 
   });
   assert.equal(oldShape.rarity,'mitica');
   assert.equal(oldShape.factor,1.75);
+
+  ctx.state.bicycleState=null;
+  ctx.nativeMergeBicycleState({bicicleta:{
+    equipada:7,lista:[{id:7,rar:'comum'},{id:8,rar:'lendaria'}]
+  }},true);
+  assert.equal(ctx.state.bicycleFactor,1.15);
+  ctx.nativeMergeBicycleState({bicicleta:{equipada:8}},false);
+  assert.equal(ctx.state.bicycleRarity,'lendaria');
+  assert.equal(ctx.state.bicycleFactor,2);
 
   const distances=Array(16).fill(40);
   const hunt={nivel:150};
