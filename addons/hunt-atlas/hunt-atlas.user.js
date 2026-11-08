@@ -1234,6 +1234,7 @@
         nativeXpContext: {},
         bicycleRarity: null,
         bicycleFactor: 1,
+        bicycleState: null,
         bicycleFactors: new Map(Object.entries(BICYCLE_SPEED_BY_RARITY)
             .map(([rarity,speed]) => [rarity,1+speed])),
         itemCatalogStatus: 'idle',
@@ -2136,11 +2137,17 @@
         const has=Object.hasOwn(gameState||{},'bicicleta');
         if(!has&&!fullSnapshot)return;
         if(!has||!gameState.bicicleta||typeof gameState.bicicleta!=='object') {
+            state.bicycleState=null;
             state.bicycleRarity=null;
             state.bicycleFactor=1;
             return;
         }
-        const equipped=nativeEquippedBicycle(gameState.bicicleta);
+        state.bicycleState={
+            ...(state.bicycleState&&typeof state.bicycleState==='object'
+                ? state.bicycleState:{}),
+            ...gameState.bicicleta
+        };
+        const equipped=nativeEquippedBicycle(state.bicycleState);
         state.bicycleRarity=equipped.rarity;
         state.bicycleFactor=equipped.factor;
     }
@@ -5799,6 +5806,7 @@
             state.nativeXpContext = {};
             state.bicycleRarity = null;
             state.bicycleFactor = 1;
+            state.bicycleState = null;
             state.bicycleFactors = new Map(Object.entries(BICYCLE_SPEED_BY_RARITY)
                 .map(([rarity,speed]) => [rarity,1+speed]));
             state.captureChanceEvidence = {seen:0,min:null,max:null};
