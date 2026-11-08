@@ -7,11 +7,19 @@ The scraper now supports both **source-file inspection** and **image discovery/d
 ## Collecting assets
 
 1. Open the game and choose **Scrape** in the top menu.
-2. Choose **Scan source** to archive public JavaScript, JSON, CSS and other client files. The scan starts with high-value gameplay catalogs such as `/assets/items.json`, creature data, moves and map markers so they cannot be crowded out by optional asset packs. Player-outfit manifests are deliberately ignored.
+2. Choose **Scan source** to archive public JavaScript, JSON, CSS and other client files. The scan starts with high-value gameplay catalogs and the Hunt Atlas pacing inputs: item/creature catalogs, moves, map markers, world collision/offset/draw-order tables, `campo.mjs`, `mapa.mjs`, hunt-session/analyser modules and spawn filtering. It also derives world-map probes from every public hunt marker plus the generated-map naming scheme. Player-outfit manifests are deliberately ignored.
 3. Choose **Download images**. The scraper inspects loaded images, network resource timing, static CSS/JS image paths and the publicly accessible `/assets/items.json` catalog. Explicit catalog item IDs are associated with their real icon URLs; player-outfit artwork is deliberately ignored.
 4. Let the scan finish or press **Cancel**. **Export TAR** downloads the source files plus actual image bytes. **Manifest** downloads the inspection report alone.
 
 You can run **Download images** again after visiting other maps, encountering different Pokémon or opening more game panels. Already downloaded assets are reused in memory; new URLs add to the archive.
+
+## Pacing completeness
+
+Source scans now carry an explicit `pacing` object in the manifest. A scrape is `pacing.ready: true` only when all pacing-critical world modules/tables were captured and at least **500 distinct world-map JSON files** are present, matching the known 1.409.0 pacing corpus used by `/hunt`.
+
+The scraper does not silently treat speculative map probes as failures: candidate hunt/map names that return HTTP 404 are counted in `pacing.probeMisses`. Real fetch failures, missing required modules, crawl caps or an undersized map corpus keep `pacing.ready` false. This makes a successful pacing-ready manifest a usable gate for a future Moth pacing generator rather than a best-effort archive.
+
+The source limits are intentionally much higher than before (5,000 files, 8,000 discovered URLs, 12 MiB per text file and 768 MiB total text) because the old 350-file / 64-MiB limits could never hold the full map corpus. A complete map scrape is memory-heavy; run it in a dedicated tab and export before closing the page.
 
 ## Export structure
 
