@@ -65,12 +65,41 @@ test('Performance+ preserves native Economy Mode and does not break the collapse
 
 test('Scraper stays small in desktop nav and remains reachable on mobile',()=>{
     const src=addon('upstream-scraper/scraper-exporter.user.js');
-    assert.match(src,/@version\s+1\.3\.1/);
+    assert.match(src,/@version\s+1\.3\.2/);
     assert.match(src,/const mobile=document\.documentElement\.classList\.contains\('mobile'\)/);
     assert.match(src,/q\('#p-auto \.painel-cab-auto'\)/);
     assert.match(src,/button\.textContent\s*=\s*'⇩'/);
     assert.match(src,/aria-label', 'Open upstream scraper and exporter'/);
     assert.match(src,/\.mus-actions \{ flex-wrap:wrap; \}/);
+});
+
+test('Scraper prioritizes gameplay catalogs and rejects player outfit assets',()=>{
+    const src=addon('upstream-scraper/scraper-exporter.user.js');
+    for(const important of [
+        '/assets/items.json',
+        '/assets/creatures.json',
+        '/assets/creatures-sprites-lab.json',
+        '/assets/index/moves-index.json',
+        '/assets/world/map-markers.json'
+    ]) assert.ok(src.includes("'" + important + "'"),'priority seed: '+important);
+    assert.match(src,/for \(const path of CORE_TEXT_PATHS\) add\(location\.origin \+ path\)/);
+    const match=src.match(/const PLAYER_OUTFIT_PATH =\s*(\/.*\/i);/);
+    assert.ok(match,'outfit path filter exists');
+    const outfitPath=vm.runInNewContext(match[1]);
+    for(const ignored of [
+        '/assets-packs/categories/outfits-male-1309-a.json',
+        '/assets-packs/outfits/male/1309/page.webp',
+        '/assets/asset-packs/outfits-index.json',
+        '/assets/outfits/male/1309/1_1_1_1.png'
+    ]) assert.equal(outfitPath.test(ignored),true,'skip outfit asset: '+ignored);
+    for(const kept of [
+        '/assets/items.json',
+        '/assets/creatures.json',
+        '/cores-outfit.mjs',
+        '/assets-packs/categories/map-items-a.json'
+    ]) assert.equal(outfitPath.test(kept),false,'keep useful asset: '+kept);
+    assert.match(src,/if \(isPlayerOutfitPath\(path\)\) return false/);
+    assert.match(src,/isPlayerOutfitPath\(url\.pathname\) \|\|/);
 });
 
 test('unchanged Auto Catch+ UI anchors are still present in v1.357.3 app.html',()=>{
