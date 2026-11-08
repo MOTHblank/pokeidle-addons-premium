@@ -6,7 +6,7 @@
 // @supportURL   https://github.com/MOTHblank/pokeidle-addons-premium/issues
 // @downloadURL  https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
 // @updateURL    https://raw.githubusercontent.com/MOTHblank/pokeidle-addons-premium/main/addons/hunt-atlas/hunt-atlas.user.js
-// @version      1.9.41
+// @version      1.9.42
 // @description  Hunt finder with measured lead-Pokémon combat speed and personalized trainer XP/hour ranking.
 // @match        https://pokeidle.io/app*
 // @grant        unsafeWindow
@@ -20,7 +20,7 @@
 
     // Report only this script's version to the native monitor (no account data).
     const reportMothAddonVersion = () => {
-        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.41');
+        document.documentElement?.setAttribute('data-moth-addon-version-hunt-atlas', '1.9.42');
     };
     reportMothAddonVersion();
     if (document.readyState === 'loading') {
@@ -148,6 +148,15 @@
         'STEEL',
         'FAIRY'
     ];
+
+    // shared/bicicletas.mjs: only player walking is accelerated.
+    const BICYCLE_SPEED_BY_RARITY = Object.freeze({
+        comum: .15,
+        incomum: .25,
+        rara: .50,
+        mitica: .75,
+        lendaria: 1
+    });
 
     /*
      * Attack type -> defender type multiplier.
@@ -1223,6 +1232,10 @@
         outlandCatalogTiers: null,
         xpBonusState: {},
         nativeXpContext: {},
+        bicycleRarity: null,
+        bicycleFactor: 1,
+        bicycleFactors: new Map(Object.entries(BICYCLE_SPEED_BY_RARITY)
+            .map(([rarity,speed]) => [rarity,1+speed])),
         itemCatalogStatus: 'idle',
         itemsByName: new Map(),
         itemsById: new Map(),
@@ -2078,12 +2091,73 @@
         );
     }
 
+    function nativeBicycleRarity(value) {
+        if (typeof value !== 'string') return null;
+        const rarity=value.trim().toLowerCase().normalize('NFD')
+            .replace(/[\u0300-\u036f]/g,'');
+        return Object.hasOwn(BICYCLE_SPEED_BY_RARITY,rarity)?rarity:null;
+    }
+
+    function nativeBicycleFactorFromRarity(value) {
+        const rarity=nativeBicycleRarity(value);
+        if(!rarity)return 1;
+        const live=Number(state.bicycleFactors?.get(rarity));
+        const fallback=1+Number(BICYCLE_SPEED_BY_RARITY[rarity]||0);
+        const factor=Number.isFinite(live)?live:fallback;
+        return Number.isFinite(factor)&&factor>1?factor:1;
+    }
+
+    function nativeApplyBicycleCatalog(raw) {
+        const factors=new Map(Object.entries(BICYCLE_SPEED_BY_RARITY)
+            .map(([rarity,speed])=>[rarity,1+speed]));
+        for(const row of Array.isArray(raw?.raridades)?raw.raridades:[]) {
+            const rarity=nativeBicycleRarity(row?.id);
+            const speed=Number(row?.velocidade);
+            if(rarity&&Number.isFinite(speed)&&speed>=0&&speed<=3)
+                factors.set(rarity,1+speed);
+        }
+        state.bicycleFactors=factors;
+        state.bicycleFactor=nativeBicycleFactorFromRarity(state.bicycleRarity);
+    }
+
+    function nativeEquippedBicycle(raw) {
+        if(!raw||typeof raw!=='object')return {rarity:null,factor:1};
+        let rarity=nativeBicycleRarity(raw.equipadaRar);
+        if(!rarity&&raw.equipada!==undefined&&raw.equipada!==null&&
+            Array.isArray(raw.lista)) {
+            const equipped=String(raw.equipada);
+            const row=raw.lista.find(item=>String(item?.id)===equipped);
+            rarity=nativeBicycleRarity(row?.rar??row?.raridade);
+        }
+        return {rarity,factor:nativeBicycleFactorFromRarity(rarity)};
+    }
+
+    function nativeMergeBicycleState(gameState,fullSnapshot=false) {
+        const has=Object.hasOwn(gameState||{},'bicicleta');
+        if(!has&&!fullSnapshot)return;
+        if(!has||!gameState.bicicleta||typeof gameState.bicicleta!=='object') {
+            state.bicycleRarity=null;
+            state.bicycleFactor=1;
+            return;
+        }
+        const equipped=nativeEquippedBicycle(gameState.bicicleta);
+        state.bicycleRarity=equipped.rarity;
+        state.bicycleFactor=equipped.factor;
+    }
+
+    function bicycleScope() {
+        const factor=Number(state.bicycleFactor);
+        return (state.bicycleRarity||'foot')+':' +
+            (Number.isFinite(factor)&&factor>1?factor:1).toFixed(4);
+    }
+
     function farmingSnapshotScope() {
         return [state.farmingSnapshot.outlandTier ?? '?',
             state.farmingSnapshot.catalogRevision ?? '?',
             state.farmingSnapshot.boostSignature ?? '?',
             xpBonusScope(state.xpBonusState),
-            nativeXpBonusScope(state.nativeXpContext)].join('|');
+            nativeXpBonusScope(state.nativeXpContext),
+            bicycleScope()].join('|');
     }
 
     function performanceKey(
@@ -2110,7 +2184,8 @@
             '|catalog:' + (state.farmingSnapshot.catalogRevision ?? '?') +
             '|boost:' + (state.farmingSnapshot.boostSignature ?? '?') +
             '|xpBonus:' + xpBonusScope(state.xpBonusState) +
-            '|nativeXp:' + nativeXpBonusScope(state.nativeXpContext)
+            '|nativeXp:' + nativeXpBonusScope(state.nativeXpContext) +
+            '|bike:' + bicycleScope()
         );
     }
 
@@ -5262,6 +5337,7 @@
          */
         farmUpdateInventory(gameState,fullSnapshot);
         const beforeFarmingScope = farmingSnapshotScope();
+        nativeMergeBicycleState(gameState,fullSnapshot);
         const farmSnapshot = normalizeFarmingSnapshot(gameState);
         if (farmSnapshot) Object.assign(state.farmingSnapshot, farmSnapshot);
         if (Object.hasOwn(gameState,'tierOutland') ||
@@ -5721,6 +5797,10 @@
             state.outlandCatalogTiers = null;
             state.xpBonusState = {};
             state.nativeXpContext = {};
+            state.bicycleRarity = null;
+            state.bicycleFactor = 1;
+            state.bicycleFactors = new Map(Object.entries(BICYCLE_SPEED_BY_RARITY)
+                .map(([rarity,speed]) => [rarity,1+speed]));
             state.captureChanceEvidence = {seen:0,min:null,max:null};
             state.combatTargets.clear();
             state.lastLeadPokemon = null;
@@ -5778,6 +5858,7 @@
                     tier:Number(t.tier),nivel:Number(t.nivel),mult:Number(t.mult)
                 }));
             farmApplyRuntimeCatalog(message);
+            nativeApplyBicycleCatalog(message.bicicletas);
             mergeState(
                 message.estado,
                 true
@@ -9095,9 +9176,10 @@
         return rolls[(encounter + 3 * hit) % rolls.length] / 0.925;
     }
 
-    // Moth Controller native_atlas_combat.rs parity port (2026-10-30).
+    // Moth Controller native_atlas_combat.rs parity port (2026-11-08).
     // Copy its full deterministic single-target pipeline: 32 wild HP IVs,
-    // carried skill cooldowns, travel, wave refill, and survival uptime.
+    // carried skill cooldowns, bicycle-adjusted player travel, wave refill,
+    // and survival uptime.
     // No implicit AoE: the native default estimate_with_aoe(...,false) also
     // requires an explicit opt-in, now available in Atlas's detail panel.
     const NATIVE_PACE = Object.freeze({
@@ -9106,6 +9188,12 @@
         defaultDistance:20.6, maxSpawns:16, maxEngaged:15,
         wildDamage:1.8, wildAttackGap:1.4, respawn:3
     });
+
+    function nativePlayerTileSeconds() {
+        const factor=Number(state.bicycleFactor);
+        return NATIVE_PACE.playerTile/
+            (Number.isFinite(factor)&&factor>1?factor:1);
+    }
 
     function nativeIv(lead) {
         const raw=lead?.speedIV ?? lead?.speedIv ??
@@ -9284,12 +9372,12 @@
         // No obsolete 30-second Sinnoh exception.
         return count*3600/65;
     }
-    function nativeSingleTargetKills(distances,cycle,hunt) {
+    function nativeSingleTargetKills(distances,cycle,hunt,playerTile=NATIVE_PACE.playerTile) {
         const count=distances.length;
         const avg=distances.reduce((a,b)=>a+b,0)/count;
-        const walk=avg*NATIVE_PACE.playerTile*NATIVE_PACE.search;
-        const meeting=NATIVE_PACE.wildTile*NATIVE_PACE.playerTile/
-            (NATIVE_PACE.wildTile+NATIVE_PACE.playerTile);
+        const walk=avg*playerTile*NATIVE_PACE.search;
+        const meeting=NATIVE_PACE.wildTile*playerTile/
+            (NATIVE_PACE.wildTile+playerTile);
         let time=0;
         for(const distance of distances)
             time=Math.max(time+cycle+walk,distance*meeting);
@@ -9317,6 +9405,7 @@
             statKeys.some(k=>!(battleStat(player[k])>0)))return null;
         const distances=nativeSpawnDistances(hunt);
         const count=distances.length;
+        const playerTile=nativePlayerTileSeconds();
         const downtime=NATIVE_PACE.waveJitter/count+NATIVE_PACE.retarget;
         const gap=nativeIvCooldown(900,lead)/1000;
         const moves=battleMovesForLead(lead);
@@ -9399,7 +9488,7 @@
         hitMean/=weight;
         incomingDps/=weight;
         const cycle=Math.max(ttk+NATIVE_PACE.retarget,NATIVE_PACE.minCycle);
-        const soloKills=nativeSingleTargetKills(distances,cycle,hunt);
+        const soloKills=nativeSingleTargetKills(distances,cycle,hunt,playerTile);
         // Matches controller's explicit UI preference. Do not infer this
         // scenario from an owned Pokémon's partially populated TM flags.
         const aoe=state.filters?.nativeAoeForecast===true;
@@ -9417,7 +9506,7 @@
         const incomingPerKill=incomingDps*engaged*ttk;
         const killsPerLife=oneHit?ownHp/Math.max(fatalHit,1e-6):999;
         const recovery=NATIVE_PACE.respawn+
-            distances.reduce((a,b)=>a+b,0)/count*NATIVE_PACE.playerTile;
+            distances.reduce((a,b)=>a+b,0)/count*playerTile;
         const aliveSeconds=killsPerLife*3600/Math.max(killsH,1e-6);
         const uptime=aliveSeconds/(aliveSeconds+recovery);
         const deathsH=killsPerLife>=999?0:3600/(aliveSeconds+recovery);
