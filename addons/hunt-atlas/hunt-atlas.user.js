@@ -2143,8 +2143,8 @@
             return;
         }
         state.bicycleState={
-            ...(state.bicycleState&&typeof state.bicycleState==='object'
-                ? state.bicycleState:{}),
+            ...(!fullSnapshot&&state.bicycleState&&
+                typeof state.bicycleState==='object'?state.bicycleState:{}),
             ...gameState.bicicleta
         };
         const equipped=nativeEquippedBicycle(state.bicycleState);
