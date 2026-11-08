@@ -7,7 +7,7 @@ The scraper now supports both **source-file inspection** and **image discovery/d
 ## Collecting assets
 
 1. Open the game and choose **Scrape** in the top menu.
-2. Choose **Scan source** to archive public JavaScript, JSON, CSS and other client files. The scan starts with high-value gameplay catalogs and the Hunt Atlas pacing inputs: item/creature catalogs, moves, map markers, world collision/offset/draw-order tables, `campo.mjs`, `mapa.mjs`, hunt-session/analyser modules and spawn filtering. It also derives world-map probes from every public hunt marker plus the generated-map naming scheme. Player-outfit manifests are deliberately ignored.
+2. Choose **Scan source** to archive public JavaScript, JSON, CSS and other client files. Before crawling maps, the scraper checks the current `MOTHblank/pokeidle-upstream` `master` tree and reuses map JSONs already present under `assets/world/maps/`; only missing maps are downloaded. **This reuse applies only to world maps.** Every other gameplay file is fetched fresh on every scan. The scan seeds item/creature catalogs, moves, map markers, world collision/offset/draw-order tables, `campo.mjs`, `mapa.mjs`, hunt-session/analyser modules and spawn filtering, then derives missing-map probes from every public hunt marker plus the generated-map naming scheme. Player-outfit manifests are deliberately ignored.
 3. Choose **Download images**. The scraper inspects loaded images, network resource timing, static CSS/JS image paths and the publicly accessible `/assets/items.json` catalog. Explicit catalog item IDs are associated with their real icon URLs; player-outfit artwork is deliberately ignored.
 4. Let the scan finish or press **Cancel**. **Export TAR** downloads the source files plus actual image bytes. **Manifest** downloads the inspection report alone.
 
@@ -15,11 +15,11 @@ You can run **Download images** again after visiting other maps, encountering di
 
 ## Pacing completeness
 
-Source scans now carry an explicit `pacing` object in the manifest. A scrape is `pacing.ready: true` only when all pacing-critical world modules/tables were captured and at least **500 distinct world-map JSON files** are present, matching the known 1.409.0 pacing corpus used by `/hunt`.
+Source scans now carry an explicit `pacing` object in the manifest. A scrape is `pacing.ready: true` only when all pacing-critical world modules/tables were freshly captured and the **combined** map corpus (immutable maps already in `pokeidle-upstream` plus maps downloaded by this scan) contains at least **500 distinct world-map IDs**, matching the known 1.409.0 pacing corpus used by `/hunt`.
 
-The scraper does not silently treat speculative map probes as failures: candidate hunt/map names that return HTTP 404 are counted in `pacing.probeMisses`. Real fetch failures, missing required modules, crawl caps or an undersized map corpus keep `pacing.ready` false. This makes a successful pacing-ready manifest a usable gate for a future Moth pacing generator rather than a best-effort archive.
+The scraper does not silently treat speculative map probes as failures: candidate hunt/map names that return HTTP 404 are counted in `pacing.probeMisses`. Existing upstream map filenames with a trailing content hash are canonicalized to their stable map ID before comparison, so `gerado_fogo_03-<hash>.json` prevents a redundant `gerado_fogo_03` download. If the GitHub inventory lookup fails or is truncated, the scraper safely falls back to downloading all maps. It never reuses non-map files. Real fetch failures, missing required modules, crawl caps or an undersized combined map corpus keep `pacing.ready` false.
 
-The source limits are intentionally much higher than before (5,000 files, 8,000 discovered URLs, 12 MiB per text file and 768 MiB total text) because the old 350-file / 64-MiB limits could never hold the full map corpus. A complete map scrape is memory-heavy; run it in a dedicated tab and export before closing the page.
+The source limits are intentionally much higher than before (5,000 files, 8,000 discovered URLs, 12 MiB per text file and 768 MiB total text) because the old 350-file / 64-MiB limits could never hold the full map corpus. Reusing maps already committed upstream reduces subsequent scan size substantially; the first population of the map corpus can still be memory-heavy.
 
 ## Export structure
 
@@ -40,7 +40,7 @@ The controller's current synchronizer embeds **PNG only**; GIF/WebP/AVIF are col
 
 ## Security and scope
 
-The image scanner uses unauthenticated requests (`credentials: omit`) to the current PokéIdle origin and anonymous userscript requests to the explicitly approved public art host `pokexguides.com`. It never downloads arbitrary external domains, arbitrary endpoints, private account URLs or resource URLs with unapproved query parameters. Player-outfit manifests and artwork are excluded before they consume crawl/download limits. Unapproved image hosts are reported by hostname only. Unsupported formats and failed requests are listed in the manifest.
+The image scanner uses unauthenticated requests (`credentials: omit`) to the current PokéIdle origin and anonymous userscript requests to the explicitly approved public art host `pokexguides.com`. Source scans make one anonymous read-only request to `api.github.com` to list existing `MOTHblank/pokeidle-upstream` map files before deciding which map JSONs still need downloading. It never downloads arbitrary external domains, arbitrary endpoints, private account URLs or resource URLs with unapproved query parameters. Player-outfit manifests and artwork are excluded before they consume crawl/download limits. Unapproved image hosts are reported by hostname only. Unsupported formats and failed requests are listed in the manifest.
 
 A download is capped at 2 MiB per image, 96 MiB across images, 1,200 image files and 3,000 discovered image URLs. The original text scan has its own separate limits. The browser may still hold a large TAR in memory during export; prefer working in a clean dedicated browser tab.
 
