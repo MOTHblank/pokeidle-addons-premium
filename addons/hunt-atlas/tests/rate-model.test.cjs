@@ -317,6 +317,56 @@ test('lead must be confirmed active; strongest owned is NOT a hunting lead', () 
     'hunt/session transitions clear previous confirmed lead');
 });
 
+test('equipped bicycle divides player walking time without multiplying combat', () => {
+  const ctx = {
+    BICYCLE_SPEED_BY_RARITY: {
+      comum:.15,incomum:.25,rara:.5,mitica:.75,lendaria:1
+    },
+    state: {
+      bicycleRarity:null,
+      bicycleFactor:1,
+      bicycleFactors:new Map([
+        ['comum',1.15],['incomum',1.25],['rara',1.5],
+        ['mitica',1.75],['lendaria',2]
+      ])
+    },
+    NATIVE_PACE: {
+      playerTile:.26,wildTile:1.9,search:.31,waveGap:2.8
+    },
+    nativeReplenishmentCap:()=>Infinity
+  };
+  vm.createContext(ctx);
+  vm.runInContext([
+    functionBody('nativeBicycleRarity'),
+    functionBody('nativeBicycleFactorFromRarity'),
+    functionBody('nativeEquippedBicycle'),
+    functionBody('nativePlayerTileSeconds'),
+    functionBody('nativeSingleTargetKills')
+  ].join('\n'),ctx);
+
+  const legendary=ctx.nativeEquippedBicycle({equipadaRar:'lendaria'});
+  assert.equal(legendary.factor,2);
+  ctx.state.bicycleRarity=legendary.rarity;
+  ctx.state.bicycleFactor=legendary.factor;
+  assert.equal(ctx.nativePlayerTileSeconds(),.13);
+
+  const oldShape=ctx.nativeEquippedBicycle({
+    equipada:7,lista:[{id:7,rar:'mitica'}]
+  });
+  assert.equal(oldShape.rarity,'mitica');
+  assert.equal(oldShape.factor,1.75);
+
+  const distances=Array(16).fill(40);
+  const hunt={nivel:150};
+  const foot=ctx.nativeSingleTargetKills(distances,2,hunt,.26);
+  const bike=ctx.nativeSingleTargetKills(distances,2,hunt,.13);
+  assert.ok(bike>foot,'faster player walking must raise movement-limited KPH');
+  assert.ok(source.includes('bicycleScope()].join'),
+    'bike identity must be part of saved measurement scope');
+  assert.ok(source.includes("'|bike:' + bicycleScope()"),
+    'performance records must not mix different bike configurations');
+});
+
 test('upstream action pacing reduces unrealistic one-hit farming speed', () => {
   const ctx = makeContext();
   const diag = {};
@@ -449,5 +499,5 @@ test('the public forecast has explicit, separate trainer and Pokemon formulas', 
   assert.ok(source.includes('value: xpSingleStreamRate(killsH, trainerXpPerKill)'));
   assert.ok(source.includes('pokemonValue: xpSingleStreamRate(killsH, pokemonXpPerKill)'));
   assert.ok(source.includes('trainerXpPerKill: xp?.trainerXpPerKill ?? null'));
-  assert.ok(source.includes('// @version      1.9.38'));
+  assert.ok(source.includes('// @version      1.9.42'));
 });
