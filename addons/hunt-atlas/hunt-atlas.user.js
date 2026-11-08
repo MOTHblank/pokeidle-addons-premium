@@ -9374,13 +9374,7 @@
         return Array.from({length:count},(_,i)=>sampled[Math.min(
             sampled.length-1,Math.floor((i+.5)/count*sampled.length))]);
     }
-    function nativeReplenishmentCap(hunt, count) {
-        if(Number(hunt.nivel)<=150)return Infinity;
-        // Upstream v1.377+: all regions use the grouped Unova-style layout.
-        // No obsolete 30-second Sinnoh exception.
-        return count*3600/65;
-    }
-    function nativeSingleTargetKills(distances,cycle,hunt,playerTile=NATIVE_PACE.playerTile) {
+    function nativeSingleTargetKills(distances,cycle,playerTile=NATIVE_PACE.playerTile) {
         const count=distances.length;
         const avg=distances.reduce((a,b)=>a+b,0)/count;
         const walk=avg*playerTile*NATIVE_PACE.search;
@@ -9390,15 +9384,13 @@
         for(const distance of distances)
             time=Math.max(time+cycle+walk,distance*meeting);
         return Math.min(3600/cycle,
-            count*3600/(time+NATIVE_PACE.waveGap),
-            nativeReplenishmentCap(hunt,count));
+            count*3600/(time+NATIVE_PACE.waveGap));
     }
-    function nativeAoeKills(distances,ttk,hunt) {
+    function nativeAoeKills(distances,ttk) {
         const n=distances.length;
         const rhythm=n>1?distances[n-2]:distances[0];
         const arrival=Math.max(0,rhythm-5)*NATIVE_PACE.wildTile;
         return Math.min(n*3600/(arrival+NATIVE_PACE.waveGap),
-            nativeReplenishmentCap(hunt,n),
             3600*NATIVE_PACE.maxEngaged/Math.max(ttk,NATIVE_PACE.minCycle));
     }
     function nativeCombatForecast(hunt) {
@@ -9496,13 +9488,13 @@
         hitMean/=weight;
         incomingDps/=weight;
         const cycle=Math.max(ttk+NATIVE_PACE.retarget,NATIVE_PACE.minCycle);
-        const soloKills=nativeSingleTargetKills(distances,cycle,hunt,playerTile);
+        const soloKills=nativeSingleTargetKills(distances,cycle,playerTile);
         // Matches controller's explicit UI preference. Do not infer this
         // scenario from an owned Pokémon's partially populated TM flags.
         const aoe=state.filters?.nativeAoeForecast===true;
         let killsH=soloKills,engaged=1;
         if(aoe) {
-            killsH=Math.max(killsH,nativeAoeKills(distances,ttk,hunt));
+            killsH=Math.max(killsH,nativeAoeKills(distances,ttk));
             engaged=Math.min(NATIVE_PACE.maxEngaged,
                 1+killsH*ttk/3600);
         }

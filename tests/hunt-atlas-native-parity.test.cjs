@@ -55,8 +55,8 @@ function harness() {
     };
     const api=vm.runInNewContext(code+'\n({nativeIvCooldown,nativeMoveCooldown,'+
         'nativeWildStat,nativeMeanTtk,nativeRememberFieldGeometry,'+
-        'nativeSpawnDistances,nativeReplenishmentCap,'+
-        'nativeSingleTargetKills,nativeAoeKills,nativeCombatForecast,'+
+        'nativeSpawnDistances,nativeSingleTargetKills,nativeAoeKills,'+
+        'nativeCombatForecast,'+
         'nativeSeasonalMultiplier,nativeGymMultiplier})',ctx);
     const hunt=(id=2,level=150)=>({
         slug:'hunt-'+id,nivel:level,area:'kanto',
@@ -98,15 +98,13 @@ test('controller move readiness persists through consecutive kills',()=>{
         {damage:10,cooldown:2},.9,Array(32).fill(120),1);
     assert.ok(ttk>0 && ttk<5);
 });
-test('controller high-level per-slot replenishment caps apply',()=>{
+test('controller grouped-wave throughput has no synthetic 65-second cap',()=>{
     const h=harness();
-    const kanto=h.hunt(2,1000);
-    const sinnoh={...kanto,area:'sinnoh'};
     const d=Array(16).fill(20.6);
-    assert.equal(h.api.nativeReplenishmentCap(kanto,16),16*3600/65);
-    assert.equal(h.api.nativeReplenishmentCap(sinnoh,16),16*3600/65);
-    assert.ok(h.api.nativeSingleTargetKills(d,1.8,kanto)<=16*3600/65);
-    assert.ok(h.api.nativeAoeKills(d,.01,sinnoh)<=16*3600/65);
+    const obsoleteCap=16*3600/65;
+    assert.ok(h.api.nativeSingleTargetKills(d,1.8)>obsoleteCap);
+    assert.ok(h.api.nativeAoeKills(d,.01)>obsoleteCap);
+    assert.ok(h.api.nativeAoeKills(d,10000)<20);
 });
 test('premium uses complete campo.init positions for high-level hunt geometry',()=>{
     const h=harness();
