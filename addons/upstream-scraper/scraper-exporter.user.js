@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokéIdle Upstream Scraper & Exporter
 // @namespace    moth.pokeidle
-// @version      1.3.2
+// @version      1.4.0
 // @description  Investigates and downloads PokéIdle client files, item icons and observed sprites with verified manifests.
 // @match        https://pokeidle.io/*
 // @match        https://www.pokeidle.io/*
@@ -21,10 +21,13 @@
     const BUTTON_ID = 'moth-upstream-scraper-button';
     const STYLE_ID = 'moth-upstream-scraper-style';
 
-    const MAX_FILES = 350;
-    const MAX_DISCOVERED = 1000;
-    const MAX_TEXT_BYTES = 3 * 1024 * 1024;
-    const MAX_TOTAL_BYTES = 64 * 1024 * 1024;
+    // A pacing-complete scrape needs roughly 500 world maps before ordinary
+    // modules/catalogs are counted. Keep the limits above that corpus and fail
+    // explicitly through the pacing coverage report if they are ever hit.
+    const MAX_FILES = 5000;
+    const MAX_DISCOVERED = 8000;
+    const MAX_TEXT_BYTES = 12 * 1024 * 1024;
+    const MAX_TOTAL_BYTES = 768 * 1024 * 1024;
     const FETCH_TIMEOUT_MS = 15000;
     const MAX_IMAGE_FILES = 1200;
     const MAX_IMAGE_DISCOVERED = 3000;
@@ -35,11 +38,58 @@
     // not whichever optional resource happened to appear first in the browser.
     const CORE_TEXT_PATHS = Object.freeze([
         '/assets/items.json',
+        '/assets/items-icons.json',
         '/assets/creatures.json',
+        '/assets/creatures-novos.json',
+        '/assets/creatures-outland-novos.json',
+        '/assets/creatures-formas.json',
+        '/assets/creatures-audit-overrides.json',
         '/assets/creatures-sprites-lab.json',
         '/assets/index/moves-index.json',
-        '/assets/world/map-markers.json'
+        '/assets/world/map-markers.json',
+        '/assets/world/offsets.json',
+        '/assets/world/collision.json',
+        '/assets/world/draworder.json',
+        '/campo.mjs',
+        '/mapa.mjs',
+        '/sessao-hunt.mjs',
+        '/hunt-analyser.mjs',
+        '/shared/spawns-filtro.mjs',
+        '/shared/escala-campo.mjs',
+        '/shared/recompensa-hunt.mjs'
     ]);
+
+    // A successful source scan may contain many useful files while still being
+    // unusable for regenerating Hunt Atlas pacing. These are hard requirements:
+    // the manifest never calls pacing ready without all of them.
+    const PACE_REQUIRED_PATHS = Object.freeze([
+        '/assets/items.json',
+        '/assets/creatures.json',
+        '/assets/world/map-markers.json',
+        '/assets/world/offsets.json',
+        '/assets/world/collision.json',
+        '/assets/world/draworder.json',
+        '/campo.mjs',
+        '/mapa.mjs',
+        '/sessao-hunt.mjs',
+        '/hunt-analyser.mjs',
+        '/shared/spawns-filtro.mjs'
+    ]);
+
+    // /hunt 1.0.17's 1.409.0 simulator export contains 500 distinct map
+    // profiles. Treat that as the minimum complete world corpus until a newer
+    // authoritative export tells us the game has a different count.
+    const MIN_PACING_MAP_FILES = 500;
+
+    // Generated maps use these stable Portuguese type names. Probe a generous
+    // range in addition to every public marker slug; 1.409.0 tops out at 32.
+    const GENERATED_MAP_TYPES = Object.freeze([
+        'normal', 'fogo', 'agua', 'planta', 'eletrico', 'gelo',
+        'lutador', 'veneno', 'terra', 'voador', 'psiquico', 'inseto',
+        'pedra', 'fantasma', 'dragao', 'sombrio', 'aco', 'fada'
+    ]);
+    const GENERATED_MAP_PROBE_MAX = 64;
+    const REGION_SUFFIX = /_(?:hoenn|sinnoh|unova|kalos|alola|galar|paldea)$/i;
     // Outfit atlases are player cosmetics. They are numerous, consume the text
     // and image budgets quickly, and are not useful to controller/upstream analysis.
     const PLAYER_OUTFIT_PATH =
@@ -65,6 +115,8 @@
         imageDiscovered: 0,
         imageCapped: false,
         unresolvedDynamicPaths: new Set(),
+        pacingProbeUrls: new Set(),
+        pacingProbeMisses: 0,
         status: 'Not scanned yet',
         attempted: 0,
         discovered: 0,
@@ -420,6 +472,67 @@
         }
 
         return [...discovered];
+    }
+
+
+    function discoverPacingMapCandidates(text, sourceUrl) {
+        const discovered = new Set();
+        let sourcePath = '';
+        try { sourcePath = new URL(sourceUrl).pathname; } catch { return []; }
+        if (sourcePath !== '/assets/world/map-markers.json') return [];
+
+        const addMap = slug => {
+            const clean = String(slug || '').trim();
+            if (!/^[a-z0-9_-]{1,100}$/i.test(clean)) return;
+            const url = normalizeUrl('/assets/world/maps/' + clean + '.json', sourceUrl);
+            if (!url) return;
+            state.pacingProbeUrls.add(url);
+            discovered.add(url);
+        };
+
+        try {
+            const parsed = JSON.parse(text);
+            for (const hunt of parsed?.hunts ?? []) {
+                const slug = String(hunt?.slug || '');
+                if (!slug) continue;
+                addMap(slug);
+                const base = slug.replace(REGION_SUFFIX, '');
+                if (base !== slug) addMap(base);
+            }
+        } catch (error) {
+            state.errors.push({
+                url: sourceUrl,
+                error: 'Invalid map marker catalog: ' + String(error?.message || error)
+            });
+            return [];
+        }
+
+        for (const type of GENERATED_MAP_TYPES) {
+            for (let i = 1; i <= GENERATED_MAP_PROBE_MAX; i++) {
+                addMap('gerado_' + type + '_' + String(i).padStart(2, '0'));
+            }
+        }
+        return [...discovered];
+    }
+
+    function pacingCoverage() {
+        const captured = new Set();
+        let mapFiles = 0;
+        for (const file of state.files.values()) {
+            try {
+                const pathname = new URL(file.url).pathname;
+                captured.add(pathname);
+                if (/^\/assets\/world\/maps\/[^/]+\.json$/i.test(pathname)) mapFiles++;
+            } catch {}
+        }
+        const missingRequiredPaths = PACE_REQUIRED_PATHS.filter(path => !captured.has(path));
+        return {
+            ready: missingRequiredPaths.length === 0 && mapFiles >= MIN_PACING_MAP_FILES,
+            mapFiles,
+            minimumMapFiles: MIN_PACING_MAP_FILES,
+            missingRequiredPaths,
+            probeMisses: state.pacingProbeMisses
+        };
     }
 
 
@@ -970,6 +1083,8 @@
         state.files.clear();
         state.errors = [];
         state.unresolvedDynamicPaths.clear();
+        state.pacingProbeUrls.clear();
+        state.pacingProbeMisses = 0;
         state.attempted = 0;
         state.startedAt = Date.now();
         state.finishedAt = 0;
@@ -1052,12 +1167,21 @@
                         result.text, result.finalUrl, result.contentType)) {
                         enqueue(dependency);
                     }
+                    for (const mapUrl of discoverPacingMapCandidates(
+                        result.text, result.finalUrl)) {
+                        enqueue(mapUrl);
+                    }
                 } catch (error) {
                     if (state.cancelRequested) break;
-                    state.errors.push({
-                        url,
-                        error: String((error && error.message) || error)
-                    });
+                    const message = String((error && error.message) || error);
+                    // Marker slugs and generated-map names are discovery probes:
+                    // a 404 simply means that candidate is not a real map in
+                    // this game version. Other failures remain hard errors.
+                    if (state.pacingProbeUrls.has(url) && /^HTTP 404\b/.test(message)) {
+                        state.pacingProbeMisses++;
+                    } else {
+                        state.errors.push({ url, error: message });
+                    }
                 }
 
                 // Yield to the game instead of monopolizing its UI thread.
@@ -1091,12 +1215,18 @@
                 cursor >= queue.length;
             state.running = false;
             state.finishedAt = Date.now();
+            const pace = pacingCoverage();
             state.status = (state.cancelRequested ? 'Cancelled' :
                 state.complete ? 'Complete' : 'Partial capture') +
                 ' · ' + state.files.size + ' files · ' +
                 state.errors.length + ' failed' +
                 (state.unresolvedDynamicPaths.size
-                    ? ' · ' + state.unresolvedDynamicPaths.size + ' unresolved dynamic paths' : '');
+                    ? ' · ' + state.unresolvedDynamicPaths.size + ' unresolved dynamic paths' : '') +
+                (pace.ready
+                    ? ' · pacing ready (' + pace.mapFiles + ' maps)'
+                    : ' · pacing NOT ready (' + pace.mapFiles + '/' +
+                      pace.minimumMapFiles + ' maps, ' +
+                      pace.missingRequiredPaths.length + ' core missing)');
             updateUI();
         }
     }
@@ -1146,7 +1276,8 @@
             cancelled: state.cancelRequested,
             observedStaticAssetCount: observedAssets.size,
             unresolvedDynamicPaths: [...state.unresolvedDynamicPaths].sort(),
-            coverage: 'public client files and images observed or explicitly listed in public catalogs; unloaded/dynamic assets may remain unlisted',
+            pacing: pacingCoverage(),
+            coverage: 'public client files and images observed, explicitly listed in public catalogs, or probed from public hunt/map naming; pacing.ready is strict and false when required world inputs are missing',
             attemptedCount: state.attempted,
             discoveredCount: state.discovered,
             limits: {
@@ -1903,7 +2034,7 @@
         );
 
         console.info(
-            '[PokéIdle Upstream Scraper] v1.3.2 loaded'
+            '[PokéIdle Upstream Scraper] v1.4.0 loaded'
         );
     }
 
